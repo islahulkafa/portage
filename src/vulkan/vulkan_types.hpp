@@ -10,6 +10,8 @@
 
 #include <cstdint>
 
+struct AHardwareBuffer;
+
 namespace portage::vulkan {
 
 inline constexpr uint32_t VULKAN_IOCTL_GET_DISPATCH_TABLE = 0x80085601u;
@@ -124,6 +126,9 @@ VkResult (*)(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSema
              VkFence fence, uint32_t *pImageIndex);
 using SysvPfnVkQueuePresentKHR = __attribute__((sysv_abi))
 VkResult (*)(VkQueue queue, const VkPresentInfoKHR *pPresentInfo);
+using SysvPfnVkGetAndroidHardwareBufferPropertiesANDROID = __attribute__((sysv_abi))
+VkResult (*)(VkDevice device, const struct AHardwareBuffer *buffer,
+             VkAndroidHardwareBufferPropertiesANDROID *pProperties);
 
 struct VulkanDispatchTable {
     uint32_t version{2};
@@ -174,6 +179,8 @@ struct VulkanDispatchTable {
     SysvPfnVkGetSwapchainImagesKHR vkGetSwapchainImagesKHR{nullptr};
     SysvPfnVkAcquireNextImageKHR vkAcquireNextImageKHR{nullptr};
     SysvPfnVkQueuePresentKHR vkQueuePresentKHR{nullptr};
+    SysvPfnVkGetAndroidHardwareBufferPropertiesANDROID vkGetAndroidHardwareBufferPropertiesANDROID{
+        nullptr};
 };
 
 } // namespace portage::vulkan

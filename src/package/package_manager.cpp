@@ -49,6 +49,12 @@ bool PackageManager::Initialize(const std::filesystem::path &sandbox_base) noexc
 void PackageManager::Reset() noexcept
 {
     std::lock_guard<std::mutex> lock(mutex_);
+    for (auto &[_, pkg] : packages_) {
+        if (pkg.asset_manager) {
+            AssetManagerBridge::Instance().DestroyManager(pkg.asset_manager);
+            pkg.asset_manager = nullptr;
+        }
+    }
     packages_.clear();
     active_package_name_.clear();
     initialized_ = false;
@@ -113,6 +119,13 @@ std::optional<PackageInfo> PackageManager::InstallPackage(const std::filesystem:
         }
     }
 
+    // Load binary resource table if present
+    auto arsc_data = pkg.archive->ReadEntry("resources.arsc");
+    if (arsc_data.has_value()) {
+        pkg.resource_table = ResourceTable::Open(*arsc_data);
+    }
+    pkg.asset_manager = AssetManagerBridge::Instance().CreateManager(pkg.archive);
+
     packages_[manifest->package_name] = pkg;
     active_package_name_ = manifest->package_name;
 
@@ -155,6 +168,20 @@ std::filesystem::path PackageManager::GetPrimaryLibraryPath(const PackageInfo &p
         std::filesystem::path candidate = pkg.lib_dir / lib_filename;
         if (std::filesystem::exists(candidate)) {
             return candidate;
+        }
+
+        std::string test_lib_filename = "libtest_" + pkg.manifest.native_library_name + ".so";
+        candidate = pkg.lib_dir / test_lib_filename;
+        if (std::filesystem::exists(candidate)) {
+            return candidate;
+        }
+    }
+
+    for (const auto &lib_name : pkg.native_libraries) {
+        if (lib_name.find("main") != std::string::npos ||
+            lib_name.find("engine") != std::string::npos ||
+            lib_name.find("activity") != std::string::npos) {
+            return pkg.lib_dir / lib_name;
         }
     }
 

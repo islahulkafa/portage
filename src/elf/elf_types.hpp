@@ -141,14 +141,40 @@ struct Elf64_auxv_t {
 };
 
 constexpr int64_t DT_NULL = 0;
+constexpr int64_t DT_NEEDED = 1;
 constexpr int64_t DT_PLTRELSZ = 2;
+constexpr int64_t DT_HASH = 4;
 constexpr int64_t DT_STRTAB = 5;
 constexpr int64_t DT_SYMTAB = 6;
 constexpr int64_t DT_RELA = 7;
 constexpr int64_t DT_RELASZ = 8;
 constexpr int64_t DT_RELAENT = 9;
 constexpr int64_t DT_STRSZ = 10;
+constexpr int64_t DT_INIT = 12;
+constexpr int64_t DT_FINI = 13;
+constexpr int64_t DT_SONAME = 14;
+constexpr int64_t DT_RPATH = 15;
 constexpr int64_t DT_JMPREL = 23;
+constexpr int64_t DT_INIT_ARRAY = 25;
+constexpr int64_t DT_FINI_ARRAY = 26;
+constexpr int64_t DT_INIT_ARRAYSZ = 27;
+constexpr int64_t DT_FINI_ARRAYSZ = 28;
+constexpr int64_t DT_RUNPATH = 29;
+constexpr int64_t DT_FLAGS = 30;
+
+constexpr int RTLD_LAZY = 1;
+constexpr int RTLD_NOW = 2;
+constexpr int RTLD_LOCAL = 0;
+constexpr int RTLD_GLOBAL = 0x00100;
+inline void *const RTLD_DEFAULT = reinterpret_cast<void *>(0);
+inline void *const RTLD_NEXT = reinterpret_cast<void *>(-1);
+
+struct Dl_info {
+    const char *dli_fname;
+    void *dli_fbase;
+    const char *dli_sname;
+    void *dli_saddr;
+};
 
 constexpr uint32_t R_X86_64_NONE = 0;
 constexpr uint32_t R_X86_64_64 = 1;

@@ -136,6 +136,9 @@ ResolvedPath Vfs::Resolve(std::string_view guest_path) const
     if (guest_path == "/dev/hwbinder") {
         return {DeviceType::HwBinder, {}};
     }
+    if (guest_path == "/dev/ashmem") {
+        return {DeviceType::Ashmem, {}};
+    }
     if (guest_path == "/dev/vulkan") {
         return {DeviceType::VulkanDevice, {}};
     }

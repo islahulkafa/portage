@@ -1,4 +1,5 @@
 #include "input_manager.hpp"
+#include "haptic_manager.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -195,6 +196,22 @@ int64_t InputManager::ReadEvents(int device_index, LinuxInputEvent *out_events, 
     return static_cast<int64_t>(count * sizeof(LinuxInputEvent));
 }
 
+int64_t InputManager::WriteEvents(int device_index, const LinuxInputEvent *events,
+                                  size_t count) noexcept
+{
+    (void)device_index;
+    if (!events || count == 0) {
+        return -22; // EINVAL
+    }
+    for (size_t i = 0; i < count; ++i) {
+        if (events[i].type == LINUX_EV_FF) {
+            HapticManager::Instance().PlayEffect(static_cast<int16_t>(events[i].code),
+                                                 events[i].value);
+        }
+    }
+    return static_cast<int64_t>(count * sizeof(LinuxInputEvent));
+}
+
 bool InputManager::HasEvents(int device_index) const noexcept
 {
     if (device_index < 0 || device_index >= 2)
@@ -271,11 +288,17 @@ int InputManager::HandleIoctl(int device_index, uint32_t cmd, void *arg) noexcep
         if (ev == 0) { // Supported event types bitmask
             set_bit(LINUX_EV_SYN);
             set_bit(LINUX_EV_KEY);
+            set_bit(LINUX_EV_FF);
             if (device_index == 0) {
                 set_bit(LINUX_EV_REP);
             } else {
                 set_bit(LINUX_EV_ABS);
             }
+            return static_cast<int>(size);
+        }
+
+        if (ev == LINUX_EV_FF) {
+            set_bit(LINUX_FF_RUMBLE);
             return static_cast<int>(size);
         }
 
@@ -352,6 +375,21 @@ int InputManager::HandleIoctl(int device_index, uint32_t cmd, void *arg) noexcep
             }
         }
         return 0;
+    }
+
+    if (nr == 0x80) { // EVIOCSFF
+        if (!arg)
+            return -14;
+        auto *eff = reinterpret_cast<LinuxFfEffect *>(arg);
+        return HapticManager::Instance().UploadEffect(*eff, &eff->id);
+    }
+
+    if (nr == 0x81) { // EVIOCRMFF
+        int id = 0;
+        if (arg) {
+            id = *reinterpret_cast<int *>(arg);
+        }
+        return HapticManager::Instance().EraseEffect(static_cast<int16_t>(id));
     }
 
     return -22; // EINVAL

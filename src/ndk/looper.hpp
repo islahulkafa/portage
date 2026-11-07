@@ -39,6 +39,7 @@ struct LooperRegistration {
     int events{0};
     ALooper_callbackFunc callback{nullptr};
     void *data{nullptr};
+    void *native_pipe_handle{nullptr};
 };
 
 class LooperImpl {
@@ -50,12 +51,15 @@ class LooperImpl {
     void Release() noexcept;
 
     int AddFd(int fd, int ident, int events, ALooper_callbackFunc callback, void *data);
+    int AddInternalPipe(void *read_handle, ALooper_callbackFunc callback, void *data,
+                        int ident = ALOOPER_POLL_CALLBACK);
     int RemoveFd(int fd);
 
     int PollOnce(int timeout_ms, int *out_fd, int *out_events, void **out_data);
     int PollAll(int timeout_ms, int *out_fd, int *out_events, void **out_data);
 
     void Wake();
+    void NotifyActivity() noexcept;
 
     [[nodiscard]] int GetOpts() const noexcept { return opts_; }
     [[nodiscard]] size_t GetRegistrationCount() const noexcept;
@@ -69,6 +73,8 @@ class LooperImpl {
     std::condition_variable cv_{};
     std::unordered_map<int, LooperRegistration> registrations_{};
     std::atomic<bool> wake_signaled_{false};
+    std::atomic<uint64_t> activity_epoch_{0};
+    int next_internal_fd_{0x40000000};
 };
 
 } // namespace portage::ndk

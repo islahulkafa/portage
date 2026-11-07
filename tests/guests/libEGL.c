@@ -123,3 +123,24 @@ EXPORT void *eglGetProcAddress(const char *procname)
     (void)procname;
     return (void *)0;
 }
+EXPORT void *eglGetNativeClientBufferANDROID(const void *buffer)
+{
+    (void)buffer;
+    return (void *)0;
+}
+EXPORT void *eglCreateImageKHR(void *dpy, void *ctx, unsigned int target, void *buffer,
+                              const int32_t *attrib_list)
+{
+    (void)dpy;
+    (void)ctx;
+    (void)target;
+    (void)buffer;
+    (void)attrib_list;
+    return (void *)0;
+}
+EXPORT unsigned int eglDestroyImageKHR(void *dpy, void *image)
+{
+    (void)dpy;
+    (void)image;
+    return 1;
+}

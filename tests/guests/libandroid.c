@@ -66,7 +66,46 @@ __attribute__((visibility("default"))) struct ANativeWindow *ANativeWindow_creat
     return &g_default_window;
 }
 
-struct AAsset;
+struct ANativeWindow_Buffer {
+    int32_t width;
+    int32_t height;
+    int32_t stride;
+    int32_t format;
+    void *bits;
+    uint32_t reserved[6];
+};
+
+struct ARect {
+    int32_t left;
+    int32_t top;
+    int32_t right;
+    int32_t bottom;
+};
+
+__attribute__((visibility("default"))) int32_t
+ANativeWindow_lock(struct ANativeWindow *window, struct ANativeWindow_Buffer *outBuffer,
+                   struct ARect *inOutDirtyBounds)
+{
+    (void)window;
+    (void)outBuffer;
+    (void)inOutDirtyBounds;
+    return -1;
+}
+
+__attribute__((visibility("default"))) int32_t
+ANativeWindow_unlockAndPost(struct ANativeWindow *window)
+{
+    (void)window;
+    return -1;
+}
+
+struct AAssetDir {
+    void *internal_ptr;
+    const char *(*getNextFileNameFunc)(struct AAssetDir *dir);
+    void (*rewindFunc)(struct AAssetDir *dir);
+    void (*closeFunc)(struct AAssetDir *dir);
+};
+
 struct AAssetManager {
     void *internal_ptr;
     struct AAsset *(*openFunc)(struct AAssetManager *mgr, const char *filename, int mode);
@@ -75,6 +114,7 @@ struct AAssetManager {
     int64_t (*getLengthFunc)(struct AAsset *asset);
     const void *(*getBufferFunc)(struct AAsset *asset);
     void (*closeFunc)(struct AAsset *asset);
+    struct AAssetDir *(*openDirFunc)(struct AAssetManager *mgr, const char *dirName);
 };
 
 struct AAsset {
@@ -86,12 +126,27 @@ struct AAsset {
     void (*closeFunc)(struct AAsset *asset);
 };
 
+__attribute__((visibility("default"))) struct AAssetManager *
+AAssetManager_fromJava(void *env, void *assetManager)
+{
+    (void)env;
+    return (struct AAssetManager *)assetManager;
+}
+
 __attribute__((visibility("default"))) struct AAsset *
 AAssetManager_open(struct AAssetManager *mgr, const char *filename, int mode)
 {
     if (!mgr || !mgr->openFunc)
         return NULL;
     return mgr->openFunc(mgr, filename, mode);
+}
+
+__attribute__((visibility("default"))) struct AAssetDir *
+AAssetManager_openDir(struct AAssetManager *mgr, const char *dirName)
+{
+    if (!mgr || !mgr->openDirFunc)
+        return NULL;
+    return mgr->openDirFunc(mgr, dirName);
 }
 
 __attribute__((visibility("default"))) int AAsset_read(struct AAsset *asset, void *buf,
@@ -130,3 +185,535 @@ __attribute__((visibility("default"))) void AAsset_close(struct AAsset *asset)
         asset->closeFunc(asset);
     }
 }
+
+__attribute__((visibility("default"))) const char *
+AAssetDir_getNextFileName(struct AAssetDir *assetDir)
+{
+    if (!assetDir || !assetDir->getNextFileNameFunc)
+        return NULL;
+    return assetDir->getNextFileNameFunc(assetDir);
+}
+
+__attribute__((visibility("default"))) void AAssetDir_rewind(struct AAssetDir *assetDir)
+{
+    if (assetDir && assetDir->rewindFunc) {
+        assetDir->rewindFunc(assetDir);
+    }
+}
+
+__attribute__((visibility("default"))) void AAssetDir_close(struct AAssetDir *assetDir)
+{
+    if (assetDir && assetDir->closeFunc) {
+        assetDir->closeFunc(assetDir);
+    }
+}
+
+struct AChoreographer;
+
+__attribute__((visibility("default"))) struct AChoreographer *AChoreographer_getInstance(void)
+{
+    return (struct AChoreographer *)0;
+}
+
+__attribute__((visibility("default"))) void
+AChoreographer_postFrameCallback(struct AChoreographer *choreographer,
+                                 void (*callback)(long frameTimeNanos, void *data), void *data)
+{
+    (void)choreographer;
+    (void)callback;
+    (void)data;
+}
+
+__attribute__((visibility("default"))) void
+AChoreographer_postFrameCallbackDelayed(struct AChoreographer *choreographer,
+                                        void (*callback)(long frameTimeNanos, void *data),
+                                        void *data, long delayMillis)
+{
+    (void)choreographer;
+    (void)callback;
+    (void)data;
+    (void)delayMillis;
+}
+
+__attribute__((visibility("default"))) void
+AChoreographer_postFrameCallback64(struct AChoreographer *choreographer,
+                                   void (*callback)(int64_t frameTimeNanos, void *data), void *data)
+{
+    (void)choreographer;
+    (void)callback;
+    (void)data;
+}
+
+__attribute__((visibility("default"))) void
+AChoreographer_postFrameCallbackDelayed64(struct AChoreographer *choreographer,
+                                          void (*callback)(int64_t frameTimeNanos, void *data),
+                                          void *data, uint32_t delayMillis)
+{
+    (void)choreographer;
+    (void)callback;
+    (void)data;
+    (void)delayMillis;
+}
+
+__attribute__((visibility("default"))) void
+AChoreographer_registerRefreshRateCallback(struct AChoreographer *choreographer,
+                                           void (*callback)(int64_t vsyncPeriodNanos, void *data),
+                                           void *data)
+{
+    (void)choreographer;
+    (void)callback;
+    (void)data;
+}
+
+__attribute__((visibility("default"))) void
+AChoreographer_unregisterRefreshRateCallback(struct AChoreographer *choreographer,
+                                             void (*callback)(int64_t vsyncPeriodNanos, void *data),
+                                             void *data)
+{
+    (void)choreographer;
+    (void)callback;
+    (void)data;
+}
+
+struct ASensorManager;
+struct ASensorEventQueue;
+struct ASensor;
+struct AHardwareBuffer;
+struct ASensorEvent;
+typedef const struct ASensor *ASensorRef;
+typedef ASensorRef const *ASensorList;
+
+__attribute__((visibility("default"))) struct ASensorManager *ASensorManager_getInstance(void)
+{
+    return (struct ASensorManager *)0;
+}
+
+__attribute__((visibility("default"))) struct ASensorManager *
+ASensorManager_getInstanceForPackage(const char *packageName)
+{
+    (void)packageName;
+    return (struct ASensorManager *)0;
+}
+
+__attribute__((visibility("default"))) int
+ASensorManager_getSensorList(struct ASensorManager *manager, ASensorList *list)
+{
+    (void)manager;
+    (void)list;
+    return 0;
+}
+
+__attribute__((visibility("default"))) const struct ASensor *
+ASensorManager_getDefaultSensor(struct ASensorManager *manager, int type)
+{
+    (void)manager;
+    (void)type;
+    return (const struct ASensor *)0;
+}
+
+__attribute__((visibility("default"))) const struct ASensor *
+ASensorManager_getDefaultSensorEx(struct ASensorManager *manager, int type, int wakeUp)
+{
+    (void)manager;
+    (void)type;
+    (void)wakeUp;
+    return (const struct ASensor *)0;
+}
+
+__attribute__((visibility("default"))) struct ASensorEventQueue *
+ASensorManager_createEventQueue(struct ASensorManager *manager, void *looper, int ident,
+                                int (*callback)(int, int, void *), void *data)
+{
+    (void)manager;
+    (void)looper;
+    (void)ident;
+    (void)callback;
+    (void)data;
+    return (struct ASensorEventQueue *)0;
+}
+
+__attribute__((visibility("default"))) int
+ASensorManager_destroyEventQueue(struct ASensorManager *manager, struct ASensorEventQueue *queue)
+{
+    (void)manager;
+    (void)queue;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int
+ASensorManager_createSharedMemoryDirectChannel(struct ASensorManager *manager, int fd, size_t size)
+{
+    (void)manager;
+    (void)fd;
+    (void)size;
+    return -38;
+}
+
+__attribute__((visibility("default"))) int
+ASensorManager_createHardwareBufferDirectChannel(struct ASensorManager *manager,
+                                                 const struct AHardwareBuffer *buffer, size_t size)
+{
+    (void)manager;
+    (void)buffer;
+    (void)size;
+    return -38;
+}
+
+__attribute__((visibility("default"))) int
+ASensorManager_destroyDirectChannel(struct ASensorManager *manager, int channelId)
+{
+    (void)manager;
+    (void)channelId;
+    return -38;
+}
+
+__attribute__((visibility("default"))) int
+ASensorManager_configureDirectReport(struct ASensorManager *manager, const struct ASensor *sensor,
+                                     int channelId, int rate)
+{
+    (void)manager;
+    (void)sensor;
+    (void)channelId;
+    (void)rate;
+    return -38;
+}
+
+__attribute__((visibility("default"))) int
+ASensorEventQueue_registerSensor(struct ASensorEventQueue *queue, const struct ASensor *sensor,
+                                 int32_t samplingPeriodUs, int64_t maxBatchReportLatencyUs)
+{
+    (void)queue;
+    (void)sensor;
+    (void)samplingPeriodUs;
+    (void)maxBatchReportLatencyUs;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int
+ASensorEventQueue_enableSensor(struct ASensorEventQueue *queue, const struct ASensor *sensor)
+{
+    (void)queue;
+    (void)sensor;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int
+ASensorEventQueue_disableSensor(struct ASensorEventQueue *queue, const struct ASensor *sensor)
+{
+    (void)queue;
+    (void)sensor;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int
+ASensorEventQueue_setEventRate(struct ASensorEventQueue *queue, const struct ASensor *sensor,
+                               int32_t usec)
+{
+    (void)queue;
+    (void)sensor;
+    (void)usec;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int
+ASensorEventQueue_hasEvents(struct ASensorEventQueue *queue)
+{
+    (void)queue;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int64_t ASensorEventQueue_getEvents(
+    struct ASensorEventQueue *queue, struct ASensorEvent *events, size_t count)
+{
+    (void)queue;
+    (void)events;
+    (void)count;
+    return 0;
+}
+
+__attribute__((visibility("default"))) const char *ASensor_getName(const struct ASensor *sensor)
+{
+    (void)sensor;
+    return "";
+}
+
+__attribute__((visibility("default"))) const char *ASensor_getVendor(const struct ASensor *sensor)
+{
+    (void)sensor;
+    return "";
+}
+
+__attribute__((visibility("default"))) int ASensor_getType(const struct ASensor *sensor)
+{
+    (void)sensor;
+    return -1;
+}
+
+__attribute__((visibility("default"))) float ASensor_getResolution(const struct ASensor *sensor)
+{
+    (void)sensor;
+    return 0.0f;
+}
+
+__attribute__((visibility("default"))) int ASensor_getMinDelay(const struct ASensor *sensor)
+{
+    (void)sensor;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int
+ASensor_getFifoMaxEventCount(const struct ASensor *sensor)
+{
+    (void)sensor;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int
+ASensor_getFifoReservedEventCount(const struct ASensor *sensor)
+{
+    (void)sensor;
+    return 0;
+}
+
+__attribute__((visibility("default"))) const char *
+ASensor_getStringType(const struct ASensor *sensor)
+{
+    (void)sensor;
+    return "";
+}
+
+__attribute__((visibility("default"))) int ASensor_getReportingMode(const struct ASensor *sensor)
+{
+    (void)sensor;
+    return -1;
+}
+
+__attribute__((visibility("default"))) int ASensor_isWakeUpSensor(const struct ASensor *sensor)
+{
+    (void)sensor;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int
+ASensor_isDirectChannelTypeSupported(const struct ASensor *sensor, int channelType)
+{
+    (void)sensor;
+    (void)channelType;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int
+ASensor_getHighestDirectReportRateLevel(const struct ASensor *sensor)
+{
+    (void)sensor;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int ASensor_getHandle(const struct ASensor *sensor)
+{
+    (void)sensor;
+    return -1;
+}
+
+__attribute__((visibility("default"))) int32_t ASharedMemory_create(const char *name, size_t size)
+{
+    (void)name;
+    (void)size;
+    return -1;
+}
+
+__attribute__((visibility("default"))) size_t ASharedMemory_getSize(int fd)
+{
+    (void)fd;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int32_t ASharedMemory_setProt(int fd, int prot)
+{
+    (void)fd;
+    (void)prot;
+    return -1;
+}
+
+__attribute__((visibility("default"))) int32_t ASharedMemory_dup(int fd)
+{
+    (void)fd;
+    return -1;
+}
+
+typedef struct AHardwareBuffer AHardwareBuffer;
+
+typedef struct AHardwareBuffer_Desc {
+    uint32_t width;
+    uint32_t height;
+    uint32_t layers;
+    uint32_t format;
+    uint64_t usage;
+    uint32_t stride;
+    uint32_t rfu0;
+    uint64_t rfu1;
+} AHardwareBuffer_Desc;
+
+typedef struct AHardwareBuffer_Plane {
+    void *data;
+    uint32_t pixelStride;
+    uint32_t rowStride;
+} AHardwareBuffer_Plane;
+
+typedef struct AHardwareBuffer_Planes {
+    uint32_t planeCount;
+    AHardwareBuffer_Plane planes[4];
+} AHardwareBuffer_Planes;
+
+__attribute__((visibility("default"))) int
+AHardwareBuffer_allocate(const AHardwareBuffer_Desc *desc, AHardwareBuffer **outBuffer)
+{
+    (void)desc;
+    (void)outBuffer;
+    return -1;
+}
+
+__attribute__((visibility("default"))) void AHardwareBuffer_acquire(AHardwareBuffer *buffer)
+{
+    (void)buffer;
+}
+
+__attribute__((visibility("default"))) void AHardwareBuffer_release(AHardwareBuffer *buffer)
+{
+    (void)buffer;
+}
+
+__attribute__((visibility("default"))) void
+AHardwareBuffer_describe(const AHardwareBuffer *buffer, AHardwareBuffer_Desc *outDesc)
+{
+    (void)buffer;
+    (void)outDesc;
+}
+
+__attribute__((visibility("default"))) int
+AHardwareBuffer_lock(AHardwareBuffer *buffer, uint64_t usage, int32_t fence,
+                     const struct ARect *rect, void **outVirtualAddress)
+{
+    (void)buffer;
+    (void)usage;
+    (void)fence;
+    (void)rect;
+    (void)outVirtualAddress;
+    return -1;
+}
+
+__attribute__((visibility("default"))) int AHardwareBuffer_unlock(AHardwareBuffer *buffer,
+                                                                 int32_t *fence)
+{
+    (void)buffer;
+    (void)fence;
+    return -1;
+}
+
+__attribute__((visibility("default"))) int
+AHardwareBuffer_lockPlanes(AHardwareBuffer *buffer, uint64_t usage, int32_t fence,
+                           const struct ARect *rect, AHardwareBuffer_Planes *outPlanes)
+{
+    (void)buffer;
+    (void)usage;
+    (void)fence;
+    (void)rect;
+    (void)outPlanes;
+    return -1;
+}
+
+__attribute__((visibility("default"))) int
+AHardwareBuffer_getId(const AHardwareBuffer *buffer, uint64_t *outId)
+{
+    (void)buffer;
+    (void)outId;
+    return -1;
+}
+
+__attribute__((visibility("default"))) int
+AHardwareBuffer_isSupported(const AHardwareBuffer_Desc *desc)
+{
+    (void)desc;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int
+AHardwareBuffer_lockAndGetInfo(AHardwareBuffer *buffer, uint64_t usage, int32_t fence,
+                              const struct ARect *rect, void **outVirtualAddress,
+                              int32_t *outBytesPerPixel, int32_t *outBytesPerStride)
+{
+    (void)buffer;
+    (void)usage;
+    (void)fence;
+    (void)rect;
+    (void)outVirtualAddress;
+    (void)outBytesPerPixel;
+    (void)outBytesPerStride;
+    return -1;
+}
+
+__attribute__((visibility("default"))) int
+AHardwareBuffer_sendHandleToUnixSocket(const AHardwareBuffer *buffer, int socketFd)
+{
+    (void)buffer;
+    (void)socketFd;
+    return -1;
+}
+
+__attribute__((visibility("default"))) int
+AHardwareBuffer_recvHandleFromUnixSocket(int socketFd, AHardwareBuffer **outBuffer)
+{
+    (void)socketFd;
+    (void)outBuffer;
+    return -1;
+}
+
+struct AInputEvent;
+struct AInputQueue;
+
+__attribute__((visibility("default"))) int32_t AInputEvent_getType(const struct AInputEvent *event) { (void)event; return 0; }
+__attribute__((visibility("default"))) int32_t AInputEvent_getDeviceId(const struct AInputEvent *event) { (void)event; return 0; }
+__attribute__((visibility("default"))) int32_t AInputEvent_getSource(const struct AInputEvent *event) { (void)event; return 0; }
+
+__attribute__((visibility("default"))) int32_t AKeyEvent_getAction(const struct AInputEvent *event) { (void)event; return 0; }
+__attribute__((visibility("default"))) int32_t AKeyEvent_getFlags(const struct AInputEvent *event) { (void)event; return 0; }
+__attribute__((visibility("default"))) int32_t AKeyEvent_getKeyCode(const struct AInputEvent *event) { (void)event; return 0; }
+__attribute__((visibility("default"))) int32_t AKeyEvent_getScanCode(const struct AInputEvent *event) { (void)event; return 0; }
+__attribute__((visibility("default"))) int32_t AKeyEvent_getMetaState(const struct AInputEvent *event) { (void)event; return 0; }
+__attribute__((visibility("default"))) int32_t AKeyEvent_getRepeatCount(const struct AInputEvent *event) { (void)event; return 0; }
+__attribute__((visibility("default"))) int64_t AKeyEvent_getDownTime(const struct AInputEvent *event) { (void)event; return 0; }
+__attribute__((visibility("default"))) int64_t AKeyEvent_getEventTime(const struct AInputEvent *event) { (void)event; return 0; }
+
+__attribute__((visibility("default"))) int32_t AMotionEvent_getAction(const struct AInputEvent *event) { (void)event; return 0; }
+__attribute__((visibility("default"))) int32_t AMotionEvent_getFlags(const struct AInputEvent *event) { (void)event; return 0; }
+__attribute__((visibility("default"))) int64_t AMotionEvent_getDownTime(const struct AInputEvent *event) { (void)event; return 0; }
+__attribute__((visibility("default"))) int64_t AMotionEvent_getEventTime(const struct AInputEvent *event) { (void)event; return 0; }
+__attribute__((visibility("default"))) size_t AMotionEvent_getPointerCount(const struct AInputEvent *event) { (void)event; return 1; }
+__attribute__((visibility("default"))) int32_t AMotionEvent_getPointerId(const struct AInputEvent *event, size_t pointer_index) { (void)event; (void)pointer_index; return 0; }
+__attribute__((visibility("default"))) float AMotionEvent_getX(const struct AInputEvent *event, size_t pointer_index) { (void)event; (void)pointer_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getY(const struct AInputEvent *event, size_t pointer_index) { (void)event; (void)pointer_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getPressure(const struct AInputEvent *event, size_t pointer_index) { (void)event; (void)pointer_index; return 1.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getSize(const struct AInputEvent *event, size_t pointer_index) { (void)event; (void)pointer_index; return 1.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getRawX(const struct AInputEvent *event, size_t pointer_index) { (void)event; (void)pointer_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getRawY(const struct AInputEvent *event, size_t pointer_index) { (void)event; (void)pointer_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getAxisValue(const struct AInputEvent *event, int32_t axis, size_t pointer_index) { (void)event; (void)axis; (void)pointer_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getTouchMajor(const struct AInputEvent *event, size_t pointer_index) { (void)event; (void)pointer_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getTouchMinor(const struct AInputEvent *event, size_t pointer_index) { (void)event; (void)pointer_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getToolMajor(const struct AInputEvent *event, size_t pointer_index) { (void)event; (void)pointer_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getToolMinor(const struct AInputEvent *event, size_t pointer_index) { (void)event; (void)pointer_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getOrientation(const struct AInputEvent *event, size_t pointer_index) { (void)event; (void)pointer_index; return 0.0f; }
+
+__attribute__((visibility("default"))) size_t AMotionEvent_getHistorySize(const struct AInputEvent *event) { (void)event; return 0; }
+__attribute__((visibility("default"))) int64_t AMotionEvent_getHistoricalEventTime(const struct AInputEvent *event, size_t history_index) { (void)event; (void)history_index; return 0; }
+__attribute__((visibility("default"))) float AMotionEvent_getHistoricalRawX(const struct AInputEvent *event, size_t pointer_index, size_t history_index) { (void)event; (void)pointer_index; (void)history_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getHistoricalRawY(const struct AInputEvent *event, size_t pointer_index, size_t history_index) { (void)event; (void)pointer_index; (void)history_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getHistoricalX(const struct AInputEvent *event, size_t pointer_index, size_t history_index) { (void)event; (void)pointer_index; (void)history_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getHistoricalY(const struct AInputEvent *event, size_t pointer_index, size_t history_index) { (void)event; (void)pointer_index; (void)history_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getHistoricalPressure(const struct AInputEvent *event, size_t pointer_index, size_t history_index) { (void)event; (void)pointer_index; (void)history_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getHistoricalSize(const struct AInputEvent *event, size_t pointer_index, size_t history_index) { (void)event; (void)pointer_index; (void)history_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getHistoricalTouchMajor(const struct AInputEvent *event, size_t pointer_index, size_t history_index) { (void)event; (void)pointer_index; (void)history_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getHistoricalTouchMinor(const struct AInputEvent *event, size_t pointer_index, size_t history_index) { (void)event; (void)pointer_index; (void)history_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getHistoricalToolMajor(const struct AInputEvent *event, size_t pointer_index, size_t history_index) { (void)event; (void)pointer_index; (void)history_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getHistoricalToolMinor(const struct AInputEvent *event, size_t pointer_index, size_t history_index) { (void)event; (void)pointer_index; (void)history_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getHistoricalOrientation(const struct AInputEvent *event, size_t pointer_index, size_t history_index) { (void)event; (void)pointer_index; (void)history_index; return 0.0f; }
+__attribute__((visibility("default"))) float AMotionEvent_getHistoricalAxisValue(const struct AInputEvent *event, int32_t axis, size_t pointer_index, size_t history_index) { (void)event; (void)axis; (void)pointer_index; (void)history_index; return 0.0f; }

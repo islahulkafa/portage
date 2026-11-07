@@ -32,6 +32,8 @@ class AudioManager {
     int64_t WritePcmBytes(const void *buf, size_t count);
     int64_t WriteiFrames(const void *buf, uint64_t frames);
 
+    bool ConfigureStream(uint32_t sample_rate, uint32_t channels, int32_t format);
+
     void CloseStream();
     void Reset();
 

@@ -245,6 +245,27 @@ int FileDescriptorTable::AllocateInotify(int flags)
     return assigned_fd;
 }
 
+int FileDescriptorTable::AllocateSharedMemory(std::shared_ptr<portage::mem::SharedMemoryRegion> shm,
+                                              DeviceType dev, int flags, std::string_view path)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    int assigned_fd = m_next_fd++;
+    while (m_descriptors.contains(assigned_fd)) {
+        assigned_fd = m_next_fd++;
+    }
+
+    auto desc = std::make_shared<FileDescriptor>();
+    desc->fd = assigned_fd;
+    desc->handle = INVALID_HANDLE_VALUE;
+    desc->flags = flags;
+    desc->dev = dev;
+    desc->guest_path = std::string(path);
+    desc->shared_memory = std::move(shm);
+
+    m_descriptors[assigned_fd] = std::move(desc);
+    return assigned_fd;
+}
+
 int FileDescriptorTable::CreatePipe(int fds[2], int flags)
 {
     if (!fds) {
@@ -395,6 +416,7 @@ int FileDescriptorTable::Duplicate(int oldfd, int target_fd, int flags)
     new_desc->epoll_id = old_desc->epoll_id;
     new_desc->binder_id = old_desc->binder_id;
     new_desc->input_device_index = old_desc->input_device_index;
+    new_desc->shared_memory = old_desc->shared_memory;
 
     m_descriptors[assigned_fd] = std::move(new_desc);
     return assigned_fd;

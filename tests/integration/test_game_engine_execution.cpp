@@ -1,5 +1,6 @@
 #include "arch/guest_context.hpp"
 #include "elf/elf_loader.hpp"
+#include "elf/link_map.hpp"
 #include "fs/fd_table.hpp"
 #include "fs/vfs.hpp"
 #include "mem/address_space.hpp"
@@ -193,9 +194,252 @@ std::vector<uint8_t> BuildEngineManifest(const std::string &pkg_name, const std:
     return doc;
 }
 
+struct NativeLibraryEntry {
+    std::string filename;
+    std::vector<uint8_t> data;
+};
+
+static std::vector<uint8_t> BuildTestStringPool(const std::vector<std::string> &strings,
+                                                bool is_utf8 = true)
+{
+    std::vector<uint8_t> pool;
+    uint32_t string_count = static_cast<uint32_t>(strings.size());
+    uint32_t style_count = 0;
+    uint32_t flags = is_utf8 ? (1 << 8) : 0;
+    uint32_t header_size = 28;
+    uint32_t strings_start = header_size + string_count * 4;
+
+    std::vector<uint8_t> str_data;
+    std::vector<uint32_t> offsets;
+    offsets.reserve(string_count);
+
+    for (const auto &str : strings) {
+        offsets.push_back(static_cast<uint32_t>(str_data.size()));
+        if (is_utf8) {
+            uint32_t u16_len = static_cast<uint32_t>(str.size());
+            uint32_t u8_len = static_cast<uint32_t>(str.size());
+            WriteU8(str_data, static_cast<uint8_t>(u16_len));
+            WriteU8(str_data, static_cast<uint8_t>(u8_len));
+            str_data.insert(str_data.end(), str.begin(), str.end());
+            WriteU8(str_data, 0);
+        }
+    }
+
+    while (str_data.size() % 4 != 0) {
+        WriteU8(str_data, 0);
+    }
+
+    uint32_t total_size = strings_start + static_cast<uint32_t>(str_data.size());
+
+    WriteU16(pool, 0x0001); // RES_STRING_POOL_TYPE
+    WriteU16(pool, static_cast<uint16_t>(header_size));
+    WriteU32(pool, total_size);
+    WriteU32(pool, string_count);
+    WriteU32(pool, style_count);
+    WriteU32(pool, flags);
+    WriteU32(pool, strings_start);
+    WriteU32(pool, 0);
+
+    for (uint32_t off : offsets) {
+        WriteU32(pool, off);
+    }
+
+    pool.insert(pool.end(), str_data.begin(), str_data.end());
+    return pool;
+}
+
+static std::vector<uint8_t> BuildTestResourceTable(const std::string &pkg_name)
+{
+    std::vector<uint8_t> table;
+
+    std::vector<std::string> global_strings = {
+        "Portage Game Engine",
+        "Welcome to Portage!",
+    };
+    auto global_pool = BuildTestStringPool(global_strings, true);
+
+    std::vector<std::string> type_strings = {"string", "integer", "bool"};
+    auto type_pool = BuildTestStringPool(type_strings, true);
+
+    std::vector<std::string> key_strings = {"app_name", "welcome_message", "game_difficulty",
+                                            "sound_enabled"};
+    auto key_pool = BuildTestStringPool(key_strings, true);
+
+    // Type 1: string
+    std::vector<uint8_t> type1_spec;
+    WriteU16(type1_spec, 0x0202);
+    WriteU16(type1_spec, 16);
+    WriteU32(type1_spec, 16 + 2 * 4);
+    WriteU8(type1_spec, 1);
+    WriteU8(type1_spec, 0);
+    WriteU16(type1_spec, 0);
+    WriteU32(type1_spec, 2);
+    WriteU32(type1_spec, 0);
+    WriteU32(type1_spec, 0);
+
+    uint32_t config_size = 56;
+    uint32_t type1_hdr_size = 20 + config_size;
+    uint32_t type1_entries_start = type1_hdr_size + 2 * 4;
+    uint32_t entry_size = 16;
+    uint32_t type1_total_size = type1_entries_start + 2 * entry_size;
+
+    std::vector<uint8_t> type1_type;
+    WriteU16(type1_type, 0x0201);
+    WriteU16(type1_type, static_cast<uint16_t>(type1_hdr_size));
+    WriteU32(type1_type, type1_total_size);
+    WriteU8(type1_type, 1);
+    WriteU8(type1_type, 0);
+    WriteU16(type1_type, 0);
+    WriteU32(type1_type, 2);
+    WriteU32(type1_type, type1_entries_start);
+    WriteU32(type1_type, config_size);
+    for (size_t i = 0; i < (config_size - 4); ++i) {
+        WriteU8(type1_type, 0);
+    }
+    WriteU32(type1_type, 0);
+    WriteU32(type1_type, entry_size);
+
+    WriteU16(type1_type, 8);
+    WriteU16(type1_type, 0);
+    WriteU32(type1_type, 0);
+    WriteU16(type1_type, 8);
+    WriteU8(type1_type, 0);
+    WriteU8(type1_type, 0x03);
+    WriteU32(type1_type, 0);
+
+    WriteU16(type1_type, 8);
+    WriteU16(type1_type, 0);
+    WriteU32(type1_type, 1);
+    WriteU16(type1_type, 8);
+    WriteU8(type1_type, 0);
+    WriteU8(type1_type, 0x03);
+    WriteU32(type1_type, 1);
+
+    // Type 2: integer
+    std::vector<uint8_t> type2_spec;
+    WriteU16(type2_spec, 0x0202);
+    WriteU16(type2_spec, 16);
+    WriteU32(type2_spec, 16 + 1 * 4);
+    WriteU8(type2_spec, 2);
+    WriteU8(type2_spec, 0);
+    WriteU16(type2_spec, 0);
+    WriteU32(type2_spec, 1);
+    WriteU32(type2_spec, 0);
+
+    uint32_t type2_entries_start = type1_hdr_size + 1 * 4;
+    uint32_t type2_total_size = type2_entries_start + 1 * entry_size;
+
+    std::vector<uint8_t> type2_type;
+    WriteU16(type2_type, 0x0201);
+    WriteU16(type2_type, static_cast<uint16_t>(type1_hdr_size));
+    WriteU32(type2_type, type2_total_size);
+    WriteU8(type2_type, 2);
+    WriteU8(type2_type, 0);
+    WriteU16(type2_type, 0);
+    WriteU32(type2_type, 1);
+    WriteU32(type2_type, type2_entries_start);
+    WriteU32(type2_type, config_size);
+    for (size_t i = 0; i < (config_size - 4); ++i) {
+        WriteU8(type2_type, 0);
+    }
+    WriteU32(type2_type, 0);
+
+    WriteU16(type2_type, 8);
+    WriteU16(type2_type, 0);
+    WriteU32(type2_type, 2);
+    WriteU16(type2_type, 8);
+    WriteU8(type2_type, 0);
+    WriteU8(type2_type, 0x10);
+    WriteU32(type2_type, 42);
+
+    // Type 3: bool
+    std::vector<uint8_t> type3_spec;
+    WriteU16(type3_spec, 0x0202);
+    WriteU16(type3_spec, 16);
+    WriteU32(type3_spec, 16 + 1 * 4);
+    WriteU8(type3_spec, 3);
+    WriteU8(type3_spec, 0);
+    WriteU16(type3_spec, 0);
+    WriteU32(type3_spec, 1);
+    WriteU32(type3_spec, 0);
+
+    uint32_t type3_entries_start = type1_hdr_size + 1 * 4;
+    uint32_t type3_total_size = type3_entries_start + 1 * entry_size;
+
+    std::vector<uint8_t> type3_type;
+    WriteU16(type3_type, 0x0201);
+    WriteU16(type3_type, static_cast<uint16_t>(type1_hdr_size));
+    WriteU32(type3_type, type3_total_size);
+    WriteU8(type3_type, 3);
+    WriteU8(type3_type, 0);
+    WriteU16(type3_type, 0);
+    WriteU32(type3_type, 1);
+    WriteU32(type3_type, type3_entries_start);
+    WriteU32(type3_type, config_size);
+    for (size_t i = 0; i < (config_size - 4); ++i) {
+        WriteU8(type3_type, 0);
+    }
+    WriteU32(type3_type, 0);
+
+    WriteU16(type3_type, 8);
+    WriteU16(type3_type, 0);
+    WriteU32(type3_type, 3);
+    WriteU16(type3_type, 8);
+    WriteU8(type3_type, 0);
+    WriteU8(type3_type, 0x12);
+    WriteU32(type3_type, 1);
+
+    uint32_t pkg_hdr_size = 288;
+    uint32_t type_strings_offset = pkg_hdr_size;
+    uint32_t key_strings_offset = type_strings_offset + static_cast<uint32_t>(type_pool.size());
+    uint32_t pkg_total_size =
+        key_strings_offset + static_cast<uint32_t>(key_pool.size()) +
+        static_cast<uint32_t>(type1_spec.size() + type1_type.size() + type2_spec.size() +
+                              type2_type.size() + type3_spec.size() + type3_type.size());
+
+    std::vector<uint8_t> pkg;
+    WriteU16(pkg, 0x0200);
+    WriteU16(pkg, static_cast<uint16_t>(pkg_hdr_size));
+    WriteU32(pkg, pkg_total_size);
+    WriteU32(pkg, 0x7F);
+
+    for (size_t i = 0; i < 128; ++i) {
+        char16_t c = (i < pkg_name.size()) ? static_cast<char16_t>(pkg_name[i]) : 0;
+        WriteU16(pkg, c);
+    }
+
+    WriteU32(pkg, type_strings_offset);
+    WriteU32(pkg, static_cast<uint32_t>(type_strings.size()));
+    WriteU32(pkg, key_strings_offset);
+    WriteU32(pkg, static_cast<uint32_t>(key_strings.size()));
+    WriteU32(pkg, 0);
+
+    pkg.insert(pkg.end(), type_pool.begin(), type_pool.end());
+    pkg.insert(pkg.end(), key_pool.begin(), key_pool.end());
+    pkg.insert(pkg.end(), type1_spec.begin(), type1_spec.end());
+    pkg.insert(pkg.end(), type1_type.begin(), type1_type.end());
+    pkg.insert(pkg.end(), type2_spec.begin(), type2_spec.end());
+    pkg.insert(pkg.end(), type2_type.begin(), type2_type.end());
+    pkg.insert(pkg.end(), type3_spec.begin(), type3_spec.end());
+    pkg.insert(pkg.end(), type3_type.begin(), type3_type.end());
+
+    uint32_t table_hdr_size = 12;
+    uint32_t table_total_size =
+        table_hdr_size + static_cast<uint32_t>(global_pool.size() + pkg.size());
+
+    WriteU16(table, 0x0002);
+    WriteU16(table, static_cast<uint16_t>(table_hdr_size));
+    WriteU32(table, table_total_size);
+    WriteU32(table, 1);
+
+    table.insert(table.end(), global_pool.begin(), global_pool.end());
+    table.insert(table.end(), pkg.begin(), pkg.end());
+
+    return table;
+}
+
 std::vector<uint8_t> AssembleEngineApk(const std::vector<uint8_t> &manifest,
-                                       const std::string &lib_filename,
-                                       const std::vector<uint8_t> &lib_bytes)
+                                       const std::vector<NativeLibraryEntry> &native_libraries)
 {
     struct FileEntry {
         std::string name;
@@ -204,9 +448,20 @@ std::vector<uint8_t> AssembleEngineApk(const std::vector<uint8_t> &manifest,
         uint32_t offset{0};
     };
 
-    std::vector<FileEntry> entries = {{"AndroidManifest.xml", manifest, 0, 0},
-                                      {"lib/x86_64/" + lib_filename, lib_bytes, 0, 0},
-                                      {"assets/engine.json", {'{', '}'}, 0, 0}};
+    std::string vert_shader =
+        "attribute vec2 a_pos;\nvoid main() {\n  gl_Position = vec4(a_pos, 0.0, 1.0);\n}\n";
+    auto arsc_bytes = BuildTestResourceTable("com.portage.gameengine");
+
+    std::vector<FileEntry> entries = {
+        {"AndroidManifest.xml", manifest, 0, 0},
+        {"resources.arsc", arsc_bytes, 0, 0},
+        {"assets/shaders/triangle.vert",
+         std::vector<uint8_t>(vert_shader.begin(), vert_shader.end()), 0, 0},
+        {"assets/engine.json", {'{', '}'}, 0, 0},
+    };
+    for (const auto &lib : native_libraries) {
+        entries.push_back({"lib/x86_64/" + lib.filename, lib.data, 0, 0});
+    }
 
     std::vector<uint8_t> zip;
     for (auto &e : entries) {
@@ -282,8 +537,30 @@ class GameEngineExecutionFixture : public ::testing::Test {
                                       std::istreambuf_iterator<char>());
         ASSERT_FALSE(so_bytes.empty());
 
+        stdfs::path math_so_path = FindGuestBinary("libgame_math.so");
+        ASSERT_TRUE(stdfs::exists(math_so_path))
+            << "Math shared library not found at: " << math_so_path;
+        std::ifstream math_in(math_so_path, std::ios::binary);
+        std::vector<uint8_t> math_bytes((std::istreambuf_iterator<char>(math_in)),
+                                        std::istreambuf_iterator<char>());
+        ASSERT_FALSE(math_bytes.empty());
+
+        stdfs::path plugin_so_path = FindGuestBinary("libgame_plugin.so");
+        ASSERT_TRUE(stdfs::exists(plugin_so_path))
+            << "Plugin shared library not found at: " << plugin_so_path;
+        std::ifstream plugin_in(plugin_so_path, std::ios::binary);
+        std::vector<uint8_t> plugin_bytes((std::istreambuf_iterator<char>(plugin_in)),
+                                          std::istreambuf_iterator<char>());
+        ASSERT_FALSE(plugin_bytes.empty());
+
+        std::vector<NativeLibraryEntry> native_libs = {
+            {"libtest_game_engine.so", std::move(so_bytes)},
+            {"libgame_math.so", std::move(math_bytes)},
+            {"libgame_plugin.so", std::move(plugin_bytes)},
+        };
+
         auto manifest_bytes = BuildEngineManifest("com.portage.gameengine", "test_game_engine");
-        auto apk_bytes = AssembleEngineApk(manifest_bytes, "libtest_game_engine.so", so_bytes);
+        auto apk_bytes = AssembleEngineApk(manifest_bytes, native_libs);
 
         apk_path_ = test_dir_ / "game_engine.apk";
         std::ofstream apk_out(apk_path_, std::ios::binary);
@@ -341,9 +618,23 @@ TEST_F(GameEngineExecutionFixture, RunsAndroidNativeAppGlueLoop)
     stdfs::path primary_lib = package::PackageManager::Instance().GetPrimaryLibraryPath(pkg);
     ASSERT_TRUE(stdfs::exists(primary_lib)) << "Primary lib not found at: " << primary_lib;
 
-    auto load_res = loader_->LoadFromFile(primary_lib.string(), vfs_.get());
+    elf::LinkMap::Instance().Reset();
+    elf::LinkMap::Instance().SetAddressSpace(address_space_.get());
+    elf::LinkMap::Instance().SetVfs(vfs_.get());
+    elf::LinkMap::Instance().AddSearchPath(pkg.lib_dir.string());
+    elf::LinkMap::Instance().AddSearchPath("/system/lib64");
+
+    auto load_res = loader_->LoadFromFile(
+        primary_lib.string(), vfs_.get(),
+        [](std::string_view sym) { return elf::LinkMap::Instance().ResolveGlobalSymbol(sym); },
+        [&](const std::vector<std::string> &needed) {
+            for (const auto &dep : needed) {
+                (void)elf::LinkMap::Instance().DlOpen(dep.c_str(), elf::RTLD_NOW);
+            }
+        });
     ASSERT_TRUE(std::holds_alternative<elf::LoadedElf>(load_res));
     const auto &loaded = std::get<elf::LoadedElf>(load_res);
+    elf::LinkMap::Instance().RegisterLoadedElf(loaded, primary_lib.string());
 
     uintptr_t on_create_addr = loaded.FindSymbol("ANativeActivity_onCreate");
     ASSERT_NE(on_create_addr, 0ULL) << "ANativeActivity_onCreate not found";
@@ -357,6 +648,102 @@ TEST_F(GameEngineExecutionFixture, RunsAndroidNativeAppGlueLoop)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     EXPECT_TRUE(stdfs::exists(ready_marker));
+
+    stdfs::path math_marker = pkg.data_dir / "engine_math_ready.txt";
+    for (int i = 0; i < 50 && !stdfs::exists(math_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(stdfs::exists(math_marker));
+
+    stdfs::path plugin_marker = pkg.data_dir / "engine_plugin_ready.txt";
+    for (int i = 0; i < 50 && !stdfs::exists(plugin_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(stdfs::exists(plugin_marker));
+
+    stdfs::path ashmem_marker = pkg.data_dir / "engine_ashmem_ready.txt";
+    for (int i = 0; i < 50 && !stdfs::exists(ashmem_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(ashmem_marker));
+    {
+        std::ifstream ifs(ashmem_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "ASHMEM_OK");
+    }
+
+    stdfs::path hb_marker = pkg.data_dir / "engine_hardware_buffer_ready.txt";
+    for (int i = 0; i < 50 && !stdfs::exists(hb_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(hb_marker));
+    {
+        std::ifstream ifs(hb_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "HARDWARE_BUFFER_OK");
+    }
+
+    stdfs::path media_marker = pkg.data_dir / "engine_media_ready.txt";
+    for (int i = 0; i < 50 && !stdfs::exists(media_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(media_marker));
+    {
+        std::ifstream ifs(media_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "MEDIA_OK");
+    }
+
+    stdfs::path binder_marker = pkg.data_dir / "engine_binder_ready.txt";
+    for (int i = 0; i < 50 && !stdfs::exists(binder_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(binder_marker));
+    {
+        std::ifstream ifs(binder_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "BINDER_OK");
+    }
+
+    stdfs::path gamepad_marker = pkg.data_dir / "engine_gamepad_ready.txt";
+    for (int i = 0; i < 50 && !stdfs::exists(gamepad_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(gamepad_marker));
+    {
+        std::ifstream ifs(gamepad_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "GAMEPAD_OK");
+    }
+
+    stdfs::path jni_marker = pkg.data_dir / "engine_jni_ready.txt";
+    for (int i = 0; i < 50 && !stdfs::exists(jni_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(stdfs::exists(jni_marker));
+
+    stdfs::path resources_marker = pkg.data_dir / "engine_resources_ready.txt";
+    for (int i = 0; i < 50 && !stdfs::exists(resources_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(stdfs::exists(resources_marker));
+
+    stdfs::path audio_ready_marker = pkg.data_dir / "engine_audio_ready.txt";
+    for (int i = 0; i < 50 && !stdfs::exists(audio_ready_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(stdfs::exists(audio_ready_marker));
+
+    stdfs::path audio_playing_marker = pkg.data_dir / "engine_audio_playing.txt";
+    for (int i = 0; i < 50 && !stdfs::exists(audio_playing_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(stdfs::exists(audio_playing_marker));
 
     // Dispatch lifecycle: Start & Resume
     package::NativeActivityRunner::Instance().DispatchStart();
@@ -408,6 +795,42 @@ TEST_F(GameEngineExecutionFixture, RunsAndroidNativeAppGlueLoop)
     }
     EXPECT_TRUE(stdfs::exists(key_marker));
 
+    stdfs::path choreographer_marker = pkg.data_dir / "engine_choreographer_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(choreographer_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(choreographer_marker));
+    {
+        std::ifstream ifs(choreographer_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "CHOREOGRAPHER_OK");
+    }
+
+    stdfs::path sensor_marker = pkg.data_dir / "engine_sensor_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(sensor_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(sensor_marker));
+    {
+        std::ifstream ifs(sensor_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "SENSOR_OK");
+    }
+
+    stdfs::path surface_marker = pkg.data_dir / "engine_surface_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(surface_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(surface_marker));
+    {
+        std::ifstream ifs(surface_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "SURFACE_OK");
+    }
+
     // Verify logs in LogcatBuffer
     auto log_entries = portage::ndk::LogcatBuffer::Instance().GetEntries();
     bool found_engine_log = false;
@@ -438,7 +861,8 @@ TEST_F(GameEngineExecutionFixture, RunsGameEngineViaLauncherCli)
     ASSERT_TRUE(stdfs::exists(portage_exe))
         << "portage.exe not found at current_path=" << stdfs::current_path();
 
-    std::string cmd = "\"\"" + portage_exe.string() + "\" run \"" + apk_path_.string() + "\"\"";
+    std::string cmd =
+        "\"\"" + portage_exe.string() + "\" --headless run \"" + apk_path_.string() + "\"\"";
     int ret = std::system(cmd.c_str());
     EXPECT_EQ(ret, 0);
 

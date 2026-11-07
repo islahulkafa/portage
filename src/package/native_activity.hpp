@@ -2,6 +2,7 @@
 
 #include "asset_manager.hpp"
 #include "jni_env.hpp"
+#include "ndk/input_queue.hpp"
 #include "package_manager.hpp"
 #include "wsi/window_manager.hpp"
 
@@ -13,18 +14,13 @@
 
 struct ANativeWindow;
 struct AInputQueue;
+struct ARect;
 
 namespace portage::package {
 
 using ::AInputQueue;
 using ::ANativeWindow;
-
-struct ARect {
-    int32_t left;
-    int32_t top;
-    int32_t right;
-    int32_t bottom;
-};
+using ::ARect;
 
 struct ANativeActivity;
 
@@ -93,7 +89,10 @@ class NativeActivityRunner {
     void DispatchStop();
     void DispatchDestroy();
 
+    void ConnectInputQueueToWindow();
+
     [[nodiscard]] ANativeActivity *GetActivity() noexcept { return &activity_; }
+    [[nodiscard]] ndk::InputQueueImpl &GetInputQueue() noexcept { return input_queue_; }
 
   private:
     NativeActivityRunner();
@@ -106,6 +105,8 @@ class NativeActivityRunner {
     std::string external_path_{};
     AAssetManager *asset_manager_{nullptr};
     ANativeWindow *current_window_{nullptr};
+    ndk::InputQueueImpl input_queue_{};
+    std::atomic<bool> is_destroyed_{false};
 };
 
 } // namespace portage::package

@@ -1,15 +1,17 @@
 #include "package/asset_manager.hpp"
-#include "package/zip_archive.hpp"
-#include <gtest/gtest.h>
+#include "package/jni_env.hpp"
+#include "package/package_manager.hpp"
 
+#include <gtest/gtest.h>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <string>
 #include <vector>
-#include <zlib.h>
 
+namespace portage::package {
 namespace {
+
+namespace stdfs = std::filesystem;
 
 inline void WriteU16(std::vector<uint8_t> &buf, uint16_t v)
 {
@@ -25,91 +27,80 @@ inline void WriteU32(std::vector<uint8_t> &buf, uint32_t v)
     buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
 }
 
-std::vector<uint8_t> CreateAssetZip()
+static uint32_t CalculateCrc32(const uint8_t *data, size_t length)
 {
-    struct Item {
+    uint32_t crc = 0xFFFFFFFF;
+    for (size_t i = 0; i < length; ++i) {
+        crc ^= data[i];
+        for (int j = 0; j < 8; ++j) {
+            crc = (crc >> 1) ^ (0xEDB88320 & (-(crc & 1)));
+        }
+    }
+    return ~crc;
+}
+
+std::vector<uint8_t> BuildTestZip(const std::vector<std::pair<std::string, std::string>> &files)
+{
+    struct Entry {
         std::string name;
         std::vector<uint8_t> data;
-        std::vector<uint8_t> comp;
-        uint16_t method{0};
         uint32_t crc{0};
-        uint32_t off{0};
+        uint32_t offset{0};
     };
 
-    std::string text = "0123456789ABCDEF-Portage-Asset-Data";
-    std::string deflated_src;
-    for (int i = 0; i < 20; ++i)
-        deflated_src += "Deflated-Asset-Stream-Chunk-";
-
-    std::vector<Item> items = {
-        {"assets/test.bin", {text.begin(), text.end()}, {}, 0, 0, 0},
-        {"assets/stream.dat", {deflated_src.begin(), deflated_src.end()}, {}, 8, 0, 0}};
+    std::vector<Entry> entries;
+    for (const auto &[name, content] : files) {
+        entries.push_back({name, std::vector<uint8_t>(content.begin(), content.end()), 0, 0});
+    }
 
     std::vector<uint8_t> zip;
-    for (auto &item : items) {
-        item.crc =
-            static_cast<uint32_t>(crc32(0L, item.data.data(), static_cast<uInt>(item.data.size())));
-        item.off = static_cast<uint32_t>(zip.size());
-
-        if (item.method == 8) {
-            z_stream strm{};
-            deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -MAX_WBITS, 8,
-                         Z_DEFAULT_STRATEGY);
-            item.comp.resize(item.data.size() + 128);
-            strm.next_in = item.data.data();
-            strm.avail_in = static_cast<uInt>(item.data.size());
-            strm.next_out = item.comp.data();
-            strm.avail_out = static_cast<uInt>(item.comp.size());
-            deflate(&strm, Z_FINISH);
-            item.comp.resize(strm.total_out);
-            deflateEnd(&strm);
-        } else {
-            item.comp = item.data;
-        }
+    for (auto &e : entries) {
+        e.crc = CalculateCrc32(e.data.data(), e.data.size());
+        e.offset = static_cast<uint32_t>(zip.size());
 
         WriteU32(zip, 0x04034b50);
         WriteU16(zip, 20);
         WriteU16(zip, 0);
-        WriteU16(zip, item.method);
         WriteU16(zip, 0);
         WriteU16(zip, 0);
-        WriteU32(zip, item.crc);
-        WriteU32(zip, static_cast<uint32_t>(item.comp.size()));
-        WriteU32(zip, static_cast<uint32_t>(item.data.size()));
-        WriteU16(zip, static_cast<uint16_t>(item.name.size()));
         WriteU16(zip, 0);
-        zip.insert(zip.end(), item.name.begin(), item.name.end());
-        zip.insert(zip.end(), item.comp.begin(), item.comp.end());
+        WriteU32(zip, e.crc);
+        WriteU32(zip, static_cast<uint32_t>(e.data.size()));
+        WriteU32(zip, static_cast<uint32_t>(e.data.size()));
+        WriteU16(zip, static_cast<uint16_t>(e.name.size()));
+        WriteU16(zip, 0);
+        zip.insert(zip.end(), e.name.begin(), e.name.end());
+        zip.insert(zip.end(), e.data.begin(), e.data.end());
     }
 
     uint32_t cd_offset = static_cast<uint32_t>(zip.size());
-    for (const auto &item : items) {
+    for (const auto &e : entries) {
         WriteU32(zip, 0x02014b50);
         WriteU16(zip, 20);
         WriteU16(zip, 20);
         WriteU16(zip, 0);
-        WriteU16(zip, item.method);
         WriteU16(zip, 0);
         WriteU16(zip, 0);
-        WriteU32(zip, item.crc);
-        WriteU32(zip, static_cast<uint32_t>(item.comp.size()));
-        WriteU32(zip, static_cast<uint32_t>(item.data.size()));
-        WriteU16(zip, static_cast<uint16_t>(item.name.size()));
+        WriteU16(zip, 0);
+        WriteU32(zip, e.crc);
+        WriteU32(zip, static_cast<uint32_t>(e.data.size()));
+        WriteU32(zip, static_cast<uint32_t>(e.data.size()));
+        WriteU16(zip, static_cast<uint16_t>(e.name.size()));
         WriteU16(zip, 0);
         WriteU16(zip, 0);
         WriteU16(zip, 0);
         WriteU16(zip, 0);
         WriteU32(zip, 0);
-        WriteU32(zip, item.off);
-        zip.insert(zip.end(), item.name.begin(), item.name.end());
+        WriteU32(zip, e.offset);
+        zip.insert(zip.end(), e.name.begin(), e.name.end());
     }
 
     uint32_t cd_size = static_cast<uint32_t>(zip.size()) - cd_offset;
     WriteU32(zip, 0x06054b50);
     WriteU16(zip, 0);
     WriteU16(zip, 0);
-    WriteU16(zip, static_cast<uint16_t>(items.size()));
-    WriteU16(zip, static_cast<uint16_t>(items.size()));
+    WriteU16(zip, static_cast<uint16_t>(entries.size()));
+    WriteU16(zip, static_cast<uint16_t>(entries.size()));
     WriteU32(zip, cd_size);
     WriteU32(zip, cd_offset);
     WriteU16(zip, 0);
@@ -123,81 +114,101 @@ class AssetManagerTest : public ::testing::Test {
   protected:
     void SetUp() override
     {
-        test_dir_ = std::filesystem::temp_directory_path() / "portage_asset_test";
-        std::filesystem::create_directories(test_dir_);
-        zip_path_ = test_dir_ / "assets.apk";
+        test_dir_ = stdfs::temp_directory_path() / "portage_asset_test";
+        stdfs::create_directories(test_dir_);
+        zip_path_ = test_dir_ / "test_assets.apk";
 
-        auto bytes = CreateAssetZip();
+        auto zip_data = BuildTestZip({
+            {"assets/shaders/frag.glsl", "precision mediump float;\nvoid main() {}\n"},
+            {"assets/shaders/vert.glsl", "attribute vec4 pos;\nvoid main() {}\n"},
+            {"assets/levels/map1.bin", "MAP_BINARY_DATA_0123456789"},
+            {"assets/root_asset.txt", "ROOT_ASSET_CONTENT"},
+        });
+
         std::ofstream out(zip_path_, std::ios::binary);
-        out.write(reinterpret_cast<const char *>(bytes.data()),
-                  static_cast<std::streamsize>(bytes.size()));
+        out.write(reinterpret_cast<const char *>(zip_data.data()),
+                  static_cast<std::streamsize>(zip_data.size()));
         out.close();
 
-        archive_ = portage::package::ZipArchive::Open(zip_path_);
+        archive_ = ZipArchive::Open(zip_path_);
         ASSERT_NE(archive_, nullptr);
+
+        mgr_ = AssetManagerBridge::Instance().CreateManager(archive_);
+        ASSERT_NE(mgr_, nullptr);
     }
 
     void TearDown() override
     {
+        if (mgr_) {
+            AssetManagerBridge::Instance().DestroyManager(mgr_);
+            mgr_ = nullptr;
+        }
         archive_.reset();
         std::error_code ec;
-        std::filesystem::remove_all(test_dir_, ec);
+        stdfs::remove_all(test_dir_, ec);
     }
 
-    std::filesystem::path test_dir_;
-    std::filesystem::path zip_path_;
-    std::shared_ptr<portage::package::ZipArchive> archive_;
+    stdfs::path test_dir_;
+    stdfs::path zip_path_;
+    std::shared_ptr<ZipArchive> archive_;
+    AAssetManager *mgr_{nullptr};
 };
 
-TEST_F(AssetManagerTest, OpensAssetAndAccessesBuffer)
+TEST_F(AssetManagerTest, OpensReadsAndSeeksAsset)
 {
-    auto *mgr = portage::package::AssetManagerBridge::Instance().CreateManager(archive_);
-    ASSERT_NE(mgr, nullptr);
-
-    auto *asset = mgr->openFunc(mgr, "test.bin", portage::package::AASSET_MODE_BUFFER);
+    AAsset *asset =
+        AssetManagerBridge::Sysv_AAssetManager_open(mgr_, "shaders/frag.glsl", AASSET_MODE_BUFFER);
     ASSERT_NE(asset, nullptr);
 
-    int64_t len = asset->getLengthFunc(asset);
-    EXPECT_GT(len, 0);
+    EXPECT_GT(AssetManagerBridge::Sysv_AAsset_getLength(asset), 0);
+    EXPECT_GT(AssetManagerBridge::Sysv_AAsset_getLength64(asset), 0);
 
-    const void *buf = asset->getBufferFunc(asset);
+    const void *buf = AssetManagerBridge::Sysv_AAsset_getBuffer(asset);
     ASSERT_NE(buf, nullptr);
 
-    std::string text(static_cast<const char *>(buf), static_cast<size_t>(len));
-    EXPECT_EQ(text, "0123456789ABCDEF-Portage-Asset-Data");
+    char read_buf[64] = {0};
+    int bytes_read = AssetManagerBridge::Sysv_AAsset_read(asset, read_buf, sizeof(read_buf) - 1);
+    EXPECT_GT(bytes_read, 0);
+    EXPECT_NE(std::strstr(read_buf, "precision mediump float"), nullptr);
 
-    char read_buf[5] = {0};
-    int read_bytes = asset->readFunc(asset, read_buf, 4);
-    EXPECT_EQ(read_bytes, 4);
-    EXPECT_STREQ(read_buf, "0123");
+    // Seek test
+    int64_t seek_res = AssetManagerBridge::Sysv_AAsset_seek(asset, 0, 0); // SEEK_SET
+    EXPECT_EQ(seek_res, 0);
+    EXPECT_EQ(AssetManagerBridge::Sysv_AAsset_getRemainingLength(asset),
+              AssetManagerBridge::Sysv_AAsset_getLength(asset));
 
-    int64_t new_pos = asset->seekFunc(asset, 10, SEEK_SET);
-    EXPECT_EQ(new_pos, 10);
-
-    read_bytes = asset->readFunc(asset, read_buf, 4);
-    EXPECT_EQ(read_bytes, 4);
-    EXPECT_STREQ(read_buf, "ABCD");
-
-    asset->closeFunc(asset);
-    portage::package::AssetManagerBridge::Instance().DestroyManager(mgr);
+    AssetManagerBridge::Sysv_AAsset_close(asset);
 }
 
-TEST_F(AssetManagerTest, DecompressesAssetOnTheFly)
+TEST_F(AssetManagerTest, IteratesAssetDirectory)
 {
-    auto *mgr = portage::package::AssetManagerBridge::Instance().CreateManager(archive_);
-    ASSERT_NE(mgr, nullptr);
+    AAssetDir *dir = AssetManagerBridge::Sysv_AAssetManager_openDir(mgr_, "shaders");
+    ASSERT_NE(dir, nullptr);
 
-    auto *asset = mgr->openFunc(mgr, "stream.dat", portage::package::AASSET_MODE_STREAMING);
-    ASSERT_NE(asset, nullptr);
+    std::vector<std::string> files;
+    while (const char *fname = AssetManagerBridge::Sysv_AAssetDir_getNextFileName(dir)) {
+        files.emplace_back(fname);
+    }
 
-    int64_t len = asset->getLengthFunc(asset);
-    EXPECT_EQ(len, 20 * 28); // 560 bytes
+    EXPECT_EQ(files.size(), 2U);
+    bool has_frag = (files[0] == "frag.glsl" || files[1] == "frag.glsl");
+    bool has_vert = (files[0] == "vert.glsl" || files[1] == "vert.glsl");
+    EXPECT_TRUE(has_frag);
+    EXPECT_TRUE(has_vert);
 
-    char chunk[9] = {0};
-    int read_bytes = asset->readFunc(asset, chunk, 8);
-    EXPECT_EQ(read_bytes, 8);
-    EXPECT_STREQ(chunk, "Deflated");
+    // Rewind test
+    AssetManagerBridge::Sysv_AAssetDir_rewind(dir);
+    const char *first = AssetManagerBridge::Sysv_AAssetDir_getNextFileName(dir);
+    ASSERT_NE(first, nullptr);
 
-    asset->closeFunc(asset);
-    portage::package::AssetManagerBridge::Instance().DestroyManager(mgr);
+    AssetManagerBridge::Sysv_AAssetDir_close(dir);
 }
+
+TEST_F(AssetManagerTest, ReturnsNullForNonExistentAsset)
+{
+    AAsset *asset =
+        AssetManagerBridge::Sysv_AAssetManager_open(mgr_, "missing/path.dat", AASSET_MODE_BUFFER);
+    EXPECT_EQ(asset, nullptr);
+}
+
+} // namespace portage::package

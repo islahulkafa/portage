@@ -1,4 +1,5 @@
 #include "vulkan_bridge.hpp"
+#include "ndk/hardware_buffer.hpp"
 #include "wsi/window_manager.hpp"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -687,6 +688,20 @@ __attribute__((sysv_abi)) VkResult Sysv_vkQueuePresentKHR(VkQueue queue,
     return g_host_vkQueuePresentKHR(queue, pPresentInfo);
 }
 
+__attribute__((sysv_abi)) VkResult Sysv_vkGetAndroidHardwareBufferPropertiesANDROID(
+    VkDevice device, const struct AHardwareBuffer *buffer,
+    VkAndroidHardwareBufferPropertiesANDROID *pProperties)
+{
+    (void)device;
+    if (!buffer || !pProperties) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    pProperties->sType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID;
+    pProperties->allocationSize = buffer->total_size;
+    pProperties->memoryTypeBits = 0x1;
+    return VK_SUCCESS;
+}
+
 PFN_vkVoidFunction ResolveSysvProc(std::string_view name) noexcept
 {
     if (name == "vkGetInstanceProcAddr")
@@ -777,6 +792,9 @@ PFN_vkVoidFunction ResolveSysvProc(std::string_view name) noexcept
         return reinterpret_cast<PFN_vkVoidFunction>(Sysv_vkAcquireNextImageKHR);
     if (name == "vkQueuePresentKHR")
         return reinterpret_cast<PFN_vkVoidFunction>(Sysv_vkQueuePresentKHR);
+    if (name == "vkGetAndroidHardwareBufferPropertiesANDROID")
+        return reinterpret_cast<PFN_vkVoidFunction>(
+            Sysv_vkGetAndroidHardwareBufferPropertiesANDROID);
 
     return nullptr;
 }
@@ -945,6 +963,8 @@ bool VulkanBridge::Initialize() noexcept
     m_dispatch_table.vkGetSwapchainImagesKHR = Sysv_vkGetSwapchainImagesKHR;
     m_dispatch_table.vkAcquireNextImageKHR = Sysv_vkAcquireNextImageKHR;
     m_dispatch_table.vkQueuePresentKHR = Sysv_vkQueuePresentKHR;
+    m_dispatch_table.vkGetAndroidHardwareBufferPropertiesANDROID =
+        Sysv_vkGetAndroidHardwareBufferPropertiesANDROID;
 
     m_initialized = true;
     return true;

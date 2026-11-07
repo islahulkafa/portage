@@ -16,6 +16,10 @@
 #include <unordered_map>
 #include <vector>
 
+namespace portage::mem {
+struct SharedMemoryRegion;
+}
+
 namespace portage::fs {
 
 struct FileDescriptor {
@@ -42,6 +46,9 @@ struct FileDescriptor {
 
     // Input device index (0 = keyboard, 1 = touchscreen)
     int input_device_index{-1};
+
+    // Shared memory region (ashmem / memfd)
+    std::shared_ptr<portage::mem::SharedMemoryRegion> shared_memory{nullptr};
 };
 
 class FileDescriptorTable {
@@ -70,6 +77,9 @@ class FileDescriptorTable {
     int AllocateInput(int device_index, int flags);
 
     int AllocateInotify(int flags);
+
+    int AllocateSharedMemory(std::shared_ptr<portage::mem::SharedMemoryRegion> shm, DeviceType dev,
+                             int flags, std::string_view path);
 
     int CreatePipe(int fds[2], int flags = 0);
 

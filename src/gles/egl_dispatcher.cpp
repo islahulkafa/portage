@@ -40,6 +40,11 @@ EglDispatcher::EglDispatcher()
                        .renderable_type = EGL_OPENGL_ES2_BIT | EGL_OPENGL_ES3_BIT,
                        .config_id = 2};
     configs_.push_back(cfg2);
+
+    procs_["eglGetNativeClientBufferANDROID"] =
+        reinterpret_cast<void *>(&eglGetNativeClientBufferANDROID);
+    procs_["eglCreateImageKHR"] = reinterpret_cast<void *>(&eglCreateImageKHR);
+    procs_["eglDestroyImageKHR"] = reinterpret_cast<void *>(&eglDestroyImageKHR);
 }
 
 EGLDisplay EglDispatcher::GetDisplay(EGLNativeDisplayType display_id) noexcept
@@ -101,7 +106,8 @@ const char *EglDispatcher::QueryString(EGLDisplay dpy, EGLint name) noexcept
     case EGL_VERSION:
         return "1.4 Portage GLES/WGL Passthrough";
     case EGL_EXTENSIONS:
-        return "EGL_KHR_image_base EGL_KHR_gl_texture_2D_image";
+        return "EGL_KHR_image_base EGL_KHR_gl_texture_2D_image EGL_ANDROID_get_native_client_buffer "
+               "EGL_ANDROID_image_native_buffer";
     case EGL_CLIENT_APIS:
         return "OpenGL_ES";
     default:
@@ -220,11 +226,22 @@ EGLSurface EglDispatcher::CreateWindowSurface(EGLDisplay dpy, EGLConfig config,
     surface_data->width = width;
     surface_data->height = height;
 
-    // Check if a Win32 HWND was attached to native_window (if extended), otherwise use hardware
-    // offscreen DC
-    surface_data->is_offscreen = true;
-    surface_data->hdc = WglBridge::Instance().CreateOffscreenDc(
-        width, height, &surface_data->offscreen_handle, nullptr);
+    if (native_window && native_window->native_handle != nullptr) {
+        HWND hwnd = reinterpret_cast<HWND>(native_window->native_handle);
+        HDC hdc = GetDC(hwnd);
+        if (hdc) {
+            WglBridge::Instance().SetupWindowPixelFormat(hdc);
+            surface_data->is_offscreen = false;
+            surface_data->hwnd = hwnd;
+            surface_data->hdc = hdc;
+        }
+    }
+
+    if (!surface_data->hdc) {
+        surface_data->is_offscreen = true;
+        surface_data->hdc = WglBridge::Instance().CreateOffscreenDc(
+            width, height, &surface_data->offscreen_handle, nullptr);
+    }
 
     if (!surface_data->hdc) {
         last_error_ = EGL_BAD_ALLOC;
@@ -272,6 +289,8 @@ EGLBoolean EglDispatcher::DestroySurface(EGLDisplay dpy, EGLSurface surface) noe
 
     if (it->second->is_offscreen && it->second->offscreen_handle) {
         WglBridge::Instance().DestroyOffscreenDc(it->second->hdc, it->second->offscreen_handle);
+    } else if (!it->second->is_offscreen && it->second->hwnd && it->second->hdc) {
+        ReleaseDC(it->second->hwnd, it->second->hdc);
     }
 
     if (current_draw_ == surface)
@@ -608,6 +627,32 @@ __attribute__((sysv_abi)) EGLint eglGetError(void)
 __attribute__((sysv_abi)) void *eglGetProcAddress(const char *procname)
 {
     return portage::gles::EglDispatcher::Instance().GetProcAddress(procname);
+}
+
+__attribute__((sysv_abi)) EGLClientBuffer
+eglGetNativeClientBufferANDROID(const struct AHardwareBuffer *buffer)
+{
+    return reinterpret_cast<EGLClientBuffer>(const_cast<struct AHardwareBuffer *>(buffer));
+}
+
+__attribute__((sysv_abi)) EGLImageKHR eglCreateImageKHR(EGLDisplay dpy, EGLContext ctx,
+                                                        EGLenum target, EGLClientBuffer buffer,
+                                                        const EGLint *attrib_list)
+{
+    (void)dpy;
+    (void)ctx;
+    (void)attrib_list;
+    if (target == EGL_NATIVE_BUFFER_ANDROID) {
+        return buffer ? reinterpret_cast<EGLImageKHR>(buffer) : EGL_NO_IMAGE_KHR;
+    }
+    return buffer ? reinterpret_cast<EGLImageKHR>(buffer) : EGL_NO_IMAGE_KHR;
+}
+
+__attribute__((sysv_abi)) EGLBoolean eglDestroyImageKHR(EGLDisplay dpy, EGLImageKHR image)
+{
+    (void)dpy;
+    (void)image;
+    return EGL_TRUE;
 }
 
 } // extern "C"

@@ -40,6 +40,9 @@ typedef VkResult (*PFN_vkAcquireNextImageKHR)(VkDevice device, VkSwapchainKHR sw
                                               uint64_t timeout, VkSemaphore semaphore,
                                               VkFence fence, uint32_t *pImageIndex);
 typedef VkResult (*PFN_vkQueuePresentKHR)(VkQueue queue, const VkPresentInfoKHR *pPresentInfo);
+typedef VkResult (*PFN_vkGetAndroidHardwareBufferPropertiesANDROID)(
+    VkDevice device, const struct AHardwareBuffer *buffer,
+    VkAndroidHardwareBufferPropertiesANDROID *pProperties);
 
 struct VulkanDispatchTable {
     uint32_t version;
@@ -87,6 +90,7 @@ struct VulkanDispatchTable {
     PFN_vkGetSwapchainImagesKHR vkGetSwapchainImagesKHR;
     PFN_vkAcquireNextImageKHR vkAcquireNextImageKHR;
     PFN_vkQueuePresentKHR vkQueuePresentKHR;
+    PFN_vkGetAndroidHardwareBufferPropertiesANDROID vkGetAndroidHardwareBufferPropertiesANDROID;
 };
 
 static const struct VulkanDispatchTable *g_dispatch = NULL;
@@ -490,4 +494,15 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo)
     if (ensure_init() != 0)
         return VK_ERROR_INITIALIZATION_FAILED;
     return g_dispatch->vkQueuePresentKHR(queue, pPresentInfo);
+}
+
+__attribute__((visibility("default"))) VkResult
+vkGetAndroidHardwareBufferPropertiesANDROID(VkDevice device, const struct AHardwareBuffer *buffer,
+                                            VkAndroidHardwareBufferPropertiesANDROID *pProperties)
+{
+    if (ensure_init() != 0 || !g_dispatch ||
+        !g_dispatch->vkGetAndroidHardwareBufferPropertiesANDROID) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return g_dispatch->vkGetAndroidHardwareBufferPropertiesANDROID(device, buffer, pProperties);
 }

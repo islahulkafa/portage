@@ -23,9 +23,17 @@ uintptr_t AlignUp(uintptr_t val, uintptr_t align) noexcept
 ElfLoader::ElfLoader(mem::AddressSpace *as) noexcept : address_space_(as) {}
 
 std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromFile(const std::string &path,
-                                                             const portage::fs::Vfs *vfs) noexcept
+                                                             const portage::fs::Vfs *vfs,
+                                                             SymbolResolver resolver,
+                                                             DependencyLoader dep_loader) noexcept
 {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    std::filesystem::path host_path = path;
+    if (vfs) {
+        auto resolved = vfs->Resolve(path);
+        host_path = resolved.host_path;
+    }
+
+    std::ifstream file(host_path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         return LoaderError::FileNotFound;
     }
@@ -39,11 +47,17 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromFile(const std::string &
     file.seekg(0, std::ios::beg);
     file.read(reinterpret_cast<char *>(buffer.data()), file_size);
 
-    return LoadFromMemory(buffer, vfs);
+    auto result = LoadFromMemory(buffer, vfs, resolver, dep_loader);
+    if (std::holds_alternative<LoadedElf>(result)) {
+        std::get<LoadedElf>(result).filepath = path;
+    }
+    return result;
 }
 
 std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const uint8_t> buffer,
-                                                               const portage::fs::Vfs *vfs) noexcept
+                                                               const portage::fs::Vfs *vfs,
+                                                               SymbolResolver resolver,
+                                                               DependencyLoader dep_loader) noexcept
 {
     if (buffer.size() < sizeof(Elf64_Ehdr)) {
         return LoaderError::FileTooSmall;
@@ -343,9 +357,26 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
             size_t jmprel_sz = 0;
             uintptr_t symtab_addr = 0;
             uintptr_t strtab_addr = 0;
+            uintptr_t hash_addr = 0;
+            uintptr_t init_addr = 0;
+            uintptr_t fini_addr = 0;
+            uintptr_t init_array_addr = 0;
+            size_t init_array_sz = 0;
+            uintptr_t fini_array_addr = 0;
+            size_t fini_array_sz = 0;
+            std::vector<uint64_t> needed_offsets;
+            uint64_t soname_offset = 0;
+            bool has_soname = false;
 
             for (size_t d = 0; dyn[d].d_tag != DT_NULL; d++) {
                 switch (dyn[d].d_tag) {
+                case DT_NEEDED:
+                    needed_offsets.push_back(dyn[d].d_un.d_val);
+                    break;
+                case DT_SONAME:
+                    soname_offset = dyn[d].d_un.d_val;
+                    has_soname = true;
+                    break;
                 case DT_RELA:
                     rela_addr = dyn[d].d_un.d_ptr;
                     break;
@@ -364,6 +395,27 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
                 case DT_STRTAB:
                     strtab_addr = dyn[d].d_un.d_ptr;
                     break;
+                case DT_HASH:
+                    hash_addr = dyn[d].d_un.d_ptr;
+                    break;
+                case DT_INIT:
+                    init_addr = dyn[d].d_un.d_ptr;
+                    break;
+                case DT_FINI:
+                    fini_addr = dyn[d].d_un.d_ptr;
+                    break;
+                case DT_INIT_ARRAY:
+                    init_array_addr = dyn[d].d_un.d_ptr;
+                    break;
+                case DT_INIT_ARRAYSZ:
+                    init_array_sz = dyn[d].d_un.d_val;
+                    break;
+                case DT_FINI_ARRAY:
+                    fini_array_addr = dyn[d].d_un.d_ptr;
+                    break;
+                case DT_FINI_ARRAYSZ:
+                    fini_array_sz = dyn[d].d_un.d_val;
+                    break;
                 default:
                     break;
                 }
@@ -381,9 +433,43 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
             jmprel_addr = resolve_ptr(jmprel_addr);
             symtab_addr = resolve_ptr(symtab_addr);
             strtab_addr = resolve_ptr(strtab_addr);
+            hash_addr = resolve_ptr(hash_addr);
+            init_addr = resolve_ptr(init_addr);
+            fini_addr = resolve_ptr(fini_addr);
+            init_array_addr = resolve_ptr(init_array_addr);
+            fini_array_addr = resolve_ptr(fini_array_addr);
 
             const auto *symtab = reinterpret_cast<const Elf64_Sym *>(symtab_addr);
             const char *strtab = reinterpret_cast<const char *>(strtab_addr);
+
+            if (loaded_elf.symbols.empty() && hash_addr != 0 && symtab != nullptr &&
+                strtab != nullptr) {
+                const auto *hash_hdr = reinterpret_cast<const uint32_t *>(hash_addr);
+                uint32_t nchain = hash_hdr[1];
+                for (uint32_t s = 0; s < nchain; s++) {
+                    const auto &sym = symtab[s];
+                    if (sym.st_name != 0 && sym.st_value != 0) {
+                        const char *name = strtab + sym.st_name;
+                        if (*name) {
+                            uintptr_t sym_addr = is_pie ? (load_bias + sym.st_value) : sym.st_value;
+                            loaded_elf.symbols[name] = sym_addr;
+                        }
+                    }
+                }
+            }
+
+            if (strtab) {
+                if (has_soname) {
+                    loaded_elf.soname = strtab + soname_offset;
+                }
+                for (uint64_t off : needed_offsets) {
+                    loaded_elf.needed_libraries.emplace_back(strtab + off);
+                }
+            }
+
+            if (dep_loader && !loaded_elf.needed_libraries.empty()) {
+                dep_loader(loaded_elf.needed_libraries);
+            }
 
             auto apply_relas = [&](uintptr_t table_addr, size_t total_sz) {
                 if (!table_addr || !total_sz)
@@ -405,10 +491,15 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
                         if (sym_idx > 0 && symtab && strtab) {
                             const auto &s = symtab[sym_idx];
                             sym_name = strtab + s.st_name;
-                            if (s.st_value != 0) {
+                            if (s.st_shndx != 0 && s.st_value != 0) {
                                 sym_addr = is_pie ? (load_bias + s.st_value) : s.st_value;
                             } else {
-                                sym_addr = loaded_elf.FindSymbol(sym_name);
+                                if (resolver) {
+                                    sym_addr = resolver(sym_name);
+                                }
+                                if (sym_addr == 0) {
+                                    sym_addr = loaded_elf.FindSymbol(sym_name);
+                                }
                             }
                         }
 
@@ -426,6 +517,32 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
 
             apply_relas(rela_addr, rela_sz);
             apply_relas(jmprel_addr, jmprel_sz);
+
+            if (init_addr != 0) {
+                loaded_elf.init_functions.push_back(init_addr);
+            }
+            if (init_array_addr != 0 && init_array_sz >= sizeof(uintptr_t)) {
+                size_t count = init_array_sz / sizeof(uintptr_t);
+                const auto *arr = reinterpret_cast<const uintptr_t *>(init_array_addr);
+                for (size_t i = 0; i < count; i++) {
+                    if (arr[i] != 0 && arr[i] != static_cast<uintptr_t>(-1)) {
+                        loaded_elf.init_functions.push_back(resolve_ptr(arr[i]));
+                    }
+                }
+            }
+
+            if (fini_addr != 0) {
+                loaded_elf.fini_functions.push_back(fini_addr);
+            }
+            if (fini_array_addr != 0 && fini_array_sz >= sizeof(uintptr_t)) {
+                size_t count = fini_array_sz / sizeof(uintptr_t);
+                const auto *arr = reinterpret_cast<const uintptr_t *>(fini_array_addr);
+                for (size_t i = 0; i < count; i++) {
+                    if (arr[i] != 0 && arr[i] != static_cast<uintptr_t>(-1)) {
+                        loaded_elf.fini_functions.push_back(resolve_ptr(arr[i]));
+                    }
+                }
+            }
             break;
         }
     }

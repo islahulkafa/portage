@@ -199,6 +199,50 @@ static_assert(sizeof(LinuxInputEvent) == 24,
 constexpr uint32_t LINUX_EVIOCGVERSION = LinuxIor('E', 0x01, sizeof(int));
 constexpr uint32_t LINUX_EVIOCGID = LinuxIor('E', 0x02, sizeof(LinuxInputId));
 
+// Force feedback effect types
+constexpr uint16_t LINUX_FF_RUMBLE = 0x50;
+constexpr uint16_t LINUX_FF_PERIODIC = 0x51;
+constexpr uint16_t LINUX_FF_CONSTANT = 0x52;
+constexpr uint16_t LINUX_FF_SPRING = 0x53;
+constexpr uint16_t LINUX_FF_FRICTION = 0x54;
+constexpr uint16_t LINUX_FF_DAMPER = 0x55;
+constexpr uint16_t LINUX_FF_INERTIA = 0x56;
+constexpr uint16_t LINUX_FF_RAMP = 0x57;
+constexpr uint16_t LINUX_FF_EFFECT_MIN = LINUX_FF_RUMBLE;
+constexpr uint16_t LINUX_FF_EFFECT_MAX = LINUX_FF_RAMP;
+
+#pragma pack(push, 1)
+struct LinuxFfReplay {
+    uint16_t length{0};
+    uint16_t delay{0};
+};
+
+struct LinuxFfTrigger {
+    uint16_t button{0};
+    uint16_t interval{0};
+};
+
+struct LinuxFfRumbleEffect {
+    uint16_t strong_magnitude{0};
+    uint16_t weak_magnitude{0};
+};
+
+struct LinuxFfEffect {
+    uint16_t type{0};
+    int16_t id{-1};
+    uint16_t direction{0};
+    LinuxFfTrigger trigger{};
+    LinuxFfReplay replay{};
+    union {
+        LinuxFfRumbleEffect rumble;
+    } u{};
+};
+#pragma pack(pop)
+
+// Evdev IOCTL Definitions for Force Feedback
+constexpr uint32_t LINUX_EVIOCSFF = LinuxIoc(LINUX_IOC_WRITE, 'E', 0x80, sizeof(LinuxFfEffect));
+constexpr uint32_t LINUX_EVIOCRMFF = LinuxIoc(LINUX_IOC_WRITE, 'E', 0x81, sizeof(int));
+
 constexpr uint32_t LINUX_EV_VERSION = 0x010001;
 
 } // namespace portage::input

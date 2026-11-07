@@ -92,6 +92,55 @@ add_custom_command(
     COMMENT "Cross-compiling Android x86_64 native window library: libandroid.so"
 )
 
+# Shared library libnativewindow.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libnativewindow.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/libnativewindow.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libnativewindow.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libnativewindow.c"
+    COMMENT "Cross-compiling Android x86_64 native window library: libnativewindow.so"
+)
+
+# Shared library libgame_math.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/libgame_math.so"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_game_math.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/libgame_math.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/test_game_math.c"
+    COMMENT "Cross-compiling Android x86_64 Game Math library: libgame_math.so"
+)
+
+# Shared library libgame_plugin.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/libgame_plugin.so"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_game_plugin.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/libgame_plugin.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/test_game_plugin.c"
+    COMMENT "Cross-compiling Android x86_64 Game Plugin library: libgame_plugin.so"
+)
+
 # Shared library libtest_game_engine.so
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/libtest_game_engine.so"
@@ -104,8 +153,12 @@ add_custom_command(
         -fno-builtin
         -O2
         "${CMAKE_CURRENT_SOURCE_DIR}/test_game_engine.c"
+        -L "${CMAKE_CURRENT_BINARY_DIR}"
+        -lgame_math
         -o "${CMAKE_CURRENT_BINARY_DIR}/libtest_game_engine.so"
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/test_game_engine.c"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_game_engine.c"
+        "${CMAKE_CURRENT_BINARY_DIR}/libgame_math.so"
     COMMENT "Cross-compiling Android x86_64 Game Engine library: libtest_game_engine.so"
 )
 
@@ -141,6 +194,108 @@ add_custom_command(
         -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libGLESv2.so"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libGLESv2.c"
     COMMENT "Cross-compiling Android x86_64 OpenGL ES shared library: libGLESv2.so"
+)
+
+# Shared library libaaudio.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libaaudio.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/libaaudio.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libaaudio.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libaaudio.c"
+    COMMENT "Cross-compiling Android x86_64 AAudio shared library: libaaudio.so"
+)
+
+# Shared library libOpenSLES.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libOpenSLES.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/libOpenSLES.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libOpenSLES.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libOpenSLES.c"
+    COMMENT "Cross-compiling Android x86_64 OpenSL ES shared library: libOpenSLES.so"
+)
+
+# Shared library libdl.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libdl.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/libdl.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libdl.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libdl.c"
+    COMMENT "Cross-compiling Android x86_64 libdl shared library: libdl.so"
+)
+
+# Shared library libjnigraphics.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libjnigraphics.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/libjnigraphics.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libjnigraphics.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libjnigraphics.c"
+    COMMENT "Cross-compiling Android x86_64 libjnigraphics shared library: libjnigraphics.so"
+)
+
+# Shared library libmediandk.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libmediandk.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/libmediandk.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libmediandk.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libmediandk.c"
+    COMMENT "Cross-compiling Android x86_64 libmediandk shared library: libmediandk.so"
+)
+
+# Shared library libbinder_ndk.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libbinder_ndk.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/libbinder_ndk.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libbinder_ndk.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libbinder_ndk.c"
+    COMMENT "Cross-compiling Android x86_64 libbinder_ndk shared library: libbinder_ndk.so"
 )
 
 # Shared library libtest_gles_quad.so
@@ -264,13 +419,43 @@ add_custom_target(build_guest_binaries
         "${CMAKE_CURRENT_BINARY_DIR}/test_binder_open.elf"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libvulkan.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libandroid.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libnativewindow.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libEGL.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libGLESv2.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libaaudio.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libOpenSLES.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libdl.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libjnigraphics.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libmediandk.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libbinder_ndk.so"
         "${CMAKE_CURRENT_BINARY_DIR}/test_vulkan_device.elf"
         "${CMAKE_CURRENT_BINARY_DIR}/test_vulkan_presentation.elf"
         "${CMAKE_CURRENT_BINARY_DIR}/test_audio_pcm.elf"
         "${CMAKE_CURRENT_BINARY_DIR}/test_input_evdev.elf"
         "${CMAKE_CURRENT_BINARY_DIR}/test_property_bionic.elf"
+        "${CMAKE_CURRENT_BINARY_DIR}/libgame_math.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/libgame_plugin.so"
         "${CMAKE_CURRENT_BINARY_DIR}/libtest_game_engine.so"
         "${CMAKE_CURRENT_BINARY_DIR}/libtest_gles_quad.so"
+)
+
+add_custom_command(
+    OUTPUT "${CMAKE_BINARY_DIR}/game_engine.apk"
+    COMMAND assemble_samples
+        "${CMAKE_BINARY_DIR}/game_engine.apk"
+        com.portage.gameengine
+        test_game_engine
+        "${CMAKE_CURRENT_BINARY_DIR}/libtest_game_engine.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/libgame_math.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/libgame_plugin.so"
+    DEPENDS
+        assemble_samples
+        "${CMAKE_CURRENT_BINARY_DIR}/libtest_game_engine.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/libgame_math.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/libgame_plugin.so"
+    COMMENT "Assembling sample game_engine.apk with multi-library dependencies"
+)
+
+add_custom_target(sample_game_engine_apk ALL
+    DEPENDS "${CMAKE_BINARY_DIR}/game_engine.apk"
 )

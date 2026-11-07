@@ -1,5 +1,6 @@
 #include "arch/guest_context.hpp"
 #include "elf/elf_loader.hpp"
+#include "elf/link_map.hpp"
 #include "fs/fd_table.hpp"
 #include "fs/vfs.hpp"
 #include "mem/address_space.hpp"
@@ -32,28 +33,40 @@ int main(int argc, char *argv[])
     }
 
     bool verbose = false;
+    bool headless = false;
+    if (const char *env_hl = std::getenv("PORTAGE_HEADLESS"); env_hl && *env_hl != '0') {
+        headless = true;
+    }
     std::filesystem::path rootfs_path{};
-    int arg_idx = 1;
+    std::string target_path{};
+    std::vector<std::string> guest_args{};
 
-    while (arg_idx < argc) {
-        std::string arg = argv[arg_idx];
-        if (arg == "--verbose") {
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "run") {
+            continue;
+        } else if (arg == "--verbose") {
             verbose = true;
-            arg_idx++;
+        } else if (arg == "--headless") {
+            headless = true;
+        } else if (arg == "--interactive") {
+            headless = false;
         } else if (arg == "--rootfs") {
-            if (arg_idx + 1 >= argc) {
+            if (i + 1 >= argc) {
                 std::cerr << "Error: missing path after --rootfs\n";
                 return 1;
             }
-            rootfs_path = argv[arg_idx + 1];
-            arg_idx += 2;
+            rootfs_path = argv[++i];
+        } else if (target_path.empty()) {
+            target_path = arg;
+            guest_args.push_back(arg);
         } else {
-            break;
+            guest_args.push_back(arg);
         }
     }
 
-    if (arg_idx >= argc) {
-        std::cerr << "Error: missing ELF binary path\n";
+    if (target_path.empty()) {
+        std::cerr << "Error: missing target binary or APK path\n";
         return 1;
     }
 
@@ -63,16 +76,6 @@ int main(int argc, char *argv[])
             rootfs_path = env_rootfs;
         }
     }
-
-    if (arg_idx < argc && std::string(argv[arg_idx]) == "run") {
-        arg_idx++;
-        if (arg_idx >= argc) {
-            std::cerr << "Error: missing target after run\n";
-            return 1;
-        }
-    }
-
-    std::string target_path = argv[arg_idx];
     bool is_apk = (target_path.size() >= 4 &&
                    (target_path.ends_with(".apk") || target_path.ends_with(".APK")));
 
@@ -97,13 +100,25 @@ int main(int argc, char *argv[])
             return 1;
         }
         elf_path = primary_lib.string();
+
+        if (!headless) {
+            std::string win_title = "Portage: " + pkg.manifest.package_name;
+            if (portage::wsi::WindowManager::Instance().EnsureWindow(1280, 720, win_title)) {
+                default_window.native_handle =
+                    portage::wsi::WindowManager::Instance().GetWindowHandle();
+                default_window.width =
+                    static_cast<int32_t>(portage::wsi::WindowManager::Instance().GetWidth());
+                default_window.height =
+                    static_cast<int32_t>(portage::wsi::WindowManager::Instance().GetHeight());
+            } else {
+                headless = true;
+            }
+        }
+
         portage::package::NativeActivityRunner::Instance().SetupActivity(pkg, &default_window);
     }
 
-    std::vector<std::string> guest_args;
-    for (int i = arg_idx; i < argc; i++) {
-        guest_args.emplace_back(argv[i]);
-    }
+
 
     std::vector<std::string> guest_env = {"PATH=/system/bin:/system/xbin", "ANDROID_DATA=/data",
                                           "ANDROID_ROOT=/system", "TMPDIR=/data/local/tmp"};
@@ -117,8 +132,30 @@ int main(int argc, char *argv[])
     portage::mem::AddressSpace address_space;
     portage::syscall::SyscallDispatcher::Initialize(&address_space, &vfs, &fd_table, verbose);
 
+    portage::elf::LinkMap::Instance().Reset();
+    portage::elf::LinkMap::Instance().SetAddressSpace(&address_space);
+    portage::elf::LinkMap::Instance().SetVfs(&vfs);
+    portage::elf::LinkMap::Instance().AddSearchPath("/system/lib64");
+    if (is_apk) {
+        const auto *pkg_ptr = portage::package::PackageManager::Instance().GetActivePackage();
+        if (pkg_ptr) {
+            portage::elf::LinkMap::Instance().AddSearchPath(pkg_ptr->lib_dir.string());
+        }
+    }
+    portage::elf::LinkMap::Instance().AddSearchPath(
+        std::filesystem::path(elf_path).parent_path().string());
+
     portage::elf::ElfLoader loader(&address_space);
-    auto load_result = loader.LoadFromFile(elf_path, &vfs);
+    auto load_result = loader.LoadFromFile(
+        elf_path, &vfs,
+        [](std::string_view sym) {
+            return portage::elf::LinkMap::Instance().ResolveGlobalSymbol(sym);
+        },
+        [&](const std::vector<std::string> &needed) {
+            for (const auto &dep : needed) {
+                (void)portage::elf::LinkMap::Instance().DlOpen(dep.c_str(), portage::elf::RTLD_NOW);
+            }
+        });
 
     if (std::holds_alternative<portage::elf::LoaderError>(load_result)) {
         auto err = std::get<portage::elf::LoaderError>(load_result);
@@ -127,6 +164,7 @@ int main(int argc, char *argv[])
     }
 
     const auto &loaded_elf = std::get<portage::elf::LoadedElf>(load_result);
+    portage::elf::LinkMap::Instance().RegisterLoadedElf(loaded_elf, elf_path);
     if (verbose) {
         std::cout << "[portage] Loaded ELF base: 0x" << std::hex << loaded_elf.base_address
                   << " entry: 0x" << loaded_elf.entry_point << " app_entry: 0x"
@@ -156,17 +194,30 @@ int main(int argc, char *argv[])
         if (on_create_addr != 0) {
             auto on_create =
                 reinterpret_cast<portage::package::ANativeActivity_createFunc>(on_create_addr);
-            on_create(portage::package::NativeActivityRunner::Instance().GetActivity(), nullptr, 0);
-            portage::package::NativeActivityRunner::Instance().DispatchStart();
-            portage::package::NativeActivityRunner::Instance().DispatchResume();
-            portage::package::NativeActivityRunner::Instance().DispatchWindowCreated(
-                &default_window);
-            portage::package::NativeActivityRunner::Instance().DispatchWindowFocus(true);
-            portage::package::NativeActivityRunner::Instance().DispatchPause();
-            portage::package::NativeActivityRunner::Instance().DispatchWindowDestroyed(
-                &default_window);
-            portage::package::NativeActivityRunner::Instance().DispatchStop();
-            portage::package::NativeActivityRunner::Instance().DispatchDestroy();
+            auto &runner = portage::package::NativeActivityRunner::Instance();
+            on_create(runner.GetActivity(), nullptr, 0);
+            runner.DispatchStart();
+            runner.DispatchResume();
+            runner.DispatchWindowCreated(&default_window);
+            runner.DispatchInputQueueCreated(
+                reinterpret_cast<AInputQueue *>(&runner.GetInputQueue()));
+            runner.DispatchWindowFocus(true);
+
+            if (!headless) {
+                runner.ConnectInputQueueToWindow();
+                if (verbose) {
+                    std::cout << "[portage] Interactive window opened. Close window to exit.\n";
+                }
+                portage::wsi::WindowManager::Instance().WaitUntilClosed();
+            } else {
+                runner.DispatchPause();
+                runner.DispatchWindowDestroyed(&default_window);
+                runner.DispatchInputQueueDestroyed(
+                    reinterpret_cast<AInputQueue *>(&runner.GetInputQueue()));
+                runner.DispatchStop();
+                runner.DispatchDestroy();
+            }
+
             std::cout << "[portage] APK native activity execution completed successfully\n";
             portage::syscall::SyscallDispatcher::Shutdown();
             return 0;

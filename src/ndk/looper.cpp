@@ -52,6 +52,24 @@ int LooperImpl::AddFd(int fd, int ident, int events, ALooper_callbackFunc callba
     return 1;
 }
 
+int LooperImpl::AddInternalPipe(void *read_handle, ALooper_callbackFunc callback, void *data,
+                                int ident)
+{
+    if (!read_handle || (ident < 0 && !callback)) {
+        return -1;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    int fd = next_internal_fd_++;
+    registrations_[fd] = LooperRegistration{.fd = fd,
+                                            .ident = ident,
+                                            .events = ALOOPER_EVENT_INPUT,
+                                            .callback = callback,
+                                            .data = data,
+                                            .native_pipe_handle = read_handle};
+    return fd;
+}
+
 int LooperImpl::RemoveFd(int fd)
 {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -75,9 +93,27 @@ void LooperImpl::Wake()
     cv_.notify_all();
 }
 
+void LooperImpl::NotifyActivity() noexcept
+{
+    activity_epoch_.fetch_add(1, std::memory_order_acq_rel);
+    cv_.notify_all();
+}
+
 int LooperImpl::CheckFdEvents(const LooperRegistration &reg) const
 {
     int triggered = 0;
+    if (reg.native_pipe_handle != nullptr) {
+        DWORD avail = 0;
+        if (PeekNamedPipe(static_cast<HANDLE>(reg.native_pipe_handle), nullptr, 0, nullptr, &avail,
+                          nullptr) &&
+            avail > 0) {
+            if (reg.events & ALOOPER_EVENT_INPUT) {
+                triggered |= ALOOPER_EVENT_INPUT;
+            }
+        }
+        return triggered;
+    }
+
     auto *fd_table = syscall::SyscallDispatcher::GetFdTable();
     if (!fd_table)
         return 0;
@@ -186,10 +222,13 @@ int LooperImpl::PollOnce(int timeout_ms, int *out_fd, int *out_events, void **ou
         }
 
         std::unique_lock<std::mutex> lock(mutex_);
+        uint64_t epoch = activity_epoch_.load(std::memory_order_acquire);
         auto slice = (timeout_ms < 0) ? std::chrono::milliseconds(10)
                                       : std::chrono::milliseconds(std::min(timeout_ms, 10));
-        cv_.wait_for(lock, slice,
-                     [this]() { return wake_signaled_.load(std::memory_order_acquire); });
+        cv_.wait_for(lock, slice, [this, epoch]() {
+            return wake_signaled_.load(std::memory_order_acquire) ||
+                   activity_epoch_.load(std::memory_order_acquire) != epoch;
+        });
 
         if (wake_signaled_.exchange(false, std::memory_order_acq_rel)) {
             return ALOOPER_POLL_WAKE;

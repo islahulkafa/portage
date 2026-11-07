@@ -19,6 +19,8 @@ enum class DeviceType {
     Epoll,
     Binder,
     HwBinder,
+    Ashmem,
+    SharedMemory,
     VulkanDevice,
     AlsaPcm,
     AlsaControl,

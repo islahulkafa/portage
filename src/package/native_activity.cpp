@@ -1,4 +1,7 @@
 #include "native_activity.hpp"
+#include "input/gamepad_manager.hpp"
+#include "input/key_codes.hpp"
+#include "ndk/libandroid_thunks.hpp"
 
 #include <cstring>
 
@@ -33,7 +36,7 @@ bool NativeActivityRunner::SetupActivity(const PackageInfo &pkg, ANativeWindow *
     activity_.callbacks = &callbacks_;
     activity_.vm = JniEnvironment::Instance().GetJavaVM();
     activity_.env = JniEnvironment::Instance().GetJNIEnv();
-    activity_.clazz = const_cast<char *>(pkg.manifest.package_name.c_str());
+    activity_.clazz = JniEnvironment::Instance().GetContextObject();
 
     activity_.internalDataPath = internal_path_.c_str();
     activity_.externalDataPath = external_path_.c_str();
@@ -45,6 +48,7 @@ bool NativeActivityRunner::SetupActivity(const PackageInfo &pkg, ANativeWindow *
     activity_.obbPath = "";
 
     current_window_ = window;
+    is_destroyed_.store(false);
     return true;
 }
 
@@ -142,6 +146,76 @@ void NativeActivityRunner::DispatchDestroy()
     if (callbacks_.onDestroy) {
         callbacks_.onDestroy(&activity_);
     }
+}
+
+void NativeActivityRunner::ConnectInputQueueToWindow()
+{
+    wsi::WindowManager::Instance().SetMouseCallback(
+        [this](int32_t x, int32_t y, int32_t w, int32_t h, int32_t action) {
+            float norm_x = static_cast<float>(x);
+            float norm_y = static_cast<float>(y);
+            if (current_window_ && w > 0 && h > 0) {
+                norm_x = (static_cast<float>(x) / static_cast<float>(w)) *
+                         static_cast<float>(current_window_->width);
+                norm_y = (static_cast<float>(y) / static_cast<float>(h)) *
+                         static_cast<float>(current_window_->height);
+            }
+            std::vector<ndk::InputPointer> ptrs = {{.id = 0,
+                                                    .x = norm_x,
+                                                    .y = norm_y,
+                                                    .raw_x = norm_x,
+                                                    .raw_y = norm_y,
+                                                    .pressure = 1.0f,
+                                                    .size = 1.0f}};
+            input_queue_.EnqueueMotionEvent(action, ptrs);
+        });
+
+    wsi::WindowManager::Instance().SetMultiTouchCallback(
+        [this](int32_t action, const std::vector<ndk::InputPointer> &ptrs) {
+            std::vector<ndk::InputPointer> scaled_ptrs = ptrs;
+            float win_w = static_cast<float>(wsi::WindowManager::Instance().GetWidth());
+            float win_h = static_cast<float>(wsi::WindowManager::Instance().GetHeight());
+            if (current_window_ && win_w > 0.0f && win_h > 0.0f) {
+                for (auto &p : scaled_ptrs) {
+                    p.x = (p.x / win_w) * static_cast<float>(current_window_->width);
+                    p.y = (p.y / win_h) * static_cast<float>(current_window_->height);
+                    p.raw_x = p.x;
+                    p.raw_y = p.y;
+                }
+            }
+            input_queue_.EnqueueMotionEvent(action, scaled_ptrs);
+        });
+
+    input::GamepadManager::Instance().SetInputQueue(&input_queue_);
+
+    wsi::WindowManager::Instance().SetKeyCallback([this](uint32_t vk_code, bool pressed) {
+        int32_t akey = input::Win32VkToAndroidKeyCode(vk_code);
+        if (akey != input::AKEYCODE_UNKNOWN) {
+            input_queue_.EnqueueKeyEvent(pressed ? AKEY_EVENT_ACTION_DOWN : AKEY_EVENT_ACTION_UP,
+                                         akey);
+        }
+    });
+
+    wsi::WindowManager::Instance().SetResizeCallback([this](uint32_t width, uint32_t height) {
+        if (current_window_) {
+            current_window_->width = static_cast<int32_t>(width);
+            current_window_->height = static_cast<int32_t>(height);
+            DispatchWindowResized(current_window_);
+        }
+    });
+
+    wsi::WindowManager::Instance().SetCloseCallback([this]() {
+        input::GamepadManager::Instance().SetInputQueue(nullptr);
+        if (!is_destroyed_.exchange(true)) {
+            DispatchPause();
+            DispatchStop();
+            if (current_window_) {
+                DispatchWindowDestroyed(current_window_);
+            }
+            DispatchInputQueueDestroyed(reinterpret_cast<AInputQueue *>(&input_queue_));
+            DispatchDestroy();
+        }
+    });
 }
 
 } // namespace portage::package

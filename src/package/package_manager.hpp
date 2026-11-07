@@ -1,6 +1,8 @@
 #pragma once
 
+#include "asset_manager.hpp"
 #include "manifest_parser.hpp"
+#include "resource_table.hpp"
 #include "zip_archive.hpp"
 
 #include <filesystem>
@@ -24,6 +26,8 @@ struct PackageInfo {
     std::filesystem::path external_data_dir{};
     std::vector<std::string> native_libraries{};
     std::shared_ptr<ZipArchive> archive{nullptr};
+    std::shared_ptr<ResourceTable> resource_table{nullptr};
+    AAssetManager *asset_manager{nullptr};
 };
 
 class PackageManager {

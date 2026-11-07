@@ -1,5 +1,6 @@
 #include "wsi/window_manager.hpp"
 #include "input/input_manager.hpp"
+#include "ndk/sensor.hpp"
 
 #include <chrono>
 #include <string>
@@ -8,14 +9,20 @@ namespace portage::wsi {
 
 namespace {
 
+int32_t g_last_rbutton_x{0};
+int32_t g_last_rbutton_y{0};
+bool g_rbutton_down{false};
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg) {
     case WM_KEYDOWN:
         input::InputManager::Instance().PostWin32Key(static_cast<uint32_t>(wParam), true);
+        WindowManager::Instance().DispatchKey(static_cast<uint32_t>(wParam), true);
         return 0;
     case WM_KEYUP:
         input::InputManager::Instance().PostWin32Key(static_cast<uint32_t>(wParam), false);
+        WindowManager::Instance().DispatchKey(static_cast<uint32_t>(wParam), false);
         return 0;
     case WM_LBUTTONDOWN: {
         RECT rc{};
@@ -25,6 +32,30 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         int32_t x = static_cast<short>(LOWORD(lParam));
         int32_t y = static_cast<short>(HIWORD(lParam));
         input::InputManager::Instance().PostPointerEvent(x, y, w, h, true);
+        if ((GetKeyState(VK_CONTROL) & 0x8000) != 0) {
+            float norm_x0 = static_cast<float>(x);
+            float norm_y0 = static_cast<float>(y);
+            float norm_x1 = static_cast<float>(std::max(0, w - x));
+            float norm_y1 = static_cast<float>(std::max(0, h - y));
+            std::vector<ndk::InputPointer> ptrs = {
+                {.id = 0,
+                 .x = norm_x0,
+                 .y = norm_y0,
+                 .raw_x = norm_x0,
+                 .raw_y = norm_y0,
+                 .pressure = 1.0f,
+                 .size = 1.0f},
+                {.id = 1,
+                 .x = norm_x1,
+                 .y = norm_y1,
+                 .raw_x = norm_x1,
+                 .raw_y = norm_y1,
+                 .pressure = 1.0f,
+                 .size = 1.0f}};
+            WindowManager::Instance().DispatchMultiTouch(AMOTION_EVENT_ACTION_DOWN, ptrs);
+        } else {
+            WindowManager::Instance().DispatchMouse(x, y, w, h, 0);
+        }
         return 0;
     }
     case WM_LBUTTONUP: {
@@ -35,24 +66,160 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         int32_t x = static_cast<short>(LOWORD(lParam));
         int32_t y = static_cast<short>(HIWORD(lParam));
         input::InputManager::Instance().PostPointerEvent(x, y, w, h, false);
+        if ((GetKeyState(VK_CONTROL) & 0x8000) != 0) {
+            float norm_x0 = static_cast<float>(x);
+            float norm_y0 = static_cast<float>(y);
+            float norm_x1 = static_cast<float>(std::max(0, w - x));
+            float norm_y1 = static_cast<float>(std::max(0, h - y));
+            std::vector<ndk::InputPointer> ptrs = {
+                {.id = 0,
+                 .x = norm_x0,
+                 .y = norm_y0,
+                 .raw_x = norm_x0,
+                 .raw_y = norm_y0,
+                 .pressure = 0.0f,
+                 .size = 1.0f},
+                {.id = 1,
+                 .x = norm_x1,
+                 .y = norm_y1,
+                 .raw_x = norm_x1,
+                 .raw_y = norm_y1,
+                 .pressure = 0.0f,
+                 .size = 1.0f}};
+            WindowManager::Instance().DispatchMultiTouch(AMOTION_EVENT_ACTION_UP, ptrs);
+        } else {
+            WindowManager::Instance().DispatchMouse(x, y, w, h, 1);
+        }
+        return 0;
+    }
+    case WM_RBUTTONDOWN: {
+        g_last_rbutton_x = static_cast<short>(LOWORD(lParam));
+        g_last_rbutton_y = static_cast<short>(HIWORD(lParam));
+        g_rbutton_down = true;
+        SetCapture(hwnd);
+        return 0;
+    }
+    case WM_RBUTTONUP: {
+        g_rbutton_down = false;
+        ReleaseCapture();
+        return 0;
+    }
+    case WM_MBUTTONDOWN: {
+        ndk::SensorManagerImpl::Instance().ResetPose();
         return 0;
     }
     case WM_MOUSEMOVE: {
+        int32_t x = static_cast<short>(LOWORD(lParam));
+        int32_t y = static_cast<short>(HIWORD(lParam));
         if (wParam & MK_LBUTTON) {
             RECT rc{};
             GetClientRect(hwnd, &rc);
             int32_t w = rc.right - rc.left;
             int32_t h = rc.bottom - rc.top;
-            int32_t x = static_cast<short>(LOWORD(lParam));
-            int32_t y = static_cast<short>(HIWORD(lParam));
             input::InputManager::Instance().PostPointerEvent(x, y, w, h, true);
+            if ((GetKeyState(VK_CONTROL) & 0x8000) != 0) {
+                float norm_x0 = static_cast<float>(x);
+                float norm_y0 = static_cast<float>(y);
+                float norm_x1 = static_cast<float>(std::max(0, w - x));
+                float norm_y1 = static_cast<float>(std::max(0, h - y));
+                std::vector<ndk::InputPointer> ptrs = {
+                    {.id = 0,
+                     .x = norm_x0,
+                     .y = norm_y0,
+                     .raw_x = norm_x0,
+                     .raw_y = norm_y0,
+                     .pressure = 1.0f,
+                     .size = 1.0f},
+                    {.id = 1,
+                     .x = norm_x1,
+                     .y = norm_y1,
+                     .raw_x = norm_x1,
+                     .raw_y = norm_y1,
+                     .pressure = 1.0f,
+                     .size = 1.0f}};
+                WindowManager::Instance().DispatchMultiTouch(AMOTION_EVENT_ACTION_MOVE, ptrs);
+            } else {
+                WindowManager::Instance().DispatchMouse(x, y, w, h, 2);
+            }
+        }
+        if (g_rbutton_down && (wParam & MK_RBUTTON)) {
+            int32_t dx = x - g_last_rbutton_x;
+            int32_t dy = y - g_last_rbutton_y;
+            g_last_rbutton_x = x;
+            g_last_rbutton_y = y;
+            float delta_pitch = static_cast<float>(dy) * 0.005f;
+            float delta_roll = static_cast<float>(dx) * 0.005f;
+            ndk::SensorManagerImpl::Instance().AdjustInteractiveTilt(delta_pitch, delta_roll);
         }
         return 0;
     }
+    case WM_POINTERDOWN:
+    case WM_POINTERUPDATE:
+    case WM_POINTERUP: {
+        UINT32 pointer_id = LOWORD(wParam);
+        POINTER_TOUCH_INFO ti{};
+        POINT pt{};
+        float pressure = 1.0f;
+        float touch_w = 0.0f;
+        float touch_h = 0.0f;
+        float orientation = 0.0f;
+
+        if (GetPointerTouchInfo(pointer_id, &ti)) {
+            pt = ti.pointerInfo.ptPixelLocation;
+            ScreenToClient(hwnd, &pt);
+            if (ti.pressure > 0) {
+                pressure = static_cast<float>(ti.pressure) / 1024.0f;
+            }
+            touch_w = static_cast<float>(ti.rcContact.right - ti.rcContact.left);
+            touch_h = static_cast<float>(ti.rcContact.bottom - ti.rcContact.top);
+            orientation = static_cast<float>(ti.orientation);
+        } else {
+            POINTER_INFO pi{};
+            if (GetPointerInfo(pointer_id, &pi)) {
+                pt = pi.ptPixelLocation;
+                ScreenToClient(hwnd, &pt);
+            } else {
+                return 0;
+            }
+        }
+
+        ndk::InputPointer ptr{
+            .id = static_cast<int32_t>(pointer_id),
+            .x = static_cast<float>(pt.x),
+            .y = static_cast<float>(pt.y),
+            .raw_x = static_cast<float>(pt.x),
+            .raw_y = static_cast<float>(pt.y),
+            .pressure = pressure,
+            .size = 1.0f,
+            .touch_major = std::max(touch_w, touch_h),
+            .touch_minor = std::min(touch_w, touch_h),
+            .tool_major = 0.0f,
+            .tool_minor = 0.0f,
+            .orientation = orientation,
+            .axes = {},
+        };
+
+        int32_t action = AMOTION_EVENT_ACTION_MOVE;
+        if (uMsg == WM_POINTERDOWN) {
+            action = AMOTION_EVENT_ACTION_DOWN;
+        } else if (uMsg == WM_POINTERUP) {
+            action = AMOTION_EVENT_ACTION_UP;
+        }
+        WindowManager::Instance().DispatchMultiTouch(action, {ptr});
+        return 0;
+    }
+    case WM_SIZE: {
+        uint32_t w = LOWORD(lParam);
+        uint32_t h = HIWORD(lParam);
+        WindowManager::Instance().DispatchResize(w, h);
+        return 0;
+    }
     case WM_CLOSE:
+        WindowManager::Instance().DispatchClose();
         PostQuitMessage(0);
         return 0;
     case WM_DESTROY:
+        WindowManager::Instance().DispatchClose();
         PostQuitMessage(0);
         return 0;
     default:
@@ -95,9 +262,121 @@ WindowStats WindowManager::GetStats() const noexcept
                        .frames_presented = m_frames_presented.load()};
 }
 
+void WindowManager::SetMouseCallback(MouseEventCallback cb)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_mouse_callback = std::move(cb);
+}
+
+void WindowManager::SetMultiTouchCallback(MultiTouchCallback cb)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_multitouch_callback = std::move(cb);
+}
+
+void WindowManager::SetKeyCallback(KeyEventCallback cb)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_key_callback = std::move(cb);
+}
+
+void WindowManager::SetResizeCallback(ResizeEventCallback cb)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_resize_callback = std::move(cb);
+}
+
+void WindowManager::SetCloseCallback(CloseEventCallback cb)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_close_callback = std::move(cb);
+}
+
+void WindowManager::ClearCallbacks() noexcept
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_mouse_callback = nullptr;
+    m_multitouch_callback = nullptr;
+    m_key_callback = nullptr;
+    m_resize_callback = nullptr;
+    m_close_callback = nullptr;
+}
+
+void WindowManager::DispatchMouse(int32_t x, int32_t y, int32_t w, int32_t h, int32_t action)
+{
+    MouseEventCallback cb;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        cb = m_mouse_callback;
+    }
+    if (cb) {
+        cb(x, y, w, h, action);
+    }
+}
+
+void WindowManager::DispatchMultiTouch(int32_t action,
+                                       const std::vector<ndk::InputPointer> &pointers)
+{
+    MultiTouchCallback cb;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        cb = m_multitouch_callback;
+    }
+    if (cb) {
+        cb(action, pointers);
+    }
+}
+
+void WindowManager::DispatchKey(uint32_t vk_code, bool pressed)
+{
+    KeyEventCallback cb;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        cb = m_key_callback;
+    }
+    if (cb) {
+        cb(vk_code, pressed);
+    }
+}
+
+void WindowManager::DispatchResize(uint32_t width, uint32_t height)
+{
+    ResizeEventCallback cb;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_width = width;
+        m_height = height;
+        cb = m_resize_callback;
+    }
+    if (cb) {
+        cb(width, height);
+    }
+}
+
+void WindowManager::DispatchClose()
+{
+    CloseEventCallback cb;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        cb = m_close_callback;
+        m_running.store(false);
+    }
+    if (cb) {
+        cb();
+    }
+    m_cv.notify_all();
+}
+
+void WindowManager::WaitUntilClosed() noexcept
+{
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_cv.wait(lock, [this] { return !m_running.load() || m_hwnd == nullptr; });
+}
+
 void WindowManager::Reset() noexcept
 {
     DestroyWindow();
+    ClearCallbacks();
     m_headless.store(false);
     m_frames_presented.store(0);
     m_width = 1280;
@@ -185,6 +464,7 @@ void WindowManager::WindowThreadFunc(uint32_t width, uint32_t height, std::wstri
         std::lock_guard<std::mutex> lock(m_mutex);
         m_hwnd = nullptr;
     }
+    m_cv.notify_all();
 }
 
 void WindowManager::DestroyWindow() noexcept

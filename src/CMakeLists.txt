@@ -2,7 +2,9 @@
 
 add_library(portage_core STATIC
     mem/address_space.cpp
+    mem/shared_memory.cpp
     elf/elf_loader.cpp
+    elf/link_map.cpp
     rewrite/x86_decode.cpp
     rewrite/syscall_rewriter.cpp
     arch/guest_context.cpp
@@ -17,13 +19,22 @@ add_library(portage_core STATIC
     net/socket_manager.cpp
     poll/epoll_manager.cpp
     binder/binder_driver.cpp
+    binder/binder_status.cpp
+    binder/binder_parcel.cpp
+    binder/binder_ndk.cpp
+    binder/service_manager.cpp
     vulkan/vulkan_bridge.cpp
     audio/audio_manager.cpp
+    audio/aaudio_dispatcher.cpp
+    audio/opensles_dispatcher.cpp
     wsi/window_manager.cpp
     input/input_manager.cpp
+    input/gamepad_manager.cpp
+    input/haptic_manager.cpp
     property/property_manager.cpp
     package/zip_archive.cpp
     package/manifest_parser.cpp
+    package/resource_table.cpp
     package/package_manager.cpp
     package/asset_manager.cpp
     package/jni_env.cpp
@@ -32,7 +43,15 @@ add_library(portage_core STATIC
     ndk/input_queue.cpp
     ndk/configuration.cpp
     ndk/android_log.cpp
+    ndk/choreographer.cpp
+    ndk/sensor.cpp
+    ndk/jnigraphics.cpp
+    ndk/hardware_buffer.cpp
     ndk/libandroid_thunks.cpp
+    media/media_format.cpp
+    media/media_extractor.cpp
+    media/media_codec.cpp
+    media/wmf_decoder.cpp
     gles/wgl_bridge.cpp
     gles/egl_dispatcher.cpp
     gles/gles_dispatcher.cpp
@@ -52,6 +71,10 @@ target_link_libraries(portage_core
         user32
         gdi32
         opengl32
+        dwmapi
+        mfplat
+        mfreadwrite
+        mfuuid
         ZLIB::ZLIB
     PRIVATE
         project_warnings

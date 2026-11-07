@@ -9,6 +9,7 @@
 #include <vector>
 
 struct ANativeWindow;
+struct AHardwareBuffer;
 
 namespace portage::gles {
 
@@ -135,4 +136,10 @@ __attribute__((sysv_abi)) EGLDisplay eglGetCurrentDisplay(void);
 __attribute__((sysv_abi)) EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface);
 __attribute__((sysv_abi)) EGLint eglGetError(void);
 __attribute__((sysv_abi)) void *eglGetProcAddress(const char *procname);
+__attribute__((sysv_abi)) EGLClientBuffer
+eglGetNativeClientBufferANDROID(const struct AHardwareBuffer *buffer);
+__attribute__((sysv_abi)) EGLImageKHR eglCreateImageKHR(EGLDisplay dpy, EGLContext ctx,
+                                                        EGLenum target, EGLClientBuffer buffer,
+                                                        const EGLint *attrib_list);
+__attribute__((sysv_abi)) EGLBoolean eglDestroyImageKHR(EGLDisplay dpy, EGLImageKHR image);
 }

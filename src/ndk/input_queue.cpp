@@ -113,7 +113,7 @@ void InputQueueImpl::FinishEvent(AInputEvent *event, int handled)
 }
 
 void InputQueueImpl::EnqueueKeyEvent(int32_t action, int32_t key_code, int32_t repeat_count,
-                                     int32_t meta_state)
+                                     int32_t meta_state, int32_t source)
 {
     auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                       std::chrono::steady_clock::now().time_since_epoch())
@@ -122,7 +122,7 @@ void InputQueueImpl::EnqueueKeyEvent(int32_t action, int32_t key_code, int32_t r
     auto evt = std::make_unique<InternalInputEvent>();
     evt->type = AINPUT_EVENT_TYPE_KEY;
     evt->device_id = 0;
-    evt->source = AINPUT_SOURCE_KEYBOARD;
+    evt->source = source;
     evt->key_action = action;
     evt->key_code = key_code;
     evt->repeat_count = repeat_count;
@@ -139,7 +139,9 @@ void InputQueueImpl::EnqueueKeyEvent(int32_t action, int32_t key_code, int32_t r
     }
 }
 
-void InputQueueImpl::EnqueueMotionEvent(int32_t action, const std::vector<InputPointer> &pointers)
+void InputQueueImpl::EnqueueMotionEvent(int32_t action, const std::vector<InputPointer> &pointers,
+                                        int32_t source,
+                                        const std::vector<HistoricalSample> &history)
 {
     auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                       std::chrono::steady_clock::now().time_since_epoch())
@@ -148,9 +150,10 @@ void InputQueueImpl::EnqueueMotionEvent(int32_t action, const std::vector<InputP
     auto evt = std::make_unique<InternalInputEvent>();
     evt->type = AINPUT_EVENT_TYPE_MOTION;
     evt->device_id = 0;
-    evt->source = AINPUT_SOURCE_TOUCHSCREEN;
+    evt->source = source;
     evt->motion_action = action;
     evt->pointers = pointers;
+    evt->history = history;
     evt->down_time = now_ns;
     evt->event_time = now_ns;
 
@@ -428,6 +431,272 @@ __attribute__((sysv_abi)) float AMotionEvent_getRawY(const AInputEvent *motion_e
     const auto &ptrs =
         reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->pointers;
     return (pointer_index < ptrs.size()) ? ptrs[pointer_index].raw_y : 0.0f;
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getAxisValue(const AInputEvent *motion_event,
+                                                          int32_t axis, size_t pointer_index)
+{
+    if (!motion_event)
+        return 0.0f;
+    const auto &ptrs =
+        reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->pointers;
+    if (pointer_index >= ptrs.size())
+        return 0.0f;
+
+    const auto &p = ptrs[pointer_index];
+    switch (axis) {
+    case AMOTION_EVENT_AXIS_X:
+        return p.x;
+    case AMOTION_EVENT_AXIS_Y:
+        return p.y;
+    case AMOTION_EVENT_AXIS_PRESSURE:
+        return p.pressure;
+    case AMOTION_EVENT_AXIS_SIZE:
+        return p.size;
+    case AMOTION_EVENT_AXIS_TOUCH_MAJOR:
+        return p.touch_major;
+    case AMOTION_EVENT_AXIS_TOUCH_MINOR:
+        return p.touch_minor;
+    case AMOTION_EVENT_AXIS_TOOL_MAJOR:
+        return p.tool_major;
+    case AMOTION_EVENT_AXIS_TOOL_MINOR:
+        return p.tool_minor;
+    case AMOTION_EVENT_AXIS_ORIENTATION:
+        return p.orientation;
+    default: {
+        auto it = p.axes.find(axis);
+        return (it != p.axes.end()) ? it->second : 0.0f;
+    }
+    }
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getTouchMajor(const AInputEvent *motion_event,
+                                                           size_t pointer_index)
+{
+    return AMotionEvent_getAxisValue(motion_event, AMOTION_EVENT_AXIS_TOUCH_MAJOR, pointer_index);
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getTouchMinor(const AInputEvent *motion_event,
+                                                           size_t pointer_index)
+{
+    return AMotionEvent_getAxisValue(motion_event, AMOTION_EVENT_AXIS_TOUCH_MINOR, pointer_index);
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getToolMajor(const AInputEvent *motion_event,
+                                                          size_t pointer_index)
+{
+    return AMotionEvent_getAxisValue(motion_event, AMOTION_EVENT_AXIS_TOOL_MAJOR, pointer_index);
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getToolMinor(const AInputEvent *motion_event,
+                                                          size_t pointer_index)
+{
+    return AMotionEvent_getAxisValue(motion_event, AMOTION_EVENT_AXIS_TOOL_MINOR, pointer_index);
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getOrientation(const AInputEvent *motion_event,
+                                                            size_t pointer_index)
+{
+    return AMotionEvent_getAxisValue(motion_event, AMOTION_EVENT_AXIS_ORIENTATION, pointer_index);
+}
+
+__attribute__((sysv_abi)) size_t AMotionEvent_getHistorySize(const AInputEvent *motion_event)
+{
+    if (!motion_event)
+        return 0;
+    return reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->history.size();
+}
+
+__attribute__((sysv_abi)) int64_t
+AMotionEvent_getHistoricalEventTime(const AInputEvent *motion_event, size_t history_index)
+{
+    if (!motion_event)
+        return 0;
+    const auto &hist =
+        reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->history;
+    return (history_index < hist.size()) ? hist[history_index].event_time : 0;
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getHistoricalRawX(const AInputEvent *motion_event,
+                                                               size_t pointer_index,
+                                                               size_t history_index)
+{
+    if (!motion_event)
+        return 0.0f;
+    const auto &hist =
+        reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->history;
+    if (history_index >= hist.size() || pointer_index >= hist[history_index].pointers.size())
+        return 0.0f;
+    return hist[history_index].pointers[pointer_index].raw_x;
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getHistoricalRawY(const AInputEvent *motion_event,
+                                                               size_t pointer_index,
+                                                               size_t history_index)
+{
+    if (!motion_event)
+        return 0.0f;
+    const auto &hist =
+        reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->history;
+    if (history_index >= hist.size() || pointer_index >= hist[history_index].pointers.size())
+        return 0.0f;
+    return hist[history_index].pointers[pointer_index].raw_y;
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getHistoricalX(const AInputEvent *motion_event,
+                                                            size_t pointer_index,
+                                                            size_t history_index)
+{
+    if (!motion_event)
+        return 0.0f;
+    const auto &hist =
+        reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->history;
+    if (history_index >= hist.size() || pointer_index >= hist[history_index].pointers.size())
+        return 0.0f;
+    return hist[history_index].pointers[pointer_index].x;
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getHistoricalY(const AInputEvent *motion_event,
+                                                            size_t pointer_index,
+                                                            size_t history_index)
+{
+    if (!motion_event)
+        return 0.0f;
+    const auto &hist =
+        reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->history;
+    if (history_index >= hist.size() || pointer_index >= hist[history_index].pointers.size())
+        return 0.0f;
+    return hist[history_index].pointers[pointer_index].y;
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getHistoricalPressure(const AInputEvent *motion_event,
+                                                                   size_t pointer_index,
+                                                                   size_t history_index)
+{
+    if (!motion_event)
+        return 0.0f;
+    const auto &hist =
+        reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->history;
+    if (history_index >= hist.size() || pointer_index >= hist[history_index].pointers.size())
+        return 0.0f;
+    return hist[history_index].pointers[pointer_index].pressure;
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getHistoricalSize(const AInputEvent *motion_event,
+                                                               size_t pointer_index,
+                                                               size_t history_index)
+{
+    if (!motion_event)
+        return 0.0f;
+    const auto &hist =
+        reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->history;
+    if (history_index >= hist.size() || pointer_index >= hist[history_index].pointers.size())
+        return 0.0f;
+    return hist[history_index].pointers[pointer_index].size;
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getHistoricalTouchMajor(const AInputEvent *motion_event,
+                                                                     size_t pointer_index,
+                                                                     size_t history_index)
+{
+    if (!motion_event)
+        return 0.0f;
+    const auto &hist =
+        reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->history;
+    if (history_index >= hist.size() || pointer_index >= hist[history_index].pointers.size())
+        return 0.0f;
+    return hist[history_index].pointers[pointer_index].touch_major;
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getHistoricalTouchMinor(const AInputEvent *motion_event,
+                                                                     size_t pointer_index,
+                                                                     size_t history_index)
+{
+    if (!motion_event)
+        return 0.0f;
+    const auto &hist =
+        reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->history;
+    if (history_index >= hist.size() || pointer_index >= hist[history_index].pointers.size())
+        return 0.0f;
+    return hist[history_index].pointers[pointer_index].touch_minor;
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getHistoricalToolMajor(const AInputEvent *motion_event,
+                                                                    size_t pointer_index,
+                                                                    size_t history_index)
+{
+    if (!motion_event)
+        return 0.0f;
+    const auto &hist =
+        reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->history;
+    if (history_index >= hist.size() || pointer_index >= hist[history_index].pointers.size())
+        return 0.0f;
+    return hist[history_index].pointers[pointer_index].tool_major;
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getHistoricalToolMinor(const AInputEvent *motion_event,
+                                                                    size_t pointer_index,
+                                                                    size_t history_index)
+{
+    if (!motion_event)
+        return 0.0f;
+    const auto &hist =
+        reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->history;
+    if (history_index >= hist.size() || pointer_index >= hist[history_index].pointers.size())
+        return 0.0f;
+    return hist[history_index].pointers[pointer_index].tool_minor;
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getHistoricalOrientation(const AInputEvent *motion_event,
+                                                                      size_t pointer_index,
+                                                                      size_t history_index)
+{
+    if (!motion_event)
+        return 0.0f;
+    const auto &hist =
+        reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->history;
+    if (history_index >= hist.size() || pointer_index >= hist[history_index].pointers.size())
+        return 0.0f;
+    return hist[history_index].pointers[pointer_index].orientation;
+}
+
+__attribute__((sysv_abi)) float AMotionEvent_getHistoricalAxisValue(const AInputEvent *motion_event,
+                                                                    int32_t axis,
+                                                                    size_t pointer_index,
+                                                                    size_t history_index)
+{
+    if (!motion_event)
+        return 0.0f;
+    const auto &hist =
+        reinterpret_cast<const portage::ndk::InternalInputEvent *>(motion_event)->history;
+    if (history_index >= hist.size() || pointer_index >= hist[history_index].pointers.size())
+        return 0.0f;
+
+    const auto &p = hist[history_index].pointers[pointer_index];
+    switch (axis) {
+    case AMOTION_EVENT_AXIS_X:
+        return p.x;
+    case AMOTION_EVENT_AXIS_Y:
+        return p.y;
+    case AMOTION_EVENT_AXIS_PRESSURE:
+        return p.pressure;
+    case AMOTION_EVENT_AXIS_SIZE:
+        return p.size;
+    case AMOTION_EVENT_AXIS_TOUCH_MAJOR:
+        return p.touch_major;
+    case AMOTION_EVENT_AXIS_TOUCH_MINOR:
+        return p.touch_minor;
+    case AMOTION_EVENT_AXIS_TOOL_MAJOR:
+        return p.tool_major;
+    case AMOTION_EVENT_AXIS_TOOL_MINOR:
+        return p.tool_minor;
+    case AMOTION_EVENT_AXIS_ORIENTATION:
+        return p.orientation;
+    default: {
+        auto it = p.axes.find(axis);
+        return (it != p.axes.end()) ? it->second : 0.0f;
+    }
+    }
 }
 
 } // extern "C"

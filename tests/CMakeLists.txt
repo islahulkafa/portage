@@ -27,14 +27,27 @@ set(UNIT_TEST_SOURCES
     unit/test_zip_archive.cpp
     unit/test_manifest_parser.cpp
     unit/test_package_manager.cpp
+    unit/test_resource_table.cpp
     unit/test_asset_manager.cpp
     unit/test_jni_env.cpp
     unit/test_looper.cpp
+    unit/test_choreographer.cpp
+    unit/test_sensor.cpp
+    unit/test_surface_rendering.cpp
+    unit/test_ashmem.cpp
+    unit/test_hardware_buffer.cpp
     unit/test_input_queue.cpp
     unit/test_configuration.cpp
     unit/test_android_log.cpp
     unit/test_egl.cpp
     unit/test_gles.cpp
+    unit/test_key_codes.cpp
+    unit/test_aaudio.cpp
+    unit/test_opensles.cpp
+    unit/test_link_map.cpp
+    unit/test_mediandk.cpp
+    unit/test_binder_ndk.cpp
+    unit/test_input_gamepad.cpp
 )
 
 set(INTEGRATION_TEST_SOURCES

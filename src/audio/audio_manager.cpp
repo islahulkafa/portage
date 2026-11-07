@@ -422,6 +422,20 @@ void AudioManager::ForceNullSink(bool enable)
     }
 }
 
+bool AudioManager::ConfigureStream(uint32_t sample_rate, uint32_t channels, int32_t format)
+{
+    m_impl->StopPlayback();
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
+    m_impl->guest_rate = (sample_rate > 0) ? sample_rate : 48000;
+    m_impl->guest_channels = (channels >= 1 && channels <= 2) ? channels : 2;
+    m_impl->guest_format = format;
+    uint32_t sample_bytes = (format == SNDRV_PCM_FORMAT_S16_LE) ? 2 : 4;
+    m_impl->guest_frame_size = m_impl->guest_channels * sample_bytes;
+    m_impl->ResetRingBuffer();
+    m_impl->state = SNDRV_PCM_STATE_SETUP;
+    return true;
+}
+
 void AudioManager::CloseStream()
 {
     m_impl->StopPlayback();
@@ -466,7 +480,8 @@ int64_t AudioManager::WritePcmBytes(const void *buf, size_t count)
 
     std::unique_lock<std::mutex> lock(m_impl->mutex);
 
-    if (m_impl->state == SNDRV_PCM_STATE_PREPARED) {
+    if (m_impl->state == SNDRV_PCM_STATE_PREPARED || m_impl->state == SNDRV_PCM_STATE_SETUP ||
+        m_impl->state == SNDRV_PCM_STATE_OPEN) {
         m_impl->state = SNDRV_PCM_STATE_RUNNING;
         m_impl->StartPlayback();
     } else if (m_impl->state != SNDRV_PCM_STATE_RUNNING) {

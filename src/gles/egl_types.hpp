@@ -105,3 +105,8 @@ inline constexpr EGLint EGL_VENDOR = 0x3053;
 inline constexpr EGLint EGL_VERSION = 0x3054;
 inline constexpr EGLint EGL_EXTENSIONS = 0x3055;
 inline constexpr EGLint EGL_CLIENT_APIS = 0x308D;
+
+// Android EGL Extensions
+inline constexpr EGLenum EGL_NATIVE_BUFFER_ANDROID = 0x3140;
+using EGLImageKHR = void *;
+inline constexpr EGLImageKHR EGL_NO_IMAGE_KHR = nullptr;

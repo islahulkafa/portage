@@ -393,7 +393,8 @@ TEST_F(GlesExecutionFixture, RunsGlesAppViaLauncherCli)
     ASSERT_TRUE(stdfs::exists(portage_exe))
         << "portage.exe not found at current_path=" << stdfs::current_path();
 
-    std::string cmd = "\"\"" + portage_exe.string() + "\" run \"" + apk_path_.string() + "\"\"";
+    std::string cmd =
+        "\"\"" + portage_exe.string() + "\" --headless run \"" + apk_path_.string() + "\"\"";
     int ret = std::system(cmd.c_str());
     EXPECT_EQ(ret, 0);
 }

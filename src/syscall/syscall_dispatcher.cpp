@@ -1,5 +1,6 @@
 #include "syscall_dispatcher.hpp"
 #include "audio/audio_manager.hpp"
+#include "mem/shared_memory.hpp"
 #include "audio/audio_types.hpp"
 #include "binder/binder_driver.hpp"
 #include "binder/binder_types.hpp"
@@ -261,6 +262,15 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
 
             if (desc->dev == fs::DeviceType::AlsaPcm) {
                 ret = audio::AudioManager::Instance().WritePcmBytes(buf, count);
+                break;
+            }
+
+            if (desc->dev == fs::DeviceType::InputEvent0 ||
+                desc->dev == fs::DeviceType::InputEvent1) {
+                int dev_idx = (desc->dev == fs::DeviceType::InputEvent0) ? 0 : 1;
+                size_t num_events = count / sizeof(input::LinuxInputEvent);
+                ret = input::InputManager::Instance().WriteEvents(
+                    dev_idx, reinterpret_cast<const input::LinuxInputEvent *>(buf), num_events);
                 break;
             }
 
@@ -590,6 +600,24 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 break;
             }
 
+            if (desc->shared_memory) {
+                if ((prot & ~desc->shared_memory->prot_mask) != 0) {
+                    ret = LINUX_EACCES;
+                    break;
+                }
+                void *mapped = mem::SharedMemoryManager::Instance().MapShared(
+                    *desc->shared_memory, addr, length, prot, flags, offset);
+                if (!mapped) {
+                    ret = LINUX_ENOMEM;
+                    break;
+                }
+                if ((prot & 4) != 0) { // PROT_EXEC
+                    rewrite::SyscallRewriter::PatchCodeRegion(mapped, length);
+                }
+                ret = reinterpret_cast<int64_t>(mapped);
+                break;
+            }
+
             if (desc->dev == fs::DeviceType::PropContext ||
                 desc->dev == fs::DeviceType::PropLegacy) {
                 void *res = address_space_->MmapAnonymous(addr, length, prot | 2, flags);
@@ -693,8 +721,13 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
     }
 
     case 11: { // sys_munmap(addr, len)
+        void *unmap_addr = reinterpret_cast<void *>(a1);
+        if (mem::SharedMemoryManager::Instance().UnmapShared(unmap_addr)) {
+            ret = 0;
+            break;
+        }
         if (address_space_) {
-            int res = address_space_->Munmap(reinterpret_cast<void *>(a1), a2);
+            int res = address_space_->Munmap(unmap_addr, a2);
             ret = (res == 0) ? 0 : LINUX_EINVAL;
         } else {
             ret = LINUX_EINVAL;
@@ -788,6 +821,72 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                    desc->dev == fs::DeviceType::InputEvent1) {
             int dev_idx = (desc->dev == fs::DeviceType::InputEvent0) ? 0 : 1;
             ret = input::InputManager::Instance().HandleIoctl(dev_idx, cmd, arg);
+        } else if (desc->dev == fs::DeviceType::Ashmem || desc->shared_memory) {
+            auto shm = desc->shared_memory;
+            if (!shm) {
+                ret = LINUX_EINVAL;
+                break;
+            }
+            switch (cmd) {
+            case 0x41007701: { // ASHMEM_SET_NAME
+                const char *name = reinterpret_cast<const char *>(arg);
+                if (!name) {
+                    ret = LINUX_EFAULT;
+                    break;
+                }
+                ret = mem::SharedMemoryManager::Instance().SetRegionName(*shm, name);
+                break;
+            }
+            case 0x81007702: { // ASHMEM_GET_NAME
+                char *buf = reinterpret_cast<char *>(arg);
+                if (!buf) {
+                    ret = LINUX_EFAULT;
+                    break;
+                }
+                std::strncpy(buf, shm->name.c_str(), 256);
+                ret = 0;
+                break;
+            }
+            case 0x40087703:   // ASHMEM_SET_SIZE (64-bit)
+            case 0x40047703: { // ASHMEM_SET_SIZE (32-bit)
+                size_t sz = reinterpret_cast<uintptr_t>(arg);
+                ret = mem::SharedMemoryManager::Instance().SetRegionSize(*shm, sz);
+                break;
+            }
+            case 0x00007704: { // ASHMEM_GET_SIZE
+                ret = static_cast<int64_t>(shm->size);
+                break;
+            }
+            case 0x40087705:   // ASHMEM_SET_PROT_MASK (64-bit)
+            case 0x40047705: { // ASHMEM_SET_PROT_MASK (32-bit)
+                int prot = static_cast<int>(reinterpret_cast<uintptr_t>(arg));
+                ret = mem::SharedMemoryManager::Instance().SetProtMask(*shm, prot);
+                break;
+            }
+            case 0x00007706: { // ASHMEM_GET_PROT_MASK
+                ret = shm->prot_mask;
+                break;
+            }
+            case 0x40087707: { // ASHMEM_PIN
+                ret = mem::SharedMemoryManager::Instance().PinRegion(*shm, 0, 0);
+                break;
+            }
+            case 0x40087708: { // ASHMEM_UNPIN
+                ret = mem::SharedMemoryManager::Instance().UnpinRegion(*shm, 0, 0);
+                break;
+            }
+            case 0x00007709: { // ASHMEM_GET_PIN_STATUS
+                ret = mem::SharedMemoryManager::Instance().GetPinStatus(*shm);
+                break;
+            }
+            case 0x0000770a: { // ASHMEM_PURGE_ALL_CACHES
+                ret = 0;
+                break;
+            }
+            default:
+                ret = LINUX_EINVAL;
+                break;
+            }
         } else {
             ret = LINUX_ENOSYS;
         }
@@ -1352,10 +1451,72 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             desc->flags = static_cast<int>(arg);
             ret = 0;
             break;
+        case 1033: { // F_ADD_SEALS
+            if (!desc->shared_memory) {
+                ret = LINUX_EINVAL;
+                break;
+            }
+            int new_seals = static_cast<int>(arg);
+            if (desc->shared_memory->seals & 1 /* F_SEAL_SEAL */) {
+                ret = LINUX_EPERM;
+                break;
+            }
+            desc->shared_memory->seals |= new_seals;
+            if (desc->shared_memory->seals &
+                (8 /* F_SEAL_WRITE */ | 16 /* F_SEAL_FUTURE_WRITE */)) {
+                desc->shared_memory->prot_mask &= ~2; // remove PROT_WRITE
+            }
+            ret = 0;
+            break;
+        }
+        case 1034: { // F_GET_SEALS
+            if (!desc->shared_memory) {
+                ret = LINUX_EINVAL;
+                break;
+            }
+            ret = desc->shared_memory->seals;
+            break;
+        }
         default:
             ret = LINUX_EINVAL;
             break;
         }
+        break;
+    }
+
+    case 77: { // sys_ftruncate(fd, length)
+        int fd = static_cast<int>(a1);
+        int64_t length = static_cast<int64_t>(a2);
+        if (length < 0) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+        if (!fd_table_) {
+            ret = LINUX_EBADF;
+            break;
+        }
+        auto desc = fd_table_->Get(fd);
+        if (!desc) {
+            ret = LINUX_EBADF;
+            break;
+        }
+        if (desc->shared_memory) {
+            ret = mem::SharedMemoryManager::Instance().SetRegionSize(*desc->shared_memory,
+                                                                     static_cast<size_t>(length));
+            break;
+        }
+        if (desc->handle != INVALID_HANDLE_VALUE) {
+            LARGE_INTEGER li;
+            li.QuadPart = length;
+            if (SetFilePointerEx(desc->handle, li, nullptr, FILE_BEGIN) &&
+                SetEndOfFile(desc->handle)) {
+                ret = 0;
+            } else {
+                ret = LINUX_EINVAL;
+            }
+            break;
+        }
+        ret = LINUX_EINVAL;
         break;
     }
 
@@ -1675,6 +1836,12 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 break;
             }
             ret = fd_table_->AllocateBinder(bid, resolved.dev_type, flags);
+            break;
+        }
+
+        if (resolved.dev_type == fs::DeviceType::Ashmem) {
+            auto shm = mem::SharedMemoryManager::Instance().CreateAshmem();
+            ret = fd_table_->AllocateSharedMemory(shm, fs::DeviceType::Ashmem, flags, pathname);
             break;
         }
 
@@ -2214,6 +2381,30 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             }
         }
         ret = 0;
+        break;
+    }
+
+    case 319: { // sys_memfd_create(uname, flags)
+        const char *uname = reinterpret_cast<const char *>(a1);
+        unsigned int flags = static_cast<unsigned int>(a2);
+        if (!uname) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+        if (!fd_table_) {
+            ret = LINUX_ENOSYS;
+            break;
+        }
+        auto shm = mem::SharedMemoryManager::Instance().CreateRegion(uname, 0);
+        if (!shm) {
+            ret = LINUX_ENOMEM;
+            break;
+        }
+        int fd_flags = 0;
+        if (flags & 1 /* MFD_CLOEXEC */) {
+            fd_flags |= LINUX_O_CLOEXEC;
+        }
+        ret = fd_table_->AllocateSharedMemory(shm, fs::DeviceType::SharedMemory, fd_flags, uname);
         break;
     }
 

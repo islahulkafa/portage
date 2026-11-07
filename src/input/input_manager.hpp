@@ -34,6 +34,7 @@ class InputManager {
     // Guest read & poll APIs
     int64_t ReadEvents(int device_index, LinuxInputEvent *out_events, size_t max_events,
                        bool nonblocking) noexcept;
+    int64_t WriteEvents(int device_index, const LinuxInputEvent *events, size_t count) noexcept;
     bool HasEvents(int device_index) const noexcept;
 
     // Evdev ioctls
