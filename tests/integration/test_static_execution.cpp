@@ -1,0 +1,111 @@
+#include "arch/guest_context.hpp"
+#include "elf/elf_loader.hpp"
+#include "mem/address_space.hpp"
+#include "syscall/syscall_dispatcher.hpp"
+#include <filesystem>
+#include <gtest/gtest.h>
+#include <vector>
+
+namespace stdfs = std::filesystem;
+using namespace portage;
+
+namespace {
+
+stdfs::path FindGuestBinary(const std::string &filename)
+{
+    const std::vector<stdfs::path> candidates = {
+        stdfs::path("guests") / filename,
+        stdfs::path("tests/guests") / filename,
+        stdfs::current_path() / "guests" / filename,
+        stdfs::current_path() / "tests" / "guests" / filename,
+        stdfs::current_path() / "build" / "debug" / "tests" / "guests" / filename,
+    };
+    for (const auto &p : candidates) {
+        if (stdfs::exists(p)) {
+            return stdfs::canonical(p);
+        }
+    }
+    return stdfs::path("guests") / filename;
+}
+
+} // namespace
+
+class StaticExecutionFixture : public ::testing::Test {
+  protected:
+    void SetUp() override
+    {
+        address_space_ = std::make_unique<mem::AddressSpace>();
+        syscall::SyscallDispatcher::Initialize(address_space_.get(), nullptr, nullptr, false);
+        loader_ = std::make_unique<elf::ElfLoader>(address_space_.get());
+        guest_context_ = std::make_unique<arch::GuestContext>();
+        ASSERT_TRUE(guest_context_->InitializeStack());
+    }
+
+    void TearDown() override
+    {
+        syscall::SyscallDispatcher::Shutdown();
+        guest_context_.reset();
+        loader_.reset();
+        address_space_.reset();
+    }
+
+    int ExecuteGuest(const stdfs::path &elf_path, const std::vector<std::string> &args = {})
+    {
+        auto load_res = loader_->LoadFromFile(elf_path.string());
+        if (!std::holds_alternative<elf::LoadedElf>(load_res)) {
+            auto err = std::get<elf::LoaderError>(load_res);
+            std::cerr << "[ExecuteGuest] Failed to load ELF: " << elf_path
+                      << " error code: " << static_cast<int>(err) << "\n";
+            return -999;
+        }
+
+        const auto &loaded = std::get<elf::LoadedElf>(load_res);
+        std::vector<std::string> full_args = {elf_path.string()};
+        full_args.insert(full_args.end(), args.begin(), args.end());
+
+        std::vector<std::string> env = {"PATH=/system/bin", "ANDROID_DATA=/data"};
+
+        void *sp = guest_context_->SetupStack(full_args, env, loaded.auxv_entries);
+        if (!sp) {
+            return -998;
+        }
+
+        return guest_context_->Run(reinterpret_cast<void *>(loaded.entry_point), sp);
+    }
+
+    std::unique_ptr<mem::AddressSpace> address_space_;
+    std::unique_ptr<elf::ElfLoader> loader_;
+    std::unique_ptr<arch::GuestContext> guest_context_;
+};
+
+TEST_F(StaticExecutionFixture, RunsHelloFreestandingWithExitCode42)
+{
+    stdfs::path guest_path = FindGuestBinary("hello_freestanding.elf");
+    ASSERT_TRUE(stdfs::exists(guest_path)) << "Guest binary not found at: " << guest_path;
+    int exit_code = ExecuteGuest(guest_path);
+    EXPECT_EQ(exit_code, 42);
+}
+
+TEST_F(StaticExecutionFixture, RunsTlsCanaryTestWithSuccess)
+{
+    stdfs::path guest_path = FindGuestBinary("test_tls_canary.elf");
+    ASSERT_TRUE(stdfs::exists(guest_path)) << "Guest binary not found at: " << guest_path;
+    int exit_code = ExecuteGuest(guest_path);
+    EXPECT_EQ(exit_code, 0);
+}
+
+TEST_F(StaticExecutionFixture, RunsMemoryBrkMmapTestWithSuccess)
+{
+    stdfs::path guest_path = FindGuestBinary("test_memory.elf");
+    ASSERT_TRUE(stdfs::exists(guest_path)) << "Guest binary not found at: " << guest_path;
+    int exit_code = ExecuteGuest(guest_path);
+    EXPECT_EQ(exit_code, 0);
+}
+
+TEST_F(StaticExecutionFixture, RunsAuxvStackTestWithSuccess)
+{
+    stdfs::path guest_path = FindGuestBinary("test_auxv.elf");
+    ASSERT_TRUE(stdfs::exists(guest_path)) << "Guest binary not found at: " << guest_path;
+    int exit_code = ExecuteGuest(guest_path);
+    EXPECT_EQ(exit_code, 0);
+}

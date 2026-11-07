@@ -1,0 +1,64 @@
+# Prerequisites & Build Directories
+build/
+build_*/
+cmake-build-*/
+out/
+bin/
+lib/
+Testing/
+
+# CMake Generated Artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+.ninja_deps
+.ninja_log
+*.ninja
+CMakeUserPresets.json
+
+# Object Files & Static / Shared Libraries
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+
+# Compiled Binaries & Executables
+*.exe
+*.elf
+*.apk
+*.out
+
+# Debugging Symbols & Temporary Build Outputs
+*.pdb
+*.idb
+*.ilk
+*.exp
+*.d
+*.log
+*.dmp
+*.stackdump
+
+# Portage Runtime Sandboxes & Temporary Data
+sandbox/
+*.tmp
+
+# IDEs & Editors
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosv
+*.sln.docstates
+*.swp
+*~
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+Desktop.ini

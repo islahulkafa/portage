@@ -1,0 +1,207 @@
+#include "thread/thread_manager.hpp"
+#include "arch/guest_context.hpp"
+#include "sync/futex.hpp"
+#include <iostream>
+#include <synchapi.h>
+
+namespace portage::thread {
+
+namespace {
+
+struct ThreadStartParams {
+    int tid{0};
+    uint64_t flags{0};
+    uintptr_t child_stack{0};
+    uintptr_t child_tid_ptr{0};
+    uintptr_t tls{0};
+    uintptr_t child_rip{0};
+};
+
+DWORD WINAPI WorkerThreadThunk(LPVOID lpParam)
+{
+    auto *params = static_cast<ThreadStartParams *>(lpParam);
+    int tid = params->tid;
+    uint64_t flags = params->flags;
+    uintptr_t child_stack = params->child_stack;
+    uintptr_t child_tid_ptr = params->child_tid_ptr;
+    uintptr_t tls = params->tls;
+    uintptr_t child_rip = params->child_rip;
+    delete params;
+
+    if (tls != 0) {
+        arch::SetActiveTcb(tls);
+    }
+
+    if ((flags & LINUX_CLONE_CHILD_SETTID) && child_tid_ptr != 0) {
+        *reinterpret_cast<int *>(child_tid_ptr) = tid;
+    }
+
+    if ((flags & LINUX_CLONE_CHILD_CLEARTID) && child_tid_ptr != 0) {
+        ThreadManager::Instance().SetClearChildTid(tid, child_tid_ptr);
+    }
+
+    uint64_t host_stack_base = __readgsqword(0x08);
+    uint64_t host_stack_limit = __readgsqword(0x10);
+    uint64_t host_dealloc_stack = __readgsqword(0x1478);
+
+    auto *host_ctx = arch::GetThreadHostContext();
+    host_ctx->stack_base = host_stack_base;
+    host_ctx->stack_limit = host_stack_limit;
+    host_ctx->deallocation_stack = host_dealloc_stack;
+    arch::SetThreadHostContextActive(true);
+
+    uintptr_t g_stack_base = child_stack;
+    uintptr_t g_stack_limit =
+        (child_stack > 8 * 1024 * 1024) ? (child_stack - 8 * 1024 * 1024) : 0x1000;
+
+    __writegsqword(0x08, g_stack_base);
+    __writegsqword(0x10, g_stack_limit);
+    __writegsqword(0x1478, g_stack_limit);
+
+    int exit_code = arch::portage_save_and_enter(reinterpret_cast<void *>(child_rip),
+                                                 reinterpret_cast<void *>(child_stack), host_ctx);
+
+    __writegsqword(0x08, host_stack_base);
+    __writegsqword(0x10, host_stack_limit);
+    __writegsqword(0x1478, host_dealloc_stack);
+
+    ThreadManager::Instance().OnThreadExit(tid, exit_code);
+    return static_cast<DWORD>(exit_code);
+}
+
+} // namespace
+
+ThreadManager &ThreadManager::Instance() noexcept
+{
+    static ThreadManager instance;
+    return instance;
+}
+
+int ThreadManager::RegisterMainThread() noexcept
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    DWORD win32_tid = GetCurrentThreadId();
+
+    auto thread = std::make_shared<GuestThread>();
+    thread->tid = static_cast<int>(GetCurrentProcessId());
+    thread->win32_handle = GetCurrentThread();
+    thread->win32_thread_id = win32_tid;
+
+    m_threads[thread->tid] = thread;
+    m_win32_to_tid[win32_tid] = thread->tid;
+    return thread->tid;
+}
+
+int ThreadManager::CreateGuestThread(uint64_t flags, uintptr_t child_stack,
+                                     uintptr_t parent_tid_ptr, uintptr_t child_tid_ptr,
+                                     uintptr_t tls, uintptr_t child_rip) noexcept
+{
+    int assigned_tid = m_next_tid.fetch_add(1);
+
+    if ((flags & LINUX_CLONE_PARENT_SETTID) && parent_tid_ptr != 0) {
+        *reinterpret_cast<int *>(parent_tid_ptr) = assigned_tid;
+    }
+
+    auto thread = std::make_shared<GuestThread>();
+    thread->tid = assigned_tid;
+    thread->child_stack = child_stack;
+    thread->tcb = tls;
+
+    auto *params = new ThreadStartParams{.tid = assigned_tid,
+                                         .flags = flags,
+                                         .child_stack = child_stack,
+                                         .child_tid_ptr = child_tid_ptr,
+                                         .tls = tls,
+                                         .child_rip = child_rip};
+
+    DWORD win32_id = 0;
+    HANDLE hThread = CreateThread(nullptr, 0, WorkerThreadThunk, params, 0, &win32_id);
+
+    if (!hThread) {
+        delete params;
+        return -11; // -EAGAIN
+    }
+
+    thread->win32_handle = hThread;
+    thread->win32_thread_id = win32_id;
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_threads[assigned_tid] = thread;
+        m_win32_to_tid[win32_id] = assigned_tid;
+    }
+
+    return assigned_tid;
+}
+
+void ThreadManager::SetClearChildTid(int tid, uintptr_t ctid_ptr) noexcept
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_threads.find(tid);
+    if (it != m_threads.end()) {
+        it->second->clear_child_tid = ctid_ptr;
+    }
+}
+
+void ThreadManager::OnThreadExit(int tid, int exit_code) noexcept
+{
+    uintptr_t clear_tid_ptr = 0;
+    HANDLE hThread = INVALID_HANDLE_VALUE;
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_threads.find(tid);
+        if (it != m_threads.end()) {
+            it->second->is_exited = true;
+            it->second->exit_code = exit_code;
+            clear_tid_ptr = it->second->clear_child_tid;
+            hThread = it->second->win32_handle;
+        }
+    }
+
+    if (clear_tid_ptr != 0) {
+        *reinterpret_cast<int *>(clear_tid_ptr) = 0;
+        WakeByAddressAll(reinterpret_cast<void *>(clear_tid_ptr));
+    }
+
+    if (hThread != INVALID_HANDLE_VALUE && hThread != GetCurrentThread()) {
+        CloseHandle(hThread);
+    }
+}
+
+std::shared_ptr<GuestThread> ThreadManager::GetThread(int tid) noexcept
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_threads.find(tid);
+    if (it != m_threads.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+std::shared_ptr<GuestThread> ThreadManager::GetCurrentGuestThread() noexcept
+{
+    DWORD win32_tid = GetCurrentThreadId();
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_win32_to_tid.find(win32_tid);
+    if (it != m_win32_to_tid.end()) {
+        auto t_it = m_threads.find(it->second);
+        if (t_it != m_threads.end()) {
+            return t_it->second;
+        }
+    }
+    return nullptr;
+}
+
+int ThreadManager::GetCurrentTid() noexcept
+{
+    DWORD win32_tid = GetCurrentThreadId();
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_win32_to_tid.find(win32_tid);
+    if (it != m_win32_to_tid.end()) {
+        return it->second;
+    }
+    return static_cast<int>(win32_tid);
+}
+
+} // namespace portage::thread

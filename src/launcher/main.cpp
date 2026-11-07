@@ -1,0 +1,187 @@
+#include "arch/guest_context.hpp"
+#include "elf/elf_loader.hpp"
+#include "fs/fd_table.hpp"
+#include "fs/vfs.hpp"
+#include "mem/address_space.hpp"
+#include "ndk/android_log.hpp"
+#include "ndk/libandroid_thunks.hpp"
+#include "package/jni_env.hpp"
+#include "package/native_activity.hpp"
+#include "package/package_manager.hpp"
+#include "syscall/syscall_dispatcher.hpp"
+#include "thread/thread_manager.hpp"
+#include <cstdlib>
+#include <filesystem>
+#include <iostream>
+#include <string>
+#include <vector>
+
+int main(int argc, char *argv[])
+{
+    if (argc < 2) {
+        std::cerr
+            << "Usage: portage [--verbose] [--rootfs <path>] <elf_binary | app.apk> [args...]\n"
+            << "       portage run <app.apk>\n"
+            << "       portage logcat\n";
+        return 1;
+    }
+
+    if (argc >= 2 && std::string(argv[1]) == "logcat") {
+        portage::ndk::LogcatBuffer::Instance().DumpToStream(std::cout);
+        return 0;
+    }
+
+    bool verbose = false;
+    std::filesystem::path rootfs_path{};
+    int arg_idx = 1;
+
+    while (arg_idx < argc) {
+        std::string arg = argv[arg_idx];
+        if (arg == "--verbose") {
+            verbose = true;
+            arg_idx++;
+        } else if (arg == "--rootfs") {
+            if (arg_idx + 1 >= argc) {
+                std::cerr << "Error: missing path after --rootfs\n";
+                return 1;
+            }
+            rootfs_path = argv[arg_idx + 1];
+            arg_idx += 2;
+        } else {
+            break;
+        }
+    }
+
+    if (arg_idx >= argc) {
+        std::cerr << "Error: missing ELF binary path\n";
+        return 1;
+    }
+
+    if (rootfs_path.empty()) {
+        const char *env_rootfs = std::getenv("PORTAGE_ROOTFS");
+        if (env_rootfs && *env_rootfs) {
+            rootfs_path = env_rootfs;
+        }
+    }
+
+    if (arg_idx < argc && std::string(argv[arg_idx]) == "run") {
+        arg_idx++;
+        if (arg_idx >= argc) {
+            std::cerr << "Error: missing target after run\n";
+            return 1;
+        }
+    }
+
+    std::string target_path = argv[arg_idx];
+    bool is_apk = (target_path.size() >= 4 &&
+                   (target_path.ends_with(".apk") || target_path.ends_with(".APK")));
+
+    ANativeWindow default_window{1280, 720, 1, 1, nullptr};
+    std::string elf_path = target_path;
+    if (is_apk) {
+        portage::package::PackageManager::Instance().Initialize(
+            rootfs_path.empty() ? "" : (rootfs_path / "sandbox"));
+        auto pkg_opt = portage::package::PackageManager::Instance().InstallPackage(target_path);
+        if (!pkg_opt.has_value()) {
+            std::cerr << "Error: failed to install or parse APK: " << target_path << "\n";
+            return 1;
+        }
+        const auto &pkg = *pkg_opt;
+        if (verbose) {
+            std::cout << "[portage] Installed APK: " << pkg.manifest.package_name << " (v"
+                      << pkg.manifest.version_code << ")\n";
+        }
+        auto primary_lib = portage::package::PackageManager::Instance().GetPrimaryLibraryPath(pkg);
+        if (!std::filesystem::exists(primary_lib)) {
+            std::cerr << "Error: native library not found: " << primary_lib.string() << "\n";
+            return 1;
+        }
+        elf_path = primary_lib.string();
+        portage::package::NativeActivityRunner::Instance().SetupActivity(pkg, &default_window);
+    }
+
+    std::vector<std::string> guest_args;
+    for (int i = arg_idx; i < argc; i++) {
+        guest_args.emplace_back(argv[i]);
+    }
+
+    std::vector<std::string> guest_env = {"PATH=/system/bin:/system/xbin", "ANDROID_DATA=/data",
+                                          "ANDROID_ROOT=/system", "TMPDIR=/data/local/tmp"};
+
+    portage::fs::Vfs vfs(rootfs_path);
+    vfs.SetExecutablePath(std::filesystem::absolute(elf_path));
+
+    portage::fs::FileDescriptorTable fd_table;
+    portage::thread::ThreadManager::Instance().RegisterMainThread();
+
+    portage::mem::AddressSpace address_space;
+    portage::syscall::SyscallDispatcher::Initialize(&address_space, &vfs, &fd_table, verbose);
+
+    portage::elf::ElfLoader loader(&address_space);
+    auto load_result = loader.LoadFromFile(elf_path, &vfs);
+
+    if (std::holds_alternative<portage::elf::LoaderError>(load_result)) {
+        auto err = std::get<portage::elf::LoaderError>(load_result);
+        std::cerr << "Error: failed to load ELF binary: code=" << static_cast<int>(err) << "\n";
+        return 1;
+    }
+
+    const auto &loaded_elf = std::get<portage::elf::LoadedElf>(load_result);
+    if (verbose) {
+        std::cout << "[portage] Loaded ELF base: 0x" << std::hex << loaded_elf.base_address
+                  << " entry: 0x" << loaded_elf.entry_point << " app_entry: 0x"
+                  << loaded_elf.app_entry_point << " interp: " << loaded_elf.interpreter_path
+                  << " PIE: " << (loaded_elf.is_pie ? "yes" : "no") << std::dec << "\n";
+    }
+
+    portage::arch::GuestContext guest_context;
+    if (!guest_context.InitializeStack()) {
+        std::cerr << "Error: failed to allocate guest stack\n";
+        return 1;
+    }
+
+    if (is_apk) {
+        uintptr_t jni_onload_addr = loaded_elf.FindSymbol("JNI_OnLoad");
+        if (jni_onload_addr != 0) {
+            auto jni_onload = reinterpret_cast<portage::package::JniOnLoadFunc>(jni_onload_addr);
+            portage::package::jint ver =
+                jni_onload(portage::package::JniEnvironment::Instance().GetJavaVM(), nullptr);
+            if (verbose) {
+                std::cout << "[portage] JNI_OnLoad returned version: 0x" << std::hex << ver
+                          << std::dec << "\n";
+            }
+        }
+
+        uintptr_t on_create_addr = loaded_elf.FindSymbol("ANativeActivity_onCreate");
+        if (on_create_addr != 0) {
+            auto on_create =
+                reinterpret_cast<portage::package::ANativeActivity_createFunc>(on_create_addr);
+            on_create(portage::package::NativeActivityRunner::Instance().GetActivity(), nullptr, 0);
+            portage::package::NativeActivityRunner::Instance().DispatchStart();
+            portage::package::NativeActivityRunner::Instance().DispatchResume();
+            portage::package::NativeActivityRunner::Instance().DispatchWindowCreated(
+                &default_window);
+            portage::package::NativeActivityRunner::Instance().DispatchWindowFocus(true);
+            portage::package::NativeActivityRunner::Instance().DispatchPause();
+            portage::package::NativeActivityRunner::Instance().DispatchWindowDestroyed(
+                &default_window);
+            portage::package::NativeActivityRunner::Instance().DispatchStop();
+            portage::package::NativeActivityRunner::Instance().DispatchDestroy();
+            std::cout << "[portage] APK native activity execution completed successfully\n";
+            portage::syscall::SyscallDispatcher::Shutdown();
+            return 0;
+        }
+    }
+
+    void *guest_sp = guest_context.SetupStack(guest_args, guest_env, loaded_elf.auxv_entries);
+    if (!guest_sp) {
+        std::cerr << "Error: failed to setup guest stack frame\n";
+        return 1;
+    }
+
+    int exit_code = guest_context.Run(reinterpret_cast<void *>(loaded_elf.entry_point), guest_sp);
+    std::cout << "[portage] Guest exited with code: " << exit_code << "\n";
+
+    portage::syscall::SyscallDispatcher::Shutdown();
+    return exit_code;
+}
