@@ -60,6 +60,9 @@ __attribute__((sysv_abi)) binder_status_t
 AParcel_writeParcelFileDescriptor(AParcel *parcel, int fd);
 
 __attribute__((sysv_abi)) binder_status_t
+AParcel_writeStrongBinder(AParcel *parcel, struct AIBinder *binder);
+
+__attribute__((sysv_abi)) binder_status_t
 AParcel_readInt32(const AParcel *parcel, int32_t *out);
 
 __attribute__((sysv_abi)) binder_status_t
@@ -91,5 +94,8 @@ AParcel_readByteArray(const AParcel *parcel, void *arrayData, AParcel_byteArrayA
 
 __attribute__((sysv_abi)) binder_status_t
 AParcel_readParcelFileDescriptor(const AParcel *parcel, int *outFd);
+
+__attribute__((sysv_abi)) binder_status_t
+AParcel_readStrongBinder(const AParcel *parcel, struct AIBinder **binder);
 
 } // extern "C"

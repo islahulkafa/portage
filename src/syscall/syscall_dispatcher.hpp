@@ -55,6 +55,7 @@ class SyscallDispatcher {
     [[nodiscard]] static bool HasExited() noexcept { return has_exited_; }
     [[nodiscard]] static int GetExitCode() noexcept { return exit_code_; }
     [[nodiscard]] static fs::FileDescriptorTable *GetFdTable() noexcept { return fd_table_; }
+    [[nodiscard]] static fs::Vfs *GetVfs() noexcept { return vfs_; }
 
   private:
     static mem::AddressSpace *address_space_;

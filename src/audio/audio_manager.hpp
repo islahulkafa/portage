@@ -19,6 +19,17 @@ struct AudioStats {
     bool is_running{false};
 };
 
+struct AudioCaptureStats {
+    uint64_t total_frames_captured{0};
+    uint64_t total_frames_read{0};
+    uint32_t sample_rate{48000};
+    uint32_t channels{1};
+    int32_t format{SNDRV_PCM_FORMAT_S16_LE};
+    PcmState current_state{SNDRV_PCM_STATE_OPEN};
+    bool is_null_source{false};
+    bool is_running{false};
+};
+
 class AudioManager {
   public:
     static AudioManager &Instance() noexcept;
@@ -39,6 +50,18 @@ class AudioManager {
 
     void ForceNullSink(bool enable);
     [[nodiscard]] AudioStats GetStats() const;
+
+    bool ConfigureCaptureStream(uint32_t sample_rate, uint32_t channels, int32_t format);
+    bool StartCapture();
+    void StopCapture();
+    void CloseCaptureStream();
+
+    int64_t ReadPcmBytes(void *buf, size_t count);
+    int64_t ReadiFrames(void *buf, uint64_t frames, int64_t timeout_nanos = 0);
+
+    void SetCaptureToneFrequency(float freq_hz);
+    void ForceCaptureNullSource(bool enable);
+    [[nodiscard]] AudioCaptureStats GetCaptureStats() const;
 
   private:
     AudioManager();

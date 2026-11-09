@@ -95,6 +95,57 @@ int Vfs::ChDir(std::string_view path)
     return -2; // -ENOENT
 }
 
+bool Vfs::AddMount(std::string_view guest_path, const std::filesystem::path &host_path)
+{
+    if (guest_path.empty() || host_path.empty()) {
+        return false;
+    }
+    std::string norm = NormalizePath(guest_path);
+    std::lock_guard<std::mutex> lock(m_mount_mutex);
+    for (auto &m : m_mounts) {
+        if (m.guest_path == norm) {
+            m.host_path = host_path;
+            return true;
+        }
+    }
+    m_mounts.push_back({norm, host_path});
+    return true;
+}
+
+bool Vfs::RemoveMount(std::string_view guest_path)
+{
+    if (guest_path.empty()) {
+        return false;
+    }
+    std::string norm = NormalizePath(guest_path);
+    std::lock_guard<std::mutex> lock(m_mount_mutex);
+    for (auto it = m_mounts.begin(); it != m_mounts.end(); ++it) {
+        if (it->guest_path == norm) {
+            m_mounts.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
+std::optional<std::filesystem::path> Vfs::GetMountTarget(std::string_view guest_path) const
+{
+    std::string norm = NormalizePath(guest_path);
+    std::lock_guard<std::mutex> lock(m_mount_mutex);
+    for (const auto &m : m_mounts) {
+        if (m.guest_path == norm) {
+            return m.host_path;
+        }
+    }
+    return std::nullopt;
+}
+
+void Vfs::ClearMounts()
+{
+    std::lock_guard<std::mutex> lock(m_mount_mutex);
+    m_mounts.clear();
+}
+
 ResolvedPath Vfs::ResolveAt(int dirfd, std::string_view guest_path,
                             std::string_view dirfd_path) const
 {
@@ -180,6 +231,38 @@ ResolvedPath Vfs::Resolve(std::string_view guest_path) const
     }
 
     std::string normalized = NormalizePath(guest_path);
+
+    if (normalized == "/storage/emulated/0") {
+        normalized = "/sdcard";
+    } else if (normalized.starts_with("/storage/emulated/0/")) {
+        normalized = "/sdcard" + normalized.substr(19);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(m_mount_mutex);
+        for (const auto &m : m_mounts) {
+            if (normalized == m.guest_path) {
+                if (std::filesystem::exists(m.host_path)) {
+                    if (std::filesystem::is_directory(m.host_path)) {
+                        return {DeviceType::Directory, m.host_path};
+                    }
+                    return {DeviceType::Regular, m.host_path};
+                }
+                return {DeviceType::Directory, m.host_path};
+            }
+            if (normalized.starts_with(m.guest_path + "/")) {
+                std::string rel = normalized.substr(m.guest_path.length() + 1);
+                std::filesystem::path target = m.host_path / rel;
+                if (std::filesystem::exists(target)) {
+                    if (std::filesystem::is_directory(target)) {
+                        return {DeviceType::Directory, target};
+                    }
+                    return {DeviceType::Regular, target};
+                }
+                return {DeviceType::Regular, target};
+            }
+        }
+    }
 
     if (normalized.starts_with("/data/") || normalized.starts_with("/sdcard/") ||
         normalized == "/data" || normalized == "/sdcard") {

@@ -23,10 +23,23 @@ add_library(portage_core STATIC
     binder/binder_parcel.cpp
     binder/binder_ndk.cpp
     binder/service_manager.cpp
+    binder/play_licensing_service.cpp
+    binder/play_billing_service.cpp
     vulkan/vulkan_bridge.cpp
     audio/audio_manager.cpp
     audio/aaudio_dispatcher.cpp
     audio/opensles_dispatcher.cpp
+    camera/camera_manager.cpp
+    camera/camera_ndk.cpp
+    clipboard/clipboard_manager.cpp
+    clipboard/clipboard_ndk.cpp
+    location/location_manager.cpp
+    location/location_ndk.cpp
+    power/power_manager.cpp
+    power/power_ndk.cpp
+    security/crypto_engine.cpp
+    security/keystore_manager.cpp
+    security/keystore_ndk.cpp
     wsi/window_manager.cpp
     input/input_manager.cpp
     input/gamepad_manager.cpp
@@ -47,6 +60,11 @@ add_library(portage_core STATIC
     ndk/sensor.cpp
     ndk/jnigraphics.cpp
     ndk/hardware_buffer.cpp
+    ndk/storage_manager.cpp
+    ndk/multinetwork.cpp
+    ndk/thermal.cpp
+    ndk/performance_hint.cpp
+    ndk/swappy.cpp
     ndk/libandroid_thunks.cpp
     media/media_format.cpp
     media/media_extractor.cpp
@@ -68,13 +86,18 @@ target_link_libraries(portage_core
         synchronization
         ws2_32
         ole32
+        locationapi
         user32
         gdi32
+        shell32
         opengl32
         dwmapi
+        mf
         mfplat
         mfreadwrite
         mfuuid
+        bcrypt
+        ncrypt
         ZLIB::ZLIB
     PRIVATE
         project_warnings

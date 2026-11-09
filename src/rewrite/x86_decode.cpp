@@ -37,7 +37,7 @@ InstructionInfo DecodeInstruction(std::span<const uint8_t> code) noexcept
     size_t pos = 0;
     const size_t max_len = code.size();
 
-    // 1. Skip legacy prefixes
+    // Skip legacy prefixes
     bool operand_override = false;
     while (pos < max_len && IsPrefix(code[pos])) {
         if (code[pos] == 0x66)
@@ -45,7 +45,7 @@ InstructionInfo DecodeInstruction(std::span<const uint8_t> code) noexcept
         pos++;
     }
 
-    // 2. Skip REX prefix (in 64-bit mode, only one REX prefix directly before opcode)
+    // Skip REX prefix (in 64-bit mode, only one REX prefix directly before opcode)
     bool rex_w = false;
     if (pos < max_len && IsRex(code[pos])) {
         rex_w = (code[pos] & 0x08) != 0;
@@ -56,7 +56,7 @@ InstructionInfo DecodeInstruction(std::span<const uint8_t> code) noexcept
         return {0, false};
     }
 
-    // 3. Opcode parsing
+    // Opcode parsing
     uint8_t op = code[pos++];
     bool has_modrm = false;
     size_t imm_size = 0;
@@ -242,7 +242,7 @@ InstructionInfo DecodeInstruction(std::span<const uint8_t> code) noexcept
         }
     }
 
-    // 4. ModR/M, SIB, and Displacement parsing
+    // ModR/M, SIB, and Displacement parsing
     if (has_modrm) {
         if (pos >= max_len)
             return {0, false};
@@ -274,7 +274,7 @@ InstructionInfo DecodeInstruction(std::span<const uint8_t> code) noexcept
         }
     }
 
-    // 5. Append immediate bytes
+    // Append immediate bytes
     pos += imm_size;
 
     if (pos > max_len) {

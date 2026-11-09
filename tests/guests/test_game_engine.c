@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -435,6 +436,20 @@ static inline int64_t sys_futex(int *uaddr, int op, int val, const void *timeout
     return ret;
 }
 
+static inline int64_t sys_nanosleep(uint64_t nsec)
+{
+    struct {
+        int64_t tv_sec;
+        int64_t tv_nsec;
+    } req = {0, (int64_t)nsec};
+    int64_t ret;
+    __asm__ volatile("syscall"
+                     : "=a"(ret)
+                     : "a"(35), "D"(&req), "S"(NULL)
+                     : "rcx", "r11", "memory");
+    return ret;
+}
+
 static inline void sys_exit(int code)
 {
     __asm__ volatile("syscall" : : "a"(60), "D"(code) : "rcx", "r11", "memory");
@@ -738,11 +753,86 @@ extern int32_t AIBinder_transact(AIBinder *binder, uint32_t code, const AParcel 
 extern AParcel *AParcel_create(void) __attribute__((sysv_abi));
 extern void AParcel_delete(AParcel *parcel) __attribute__((sysv_abi));
 extern int32_t AParcel_writeInt32(AParcel *parcel, int32_t value) __attribute__((sysv_abi));
+extern int32_t AParcel_writeInt64(AParcel *parcel, int64_t value) __attribute__((sysv_abi));
+extern int32_t AParcel_writeString(AParcel *parcel, const char *string, int32_t length)
+    __attribute__((sysv_abi));
+extern int32_t AParcel_writeStrongBinder(AParcel *parcel, AIBinder *binder)
+    __attribute__((sysv_abi));
 extern int32_t AParcel_readInt32(const AParcel *parcel, int32_t *out) __attribute__((sysv_abi));
 extern int32_t AServiceManager_addService(AIBinder *binder, const char *instance)
     __attribute__((sysv_abi));
 extern AIBinder *AServiceManager_checkService(const char *instance) __attribute__((sysv_abi));
 extern AIBinder *AServiceManager_getService(const char *instance) __attribute__((sysv_abi));
+
+typedef int64_t net_handle_t;
+struct addrinfo {
+    int ai_flags;
+    int ai_family;
+    int ai_socktype;
+    int ai_protocol;
+    uint32_t ai_addrlen;
+    uint32_t __pad;
+    void *ai_addr;
+    char *ai_canonname;
+    struct addrinfo *ai_next;
+};
+
+extern int android_setsocknetwork(net_handle_t network, int fd) __attribute__((sysv_abi));
+extern int android_setprocnetwork(net_handle_t network) __attribute__((sysv_abi));
+extern int android_getprocnetwork(net_handle_t *network) __attribute__((sysv_abi));
+extern int android_getaddrinfofornetwork(net_handle_t network, const char *node,
+                                         const char *service, const struct addrinfo *hints,
+                                         struct addrinfo **res) __attribute__((sysv_abi));
+extern void android_freeaddrinfofornetwork(struct addrinfo *ai) __attribute__((sysv_abi));
+extern int android_res_nquery(net_handle_t network, const char *dname, int ns_class, int ns_type,
+                              uint32_t flags) __attribute__((sysv_abi));
+extern int android_res_nresult(int fd, int *rcode) __attribute__((sysv_abi));
+extern void android_res_cancel(int nsend_fd) __attribute__((sysv_abi));
+
+enum AThermalStatus;
+struct AThermalManager;
+typedef void (*AThermal_StatusCallback)(void *data, int status);
+
+extern struct AThermalManager *AThermalManager_acquireManager(void) __attribute__((sysv_abi));
+extern void AThermalManager_releaseManager(struct AThermalManager *manager) __attribute__((sysv_abi));
+extern int AThermalManager_getCurrentThermalStatus(struct AThermalManager *manager)
+    __attribute__((sysv_abi));
+extern float AThermalManager_getThermalHeadroom(struct AThermalManager *manager, int forecastSeconds)
+    __attribute__((sysv_abi));
+
+struct APerformanceHintManager;
+struct APerformanceHintSession;
+
+extern struct APerformanceHintManager *APerformanceHintManager_create(void)
+    __attribute__((sysv_abi));
+extern struct APerformanceHintSession *
+APerformanceHintManager_createSession(struct APerformanceHintManager *manager,
+                                     const int32_t *threadIds, size_t size,
+                                     int64_t initialTargetWorkDurationNanos)
+    __attribute__((sysv_abi));
+extern int
+APerformanceHintSession_reportActualWorkDuration(struct APerformanceHintSession *session,
+                                                int64_t actualDurationNanos)
+    __attribute__((sysv_abi));
+extern void APerformanceHintSession_close(struct APerformanceHintSession *session)
+    __attribute__((sysv_abi));
+
+static volatile int g_engine_licensing_ok = 0;
+
+static int32_t __attribute__((sysv_abi))
+engine_license_listener_transact(AIBinder *binder, uint32_t code, const AParcel *in, AParcel *out)
+{
+    (void)binder;
+    (void)out;
+    if (code == 1 && in) {
+        int32_t resp_code = -1;
+        if (AParcel_readInt32(in, &resp_code) == 0 && resp_code == 0) {
+            g_engine_licensing_ok = 1;
+            return 0;
+        }
+    }
+    return -1;
+}
 
 static int32_t __attribute__((sysv_abi)) engine_binder_transact(AIBinder *binder, uint32_t code,
                                                                 const AParcel *in, AParcel *out)
@@ -904,6 +994,120 @@ extern int32_t AAudioStreamBuilder_delete(void *builder) __attribute__((sysv_abi
 extern int32_t AAudioStream_requestStart(void *stream) __attribute__((sysv_abi));
 extern int32_t AAudioStream_requestStop(void *stream) __attribute__((sysv_abi));
 extern int32_t AAudioStream_close(void *stream) __attribute__((sysv_abi));
+extern void AAudioStreamBuilder_setDirection(void *builder, int32_t direction)
+    __attribute__((sysv_abi));
+extern int32_t AAudioStream_read(void *stream, void *buffer, int32_t numFrames,
+                                 int64_t timeoutNanoseconds) __attribute__((sysv_abi));
+
+// Swappy & Native Window frame pacing functions
+extern uint64_t SwappyVk_initAndGetRefreshCycleDuration(void *physicalDevice, void *device,
+                                                        const void *pAllocator)
+    __attribute__((sysv_abi));
+extern void SwappyGL_init(void *env, void *activity) __attribute__((sysv_abi));
+extern void SwappyGL_setWindow(void *window) __attribute__((sysv_abi));
+extern bool SwappyGL_swap(void *display, void *surface) __attribute__((sysv_abi));
+extern void SwappyGL_destroy(void) __attribute__((sysv_abi));
+extern int32_t ANativeWindow_getLastQueueDuration(void *window, int64_t *outDuration)
+    __attribute__((sysv_abi));
+
+// Camera2 & ImageReader NDK functions
+typedef struct ACameraIdList_guest {
+    int numCameras;
+    const char **cameraIds;
+} ACameraIdList_guest;
+
+extern void *ACameraManager_create(void) __attribute__((sysv_abi));
+extern void ACameraManager_delete(void *manager) __attribute__((sysv_abi));
+extern int32_t ACameraManager_getCameraIdList(void *manager, ACameraIdList_guest **cameraIdList)
+    __attribute__((sysv_abi));
+extern void ACameraManager_deleteCameraIdList(ACameraIdList_guest *cameraIdList)
+    __attribute__((sysv_abi));
+extern int32_t ACameraManager_openCamera(void *manager, const char *cameraId, void *callback,
+                                         void **device) __attribute__((sysv_abi));
+extern int32_t ACameraDevice_close(void *device) __attribute__((sysv_abi));
+extern int32_t ACameraDevice_createCaptureRequest(const void *device, int templateId,
+                                                   void **request) __attribute__((sysv_abi));
+extern int32_t ACameraDevice_createCaptureSession(void *device, const void *outputs,
+                                                  const void *callbacks, void **session)
+    __attribute__((sysv_abi));
+extern void ACaptureRequest_free(void *request) __attribute__((sysv_abi));
+extern int32_t ACaptureRequest_addTarget(void *request, const void *target)
+    __attribute__((sysv_abi));
+extern int32_t ACaptureRequest_removeTarget(void *request, const void *target)
+    __attribute__((sysv_abi));
+extern int32_t ACameraCaptureSession_close(void *session) __attribute__((sysv_abi));
+extern int32_t ACameraCaptureSession_capture(void *session, void *callbacks, int numRequests,
+                                             void **requests, int *captureSequenceId)
+    __attribute__((sysv_abi));
+extern int32_t ACameraOutputTarget_create(void *window, void **output) __attribute__((sysv_abi));
+extern void ACameraOutputTarget_free(void *output) __attribute__((sysv_abi));
+extern int32_t ACaptureSessionOutput_create(void *window, void **output)
+    __attribute__((sysv_abi));
+extern void ACaptureSessionOutput_free(void *output) __attribute__((sysv_abi));
+extern int32_t ACaptureSessionOutputContainer_create(void **container) __attribute__((sysv_abi));
+extern void ACaptureSessionOutputContainer_free(void *container) __attribute__((sysv_abi));
+extern int32_t ACaptureSessionOutputContainer_add(void *container, const void *output)
+    __attribute__((sysv_abi));
+extern int32_t ACaptureSessionOutputContainer_remove(void *container, const void *output)
+    __attribute__((sysv_abi));
+extern int32_t AImageReader_new(int32_t width, int32_t height, int32_t format, int32_t maxImages,
+                                void **reader) __attribute__((sysv_abi));
+extern void AImageReader_delete(void *reader) __attribute__((sysv_abi));
+extern int32_t AImageReader_getWindow(void *reader, void **window) __attribute__((sysv_abi));
+extern int32_t AImageReader_acquireNextImage(void *reader, void **image)
+    __attribute__((sysv_abi));
+extern void AImage_delete(void *image) __attribute__((sysv_abi));
+extern int32_t AImage_getWidth(const void *image, int32_t *width) __attribute__((sysv_abi));
+extern int32_t AImage_getHeight(const void *image, int32_t *height) __attribute__((sysv_abi));
+extern int32_t AImage_getNumberOfPlanes(const void *image, int32_t *numPlanes)
+    __attribute__((sysv_abi));
+extern int32_t AImage_getPlaneData(const void *image, int32_t planeIdx, uint8_t **data,
+                                   int *dataLength) __attribute__((sysv_abi));
+
+// KeyStore NDK functions
+extern void *AKeyStore_create(void) __attribute__((sysv_abi));
+extern void AKeyStore_delete(void *store) __attribute__((sysv_abi));
+extern int32_t AKeyStore_generateAesKey(void *store, const char *alias, int32_t keyBits,
+                                        int32_t blockMode, int32_t padding)
+    __attribute__((sysv_abi));
+extern int32_t AKeyStore_encrypt(void *store, const char *alias, const uint8_t *plaintext,
+                                 size_t plainLen, uint8_t **outCiphertext, size_t *outCipherLen,
+                                 uint8_t **outIv, size_t *outIvLen, uint8_t **outTag,
+                                 size_t *outTagLen) __attribute__((sysv_abi));
+extern int32_t AKeyStore_decrypt(void *store, const char *alias, const uint8_t *ciphertext,
+                                 size_t cipherLen, const uint8_t *iv, size_t ivLen,
+                                 const uint8_t *tag, size_t tagLen, uint8_t **outPlaintext,
+                                 size_t *outPlainLen) __attribute__((sysv_abi));
+extern void AKeyStore_freeBuffer(void *buf) __attribute__((sysv_abi));
+
+// Location NDK functions
+extern void *ALocationManager_create(void) __attribute__((sysv_abi));
+extern void ALocationManager_destroy(void *mgr) __attribute__((sysv_abi));
+extern int ALocationManager_isProviderEnabled(void *mgr, const char *provider) __attribute__((sysv_abi));
+extern void *ALocationManager_getLastKnownLocation(void *mgr, const char *provider) __attribute__((sysv_abi));
+extern double ALocation_getLatitude(const void *loc) __attribute__((sysv_abi));
+extern double ALocation_getLongitude(const void *loc) __attribute__((sysv_abi));
+extern void ALocation_destroy(void *loc) __attribute__((sysv_abi));
+
+// Clipboard NDK functions
+extern void *AClipboard_create(void) __attribute__((sysv_abi));
+extern void AClipboard_destroy(void *clip) __attribute__((sysv_abi));
+extern int AClipboard_setText(void *clip, const char *text) __attribute__((sysv_abi));
+extern int AClipboard_getText(void *clip, char *buffer, size_t max_len) __attribute__((sysv_abi));
+extern int AClipboard_hasText(void *clip) __attribute__((sysv_abi));
+
+// Power & Battery NDK functions
+extern void *APowerManager_create(void) __attribute__((sysv_abi));
+extern void APowerManager_destroy(void *mgr) __attribute__((sysv_abi));
+extern int32_t APowerManager_isInteractive(void *mgr) __attribute__((sysv_abi));
+extern void *AWakeLock_create(int32_t level_and_flags, const char *tag) __attribute__((sysv_abi));
+extern int32_t AWakeLock_acquire(void *lock, int64_t timeout_ms) __attribute__((sysv_abi));
+extern int32_t AWakeLock_release(void *lock) __attribute__((sysv_abi));
+extern int32_t AWakeLock_isHeld(void *lock) __attribute__((sysv_abi));
+extern void AWakeLock_destroy(void *lock) __attribute__((sysv_abi));
+extern void *ABatteryManager_create(void) __attribute__((sysv_abi));
+extern void ABatteryManager_destroy(void *mgr) __attribute__((sysv_abi));
+extern int32_t ABatteryManager_getCapacity(void *mgr) __attribute__((sysv_abi));
 
 // Math functions (from DT_NEEDED libgame_math.so)
 extern int math_add(int a, int b) __attribute__((sysv_abi));
@@ -925,6 +1129,27 @@ extern void *dlsym(void *handle, const char *symbol) __attribute__((sysv_abi));
 extern int dlclose(void *handle) __attribute__((sysv_abi));
 extern char *dlerror(void) __attribute__((sysv_abi));
 extern int dladdr(const void *addr, Dl_info *info) __attribute__((sysv_abi));
+
+// StorageManager functions
+struct AStorageManager;
+typedef void (*AStorageManager_obbCallbackFunc)(const char *filename, const int32_t state, void *data);
+
+extern struct AStorageManager *AStorageManager_new(void) __attribute__((sysv_abi));
+extern void AStorageManager_delete(struct AStorageManager *mgr) __attribute__((sysv_abi));
+extern void AStorageManager_mountObb(struct AStorageManager *mgr, const char *filename, const char *key,
+                                     AStorageManager_obbCallbackFunc cb, void *data) __attribute__((sysv_abi));
+extern void AStorageManager_unmountObb(struct AStorageManager *mgr, const char *filename, const int force,
+                                       AStorageManager_obbCallbackFunc cb, void *data) __attribute__((sysv_abi));
+extern int AStorageManager_isObbMounted(struct AStorageManager *mgr, const char *filename) __attribute__((sysv_abi));
+extern const char *AStorageManager_getMountedObbPath(struct AStorageManager *mgr, const char *filename) __attribute__((sysv_abi));
+
+static volatile int g_engine_obb_state = 0;
+static void __attribute__((sysv_abi)) engine_obb_callback(const char *filename, const int32_t state, void *data)
+{
+    (void)filename;
+    (void)data;
+    g_engine_obb_state = state;
+}
 
 static volatile uint32_t g_audio_phase1 = 0;
 static volatile uint32_t g_audio_phase2 = 0;
@@ -1359,6 +1584,62 @@ static void __attribute__((noinline)) engine_worker_func(void)
         AIBinder_decStrong(vib_svc);
     }
 
+    AIBinder *lic_svc = AServiceManager_getService("com.android.vending.licensing.ILicensingService");
+    if (lic_svc) {
+        AIBinder_Class *lic_class = AIBinder_Class_define(
+            "com.android.vending.licensing.ILicenseResultListener", NULL, NULL,
+            (void *)engine_license_listener_transact);
+        if (lic_class) {
+            AIBinder *lic_listener = AIBinder_new(lic_class, NULL);
+            if (lic_listener) {
+                AParcel *lic_in = AParcel_create();
+                AParcel *lic_out = AParcel_create();
+                if (lic_in && lic_out) {
+                    AParcel_writeInt64(lic_in, 123456789LL);
+                    AParcel_writeString(lic_in, "com.portage.gameengine", -1);
+                    AParcel_writeStrongBinder(lic_in, lic_listener);
+                    if (AIBinder_transact(lic_svc, 1, lic_in, lic_out, 0) == 0) {
+                        for (int i = 0; i < 200 && !g_engine_licensing_ok; ++i) {
+                            sys_nanosleep(2000000);
+                        }
+                        if (g_engine_licensing_ok) {
+                            write_marker(g_engine.internalDataPath, "engine_licensing_ready.txt",
+                                         "LICENSING_OK");
+                        }
+                    }
+                    AParcel_delete(lic_in);
+                    AParcel_delete(lic_out);
+                }
+                AIBinder_decStrong(lic_listener);
+            }
+        }
+        AIBinder_decStrong(lic_svc);
+    }
+
+    AIBinder *bill_svc =
+        AServiceManager_getService("com.android.vending.billing.IInAppBillingService");
+    if (bill_svc) {
+        AParcel *bill_in = AParcel_create();
+        AParcel *bill_out = AParcel_create();
+        if (bill_in && bill_out) {
+            AParcel_writeInt32(bill_in, 3);
+            AParcel_writeString(bill_in, "com.portage.gameengine", -1);
+            AParcel_writeString(bill_in, "inapp", -1);
+            if (AIBinder_transact(bill_svc, 1 /* isBillingSupported */, bill_in, bill_out, 0) == 0) {
+                int32_t ex = -1;
+                int32_t res = -1;
+                if (AParcel_readInt32(bill_out, &ex) == 0 && ex == 0 &&
+                    AParcel_readInt32(bill_out, &res) == 0 && res == 0) {
+                    write_marker(g_engine.internalDataPath, "engine_billing_ready.txt",
+                                 "BILLING_OK");
+                }
+            }
+            AParcel_delete(bill_in);
+            AParcel_delete(bill_out);
+        }
+        AIBinder_decStrong(bill_svc);
+    }
+
     if (g_engine.activity && g_engine.activity->env && g_engine.activity->clazz) {
         JNIEnv *env = (JNIEnv *)g_engine.activity->env;
         jobject activity_obj = g_engine.activity->clazz;
@@ -1527,6 +1808,91 @@ static void __attribute__((noinline)) engine_worker_func(void)
         }
     }
 
+    struct AStorageManager *smgr = AStorageManager_new();
+    if (smgr) {
+        const char *obb_path =
+            "/storage/emulated/0/Android/obb/com.portage.gameengine/main.1.com.portage.gameengine.obb";
+        g_engine_obb_state = 0;
+        AStorageManager_mountObb(smgr, obb_path, NULL, engine_obb_callback, NULL);
+        for (int i = 0; i < 200 && g_engine_obb_state == 0; ++i) {
+            sys_nanosleep(2000000);
+        }
+        if (g_engine_obb_state == 1 && AStorageManager_isObbMounted(smgr, obb_path)) {
+            const char *mounted_dir = AStorageManager_getMountedObbPath(smgr, obb_path);
+            if (mounted_dir) {
+                char asset_file[256];
+                asset_file[0] = '\0';
+                my_strcat(asset_file, mounted_dir);
+                my_strcat(asset_file, "/obb_asset.txt");
+                int64_t fd = sys_openat(-100, asset_file, 0 /* O_RDONLY */, 0);
+                if (fd >= 0) {
+                    char buf[64];
+                    int64_t r = sys_read((int)fd, buf, sizeof(buf) - 1);
+                    sys_close((int)fd);
+                    if (r > 0) {
+                        buf[r] = '\0';
+                        if (my_strstr(buf, "OBB_CONTENT_OK") != NULL) {
+                            write_marker(g_engine.internalDataPath, "engine_storage_ready.txt",
+                                         "STORAGE_OK");
+                        }
+                    }
+                }
+            }
+        }
+        AStorageManager_delete(smgr);
+    }
+
+    net_handle_t engine_net = 0;
+    if (android_getprocnetwork(&engine_net) == 0 && engine_net != 0) {
+        struct addrinfo hints;
+        hints.ai_flags = 0;
+        hints.ai_family = 2;
+        hints.ai_socktype = 1;
+        hints.ai_protocol = 0;
+        hints.ai_addrlen = 0;
+        hints.__pad = 0;
+        hints.ai_addr = NULL;
+        hints.ai_canonname = NULL;
+        hints.ai_next = NULL;
+
+        struct addrinfo *res = NULL;
+        if (android_getaddrinfofornetwork(engine_net, "127.0.0.1", "8080", &hints, &res) == 0 &&
+            res != NULL) {
+            int qfd = android_res_nquery(engine_net, "localhost", 1, 1, 0);
+            if (qfd >= 0) {
+                int rcode = -1;
+                int rlen = android_res_nresult(qfd, &rcode);
+                if (rlen > 0 && rcode == 0) {
+                    write_marker(g_engine.internalDataPath, "engine_multinetwork_ready.txt",
+                                 "MULTINETWORK_OK");
+                }
+                android_res_cancel(qfd);
+            }
+            android_freeaddrinfofornetwork(res);
+        }
+    }
+
+    struct AThermalManager *tm = AThermalManager_acquireManager();
+    if (tm) {
+        int t_status = AThermalManager_getCurrentThermalStatus(tm);
+        float t_headroom = AThermalManager_getThermalHeadroom(tm, 10);
+        if (t_status >= 0 && t_headroom > 0.0f) {
+            struct APerformanceHintManager *phm = APerformanceHintManager_create();
+            if (phm) {
+                int32_t tid = 1234;
+                struct APerformanceHintSession *phs =
+                    APerformanceHintManager_createSession(phm, &tid, 1, 16666666LL);
+                if (phs) {
+                    if (APerformanceHintSession_reportActualWorkDuration(phs, 15000000LL) == 0) {
+                        write_marker(g_engine.internalDataPath, "engine_adpf_ready.txt", "ADPF_OK");
+                    }
+                    APerformanceHintSession_close(phs);
+                }
+            }
+        }
+        AThermalManager_releaseManager(tm);
+    }
+
     void *audio_builder = NULL;
     void *audio_stream = NULL;
     if (AAudio_createStreamBuilder(&audio_builder) == 0 && audio_builder) {
@@ -1540,6 +1906,193 @@ static void __attribute__((noinline)) engine_worker_func(void)
             write_marker(g_engine.internalDataPath, "engine_audio_playing.txt", "PLAYING");
         }
         AAudioStreamBuilder_delete(audio_builder);
+    }
+
+    void *in_builder = NULL;
+    void *in_stream = NULL;
+    if (AAudio_createStreamBuilder(&in_builder) == 0 && in_builder) {
+        AAudioStreamBuilder_setDirection(in_builder, 1);
+        AAudioStreamBuilder_setSampleRate(in_builder, 48000);
+        AAudioStreamBuilder_setChannelCount(in_builder, 1);
+        AAudioStreamBuilder_setFormat(in_builder, 1);
+        if (AAudioStreamBuilder_openStream(in_builder, &in_stream) == 0 && in_stream) {
+            AAudioStream_requestStart(in_stream);
+            int16_t in_buf[128];
+            int32_t read_frames = AAudioStream_read(in_stream, in_buf, 128, 50000000LL);
+            if (read_frames > 0) {
+                write_marker(g_engine.internalDataPath, "engine_audio_record_ready.txt",
+                             "AUDIO_RECORD_OK");
+            }
+            AAudioStream_requestStop(in_stream);
+            AAudioStream_close(in_stream);
+        }
+        AAudioStreamBuilder_delete(in_builder);
+    }
+
+    uint64_t refresh_cycle = SwappyVk_initAndGetRefreshCycleDuration(NULL, NULL, NULL);
+    if (refresh_cycle > 0) {
+        SwappyGL_init(NULL, NULL);
+        if (g_engine.window) {
+            SwappyGL_setWindow((void *)g_engine.window);
+            SwappyGL_swap(NULL, NULL);
+            int64_t q_dur = 0;
+            if (ANativeWindow_getLastQueueDuration((void *)g_engine.window, &q_dur) == 0) {
+                write_marker(g_engine.internalDataPath, "engine_swappy_ready.txt", "SWAPPY_OK");
+            }
+        } else {
+            write_marker(g_engine.internalDataPath, "engine_swappy_ready.txt", "SWAPPY_OK");
+        }
+        SwappyGL_destroy();
+    }
+
+    void *cam_mgr = ACameraManager_create();
+    if (cam_mgr) {
+        ACameraIdList_guest *cam_ids = NULL;
+        if (ACameraManager_getCameraIdList(cam_mgr, &cam_ids) == 0 && cam_ids &&
+            cam_ids->numCameras > 0) {
+            void *img_reader = NULL;
+            if (AImageReader_new(640, 480, 1, 2, &img_reader) == 0 && img_reader) {
+                void *img_win = NULL;
+                AImageReader_getWindow(img_reader, &img_win);
+                if (img_win) {
+                    void *cam_dev = NULL;
+                    if (ACameraManager_openCamera(cam_mgr, cam_ids->cameraIds[0], NULL, &cam_dev) ==
+                            0 &&
+                        cam_dev) {
+                        void *sess_cont = NULL;
+                        ACaptureSessionOutputContainer_create(&sess_cont);
+                        void *sess_out = NULL;
+                        ACaptureSessionOutput_create(img_win, &sess_out);
+                        ACaptureSessionOutputContainer_add(sess_cont, sess_out);
+
+                        void *cam_sess = NULL;
+                        if (ACameraDevice_createCaptureSession(cam_dev, sess_cont, NULL,
+                                                              &cam_sess) == 0 &&
+                            cam_sess) {
+                            void *cap_req = NULL;
+                            ACameraDevice_createCaptureRequest(cam_dev, 1, &cap_req);
+                            void *out_target = NULL;
+                            ACameraOutputTarget_create(img_win, &out_target);
+                            ACaptureRequest_addTarget(cap_req, out_target);
+
+                            int seq = 0;
+                            ACameraCaptureSession_capture(cam_sess, NULL, 1, &cap_req, &seq);
+
+                            void *cap_img = NULL;
+                            if (AImageReader_acquireNextImage(img_reader, &cap_img) == 0 &&
+                                cap_img) {
+                                int32_t w = 0;
+                                int32_t h = 0;
+                                AImage_getWidth(cap_img, &w);
+                                AImage_getHeight(cap_img, &h);
+                                if (w == 640 && h == 480) {
+                                    write_marker(g_engine.internalDataPath,
+                                                 "engine_camera_ready.txt", "CAMERA_OK");
+                                }
+                                AImage_delete(cap_img);
+                            }
+
+                            ACaptureRequest_removeTarget(cap_req, out_target);
+                            ACameraOutputTarget_free(out_target);
+                            ACaptureRequest_free(cap_req);
+                            ACameraCaptureSession_close(cam_sess);
+                        }
+                        ACaptureSessionOutputContainer_remove(sess_cont, sess_out);
+                        ACaptureSessionOutput_free(sess_out);
+                        ACaptureSessionOutputContainer_free(sess_cont);
+                        ACameraDevice_close(cam_dev);
+                    }
+                }
+                AImageReader_delete(img_reader);
+            }
+            ACameraManager_deleteCameraIdList(cam_ids);
+        }
+        ACameraManager_delete(cam_mgr);
+    }
+
+    void *keystore = AKeyStore_create();
+    if (keystore) {
+        if (AKeyStore_generateAesKey(keystore, "game_save_key", 256, 2, 1) == 0) {
+            const char *secret = "Encrypted Save Game Data";
+            uint8_t *ciphertext = NULL;
+            size_t cipher_len = 0;
+            uint8_t *iv = NULL;
+            size_t iv_len = 0;
+            uint8_t *tag = NULL;
+            size_t tag_len = 0;
+            if (AKeyStore_encrypt(keystore, "game_save_key", (const uint8_t *)secret, 24,
+                                  &ciphertext, &cipher_len, &iv, &iv_len, &tag, &tag_len) == 0 &&
+                ciphertext && cipher_len > 0) {
+                uint8_t *plain = NULL;
+                size_t plain_len = 0;
+                if (AKeyStore_decrypt(keystore, "game_save_key", ciphertext, cipher_len, iv,
+                                      iv_len, tag, tag_len, &plain, &plain_len) == 0 &&
+                    plain && plain_len == 24) {
+                    write_marker(g_engine.internalDataPath, "engine_keystore_ready.txt",
+                                 "KEYSTORE_OK");
+                    AKeyStore_freeBuffer(plain);
+                }
+                AKeyStore_freeBuffer(ciphertext);
+                if (iv)
+                    AKeyStore_freeBuffer(iv);
+                if (tag)
+                    AKeyStore_freeBuffer(tag);
+            }
+        }
+        AKeyStore_delete(keystore);
+    }
+
+    void *loc_mgr = ALocationManager_create();
+    if (loc_mgr) {
+        if (ALocationManager_isProviderEnabled(loc_mgr, "gps")) {
+            void *loc = ALocationManager_getLastKnownLocation(loc_mgr, "gps");
+            if (loc) {
+                double lat = ALocation_getLatitude(loc);
+                double lon = ALocation_getLongitude(loc);
+                if (lat != 0.0 && lon != 0.0) {
+                    write_marker(g_engine.internalDataPath, "engine_location_ready.txt",
+                                 "LOCATION_OK");
+                }
+                ALocation_destroy(loc);
+            }
+        }
+        ALocationManager_destroy(loc_mgr);
+    }
+
+    void *clipboard = AClipboard_create();
+    if (clipboard) {
+        if (AClipboard_setText(clipboard, "Portage Clipboard Verification") == 0) {
+            char clip_buf[64];
+            int len = AClipboard_getText(clipboard, clip_buf, sizeof(clip_buf));
+            if (len > 0 && my_strcmp(clip_buf, "Portage Clipboard Verification") == 0) {
+                write_marker(g_engine.internalDataPath, "engine_clipboard_ready.txt",
+                             "CLIPBOARD_OK");
+            }
+        }
+        AClipboard_destroy(clipboard);
+    }
+
+    void *power_mgr = APowerManager_create();
+    if (power_mgr) {
+        if (APowerManager_isInteractive(power_mgr)) {
+            void *lock = AWakeLock_create(1, "engine_cpu_lock");
+            if (lock) {
+                if (AWakeLock_acquire(lock, -1) == 0 && AWakeLock_isHeld(lock)) {
+                    AWakeLock_release(lock);
+                    void *bat_mgr = ABatteryManager_create();
+                    if (bat_mgr) {
+                        int32_t cap = ABatteryManager_getCapacity(bat_mgr);
+                        if (cap >= 0) {
+                            write_marker(g_engine.internalDataPath, "engine_power_ready.txt",
+                                         "POWER_OK");
+                        }
+                        ABatteryManager_destroy(bat_mgr);
+                    }
+                }
+                AWakeLock_destroy(lock);
+            }
+        }
+        APowerManager_destroy(power_mgr);
     }
 
     void *dpy = NULL;

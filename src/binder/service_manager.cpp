@@ -1,5 +1,8 @@
 #include "service_manager.hpp"
 #include "input/haptic_manager.hpp"
+#include "play_billing_service.hpp"
+#include "play_licensing_service.hpp"
+#include "power/power_manager.hpp"
 
 namespace portage::binder {
 
@@ -9,7 +12,7 @@ __attribute__((sysv_abi)) binder_status_t
 VibratorTransact(AIBinder *binder, transaction_code_t code, const AParcel *in, AParcel *out)
 {
     (void)binder;
-    if (code == 1) { // vibrate
+    if (code == 1) {
         int32_t ms = 100;
         if (in) {
             AParcel_readInt32(in, &ms);
@@ -18,12 +21,12 @@ VibratorTransact(AIBinder *binder, transaction_code_t code, const AParcel *in, A
             ms = 100;
         }
         input::HapticManager::Instance().Vibrate(0, 32767, 32767, static_cast<uint32_t>(ms));
-    } else if (code == 2) { // cancelVibrate
+    } else if (code == 2) {
         input::HapticManager::Instance().Stop(0);
     }
 
     if (out) {
-        AParcel_writeInt32(out, 0); // No exception
+        AParcel_writeInt32(out, 0);
     }
     return STATUS_OK;
 }
@@ -35,7 +38,7 @@ SurfaceFlingerTransact(AIBinder *binder, transaction_code_t code, const AParcel 
     (void)code;
     (void)in;
     if (out) {
-        AParcel_writeInt32(out, 0); // No exception
+        AParcel_writeInt32(out, 0);
         AParcel_writeInt32(out, 1920);
         AParcel_writeInt32(out, 1080);
         AParcel_writeFloat(out, 60.0f);
@@ -47,11 +50,52 @@ __attribute__((sysv_abi)) binder_status_t
 PowerManagerTransact(AIBinder *binder, transaction_code_t code, const AParcel *in, AParcel *out)
 {
     (void)binder;
-    (void)code;
+    if (code == 1) {
+        if (out) {
+            AParcel_writeInt32(out, 0);
+            AParcel_writeBool(out, power::PowerManager::Instance().IsInteractive());
+        }
+        return STATUS_OK;
+    }
+    if (code == 2) {
+        if (out) {
+            AParcel_writeInt32(out, 0);
+            AParcel_writeBool(out, power::PowerManager::Instance().IsPowerSaveMode());
+        }
+        return STATUS_OK;
+    }
+    if (code == 3) {
+        int32_t flags = power::PARTIAL_WAKE_LOCK;
+        if (in) {
+            AParcel_readInt32(in, &flags);
+        }
+        uint32_t id = power::PowerManager::Instance().CreateWakeLock(flags, "binder_wake_lock");
+        power::PowerManager::Instance().AcquireWakeLock(id);
+        if (out) {
+            AParcel_writeInt32(out, 0);
+            AParcel_writeInt32(out, static_cast<int32_t>(id));
+        }
+        return STATUS_OK;
+    }
+    if (code == 4) {
+        int32_t id = 0;
+        if (in) {
+            AParcel_readInt32(in, &id);
+        }
+        if (id > 0) {
+            power::PowerManager::Instance().ReleaseWakeLock(static_cast<uint32_t>(id));
+            power::PowerManager::Instance().DestroyWakeLock(static_cast<uint32_t>(id));
+        }
+        if (out) {
+            AParcel_writeInt32(out, 0);
+        }
+        return STATUS_OK;
+    }
+
     (void)in;
     if (out) {
-        AParcel_writeInt32(out, 0); // No exception
-        AParcel_writeBool(out, true); // isInteractive / state active
+        AParcel_writeInt32(out, 0);
+        AParcel_writeBool(out, true);
     }
     return STATUS_OK;
 }
@@ -63,7 +107,7 @@ PackageManagerTransact(AIBinder *binder, transaction_code_t code, const AParcel 
     (void)code;
     (void)in;
     if (out) {
-        AParcel_writeInt32(out, 0); // No exception
+        AParcel_writeInt32(out, 0);
         AParcel_writeString(out, "com.portage.gameengine", -1);
         AParcel_writeInt32(out, 1);
     }
@@ -78,11 +122,11 @@ BatteryPropertiesTransact(AIBinder *binder, transaction_code_t code, const AParc
     (void)code;
     (void)in;
     if (out) {
-        AParcel_writeInt32(out, 0); // No exception
-        AParcel_writeInt32(out, 1); // Battery present
-        AParcel_writeInt32(out, 1); // Plugged AC
-        AParcel_writeInt32(out, 100); // 100% level
-        AParcel_writeInt32(out, 2); // Health GOOD
+        AParcel_writeInt32(out, 0);
+        AParcel_writeInt32(out, 1);
+        AParcel_writeInt32(out, 1);
+        AParcel_writeInt32(out, 100);
+        AParcel_writeInt32(out, 2);
     }
     return STATUS_OK;
 }
@@ -120,33 +164,32 @@ void ServiceManager::Reset()
     }
     synthetic_classes_.clear();
 
+    PlayLicensingService::Instance().Reset();
+    PlayBillingService::Instance().Reset();
+
     InitializeSyntheticServices();
 }
 
 void ServiceManager::InitializeSyntheticServices()
 {
-    // surfaceflinger
     auto *sf_class = AIBinder_Class_define("android.ui.ISurfaceComposer", nullptr, nullptr,
                                            &SurfaceFlingerTransact);
     synthetic_classes_.push_back(sf_class);
     auto *sf_binder = AIBinder_new(sf_class, nullptr);
     services_["surfaceflinger"] = sf_binder;
 
-    // power
     auto *power_class =
         AIBinder_Class_define("android.os.IPowerManager", nullptr, nullptr, &PowerManagerTransact);
     synthetic_classes_.push_back(power_class);
     auto *power_binder = AIBinder_new(power_class, nullptr);
     services_["power"] = power_binder;
 
-    // package
     auto *pkg_class = AIBinder_Class_define("android.content.pm.IPackageManager", nullptr, nullptr,
                                             &PackageManagerTransact);
     synthetic_classes_.push_back(pkg_class);
     auto *pkg_binder = AIBinder_new(pkg_class, nullptr);
     services_["package"] = pkg_binder;
 
-    // batteryproperties & batterystats
     auto *bat_class = AIBinder_Class_define("android.os.IBatteryPropertiesRegistrar", nullptr,
                                             nullptr, &BatteryPropertiesTransact);
     synthetic_classes_.push_back(bat_class);
@@ -155,12 +198,21 @@ void ServiceManager::InitializeSyntheticServices()
     AIBinder_incStrong(bat_binder);
     services_["batterystats"] = bat_binder;
 
-    // vibrator
     auto *vib_class =
         AIBinder_Class_define("android.os.IVibrator", nullptr, nullptr, &VibratorTransact);
     synthetic_classes_.push_back(vib_class);
     auto *vib_binder = AIBinder_new(vib_class, nullptr);
     services_["vibrator"] = vib_binder;
+
+    auto *licensing_binder = PlayLicensingService::Instance().GetBinder();
+    if (licensing_binder) {
+        services_["com.android.vending.licensing.ILicensingService"] = licensing_binder;
+    }
+
+    auto *billing_binder = PlayBillingService::Instance().GetBinder();
+    if (billing_binder) {
+        services_["com.android.vending.billing.IInAppBillingService"] = billing_binder;
+    }
 }
 
 binder_status_t ServiceManager::AddService(std::string_view name, AIBinder *binder)

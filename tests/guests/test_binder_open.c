@@ -84,13 +84,13 @@ static inline void sys_exit(int code)
 
 void _start(void)
 {
-    // 1. Open /dev/binder
+    // Open /dev/binder
     int fd = (int)sys_openat(AT_FDCWD, "/dev/binder", O_RDWR, 0);
     if (fd < 0) {
         sys_exit(1);
     }
 
-    // 2. Query BINDER_VERSION
+    // Query BINDER_VERSION
     struct binder_version ver = {0};
     if (sys_ioctl(fd, BINDER_VERSION, &ver) != 0) {
         sys_exit(2);
@@ -99,13 +99,13 @@ void _start(void)
         sys_exit(3);
     }
 
-    // 3. Set max threads
+    // Set max threads
     uint32_t max_threads = 15;
     if (sys_ioctl(fd, BINDER_SET_MAX_THREADS, &max_threads) != 0) {
         sys_exit(4);
     }
 
-    // 4. Open /dev/hwbinder and verify its properties
+    // Open /dev/hwbinder and verify its properties
     int hw_fd = (int)sys_openat(AT_FDCWD, "/dev/hwbinder", O_RDWR, 0);
     if (hw_fd < 0) {
         sys_exit(5);
@@ -122,7 +122,7 @@ void _start(void)
         sys_exit(7);
     }
 
-    // 5. Test BINDER_WRITE_READ transaction on /dev/binder
+    // Test BINDER_WRITE_READ transaction on /dev/binder
     uint8_t write_buf[sizeof(uint32_t) + sizeof(struct binder_transaction_data)] = {0};
     uint32_t *cmd_ptr = (uint32_t *)write_buf;
     *cmd_ptr = BC_TRANSACTION_64;

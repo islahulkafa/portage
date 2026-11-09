@@ -183,7 +183,7 @@ void *memset(void *dest, int val, size_t len)
 
 __attribute__((force_align_arg_pointer)) void _start(void)
 {
-    // 1. Open /dev/input/event0 (keyboard) and /dev/input/event1 (touchscreen)
+    // Open /dev/input/event0 (keyboard) and /dev/input/event1 (touchscreen)
     const char dev0_path[] = "/dev/input/event0";
     const char dev1_path[] = "/dev/input/event1";
 
@@ -197,14 +197,14 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(2);
     }
 
-    // 2. Query evdev version on event0
+    // Query evdev version on event0
     int version = 0;
     uint32_t cmd_version = LINUX_IOR('E', 0x01, sizeof(int));
     if (sys_ioctl(fd0, cmd_version, &version) != 0 || version != 0x010001) {
         sys_exit(3);
     }
 
-    // 3. Query input_id on event0
+    // Query input_id on event0
     struct input_id id0;
     memset(&id0, 0, sizeof(id0));
     uint32_t cmd_id = LINUX_IOR('E', 0x02, sizeof(struct input_id));
@@ -212,7 +212,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(4);
     }
 
-    // 4. Query device names
+    // Query device names
     char name0[64];
     memset(name0, 0, sizeof(name0));
     uint32_t cmd_name0 = LINUX_IOC(LINUX_IOC_READ, 'E', 0x06, sizeof(name0));
@@ -227,7 +227,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(6);
     }
 
-    // 5. Query absinfo for ABS_MT_POSITION_X on event1
+    // Query absinfo for ABS_MT_POSITION_X on event1
     struct input_absinfo abs_x;
     memset(&abs_x, 0, sizeof(abs_x));
     uint32_t cmd_abs_x = LINUX_IOR('E', 0x40 + ABS_MT_POSITION_X, sizeof(struct input_absinfo));
@@ -235,7 +235,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(7);
     }
 
-    // 6. Setup epoll to wait for input on event0
+    // Setup epoll to wait for input on event0
     int epfd = (int)sys_epoll_create1(0);
     if (epfd < 0) {
         sys_exit(8);
@@ -255,7 +255,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(10);
     }
 
-    // 7. Read events from event0
+    // Read events from event0
     struct input_event key_events[8];
     int64_t bytes = sys_read(fd0, key_events, sizeof(key_events));
     if (bytes < (int64_t)sizeof(struct input_event)) {
@@ -275,7 +275,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(12);
     }
 
-    // 8. Read pointer events from event1
+    // Read pointer events from event1
     struct input_event touch_events[16];
     int64_t t_bytes = sys_read(fd1, touch_events, sizeof(touch_events));
     if (t_bytes < (int64_t)sizeof(struct input_event)) {

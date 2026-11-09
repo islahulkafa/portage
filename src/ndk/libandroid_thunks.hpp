@@ -40,6 +40,13 @@ struct ANativeWindow {
     int32_t locked_format{0};
     ARect dirty_rect{0, 0, 0, 0};
     bool is_locked{false};
+
+    int64_t last_queue_duration_nanos{0};
+    int64_t last_render_start_nanos{0};
+    int64_t last_queue_time_nanos{0};
+    int64_t last_latch_time_nanos{0};
+    int64_t last_present_time_nanos{0};
+    uint64_t frame_index{0};
 };
 
 namespace portage::ndk {
@@ -74,6 +81,11 @@ __attribute__((sysv_abi)) int32_t ANativeWindow_lock(ANativeWindow *window,
                                                      ANativeWindow_Buffer *outBuffer,
                                                      ARect *inOutDirtyBounds);
 __attribute__((sysv_abi)) int32_t ANativeWindow_unlockAndPost(ANativeWindow *window);
+__attribute__((sysv_abi)) int32_t ANativeWindow_getLastQueueDuration(ANativeWindow *window,
+                                                                     int64_t *outDuration);
+__attribute__((sysv_abi)) int32_t
+ANativeWindow_getFrameTimestamps(ANativeWindow *window, uint64_t frameId, int64_t *outQueueTime,
+                                 int64_t *outLatchTime, int64_t *outPresentTime);
 
 struct AAsset;
 struct AAssetManager;

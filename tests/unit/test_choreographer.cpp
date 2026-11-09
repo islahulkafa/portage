@@ -126,20 +126,20 @@ TEST_F(ChoreographerTest, RespectsDelayedFrameCallbackScheduling)
 
         int64_t post_time_ns = VsyncPacer::NowNanos();
         AChoreographer_postFrameCallback64(ch, &DelayState::OnImmediate, &state);
-        AChoreographer_postFrameCallbackDelayed64(ch, &DelayState::OnDelayed, &state, 45);
+        AChoreographer_postFrameCallbackDelayed64(ch, &DelayState::OnDelayed, &state, 120);
 
-        int res = ALooper_pollOnce(100, nullptr, nullptr, nullptr);
+        int res = ALooper_pollOnce(50, nullptr, nullptr, nullptr);
         EXPECT_EQ(res, ALOOPER_POLL_CALLBACK);
         EXPECT_TRUE(state.immediate_fired);
         EXPECT_FALSE(state.delayed_fired);
 
-        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
         while (!state.delayed_fired && std::chrono::steady_clock::now() < deadline) {
             ALooper_pollOnce(50, nullptr, nullptr, nullptr);
         }
 
         EXPECT_TRUE(state.delayed_fired);
-        EXPECT_GE(state.delayed_time - post_time_ns, 45'000'000LL);
+        EXPECT_GE(state.delayed_time - post_time_ns, 120'000'000LL);
         EXPECT_GT(state.delayed_time, state.immediate_time);
     });
     worker.join();

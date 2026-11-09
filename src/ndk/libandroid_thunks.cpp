@@ -6,6 +6,11 @@
 #include "binder/binder_parcel.hpp"
 #include "binder/binder_status.hpp"
 #include "binder/service_manager.hpp"
+#include "camera/camera_ndk.hpp"
+#include "clipboard/clipboard_ndk.hpp"
+#include "location/location_ndk.hpp"
+#include "power/power_ndk.hpp"
+#include "security/keystore_ndk.hpp"
 #include "configuration.hpp"
 #include "elf/link_map.hpp"
 #include "gles/egl_dispatcher.hpp"
@@ -18,6 +23,11 @@
 #include "media/media_format.hpp"
 #include "mem/shared_memory.hpp"
 #include "ndk/hardware_buffer.hpp"
+#include "ndk/multinetwork.hpp"
+#include "ndk/performance_hint.hpp"
+#include "ndk/storage_manager.hpp"
+#include "ndk/swappy.hpp"
+#include "ndk/thermal.hpp"
 #include "package/asset_manager.hpp"
 #include "package/jni_env.hpp"
 #include "package/package_manager.hpp"
@@ -286,6 +296,10 @@ void NdkSymbolRegistry::RegisterAll()
     Register("ANativeWindow_lock", reinterpret_cast<uintptr_t>(&ANativeWindow_lock));
     Register("ANativeWindow_unlockAndPost",
              reinterpret_cast<uintptr_t>(&ANativeWindow_unlockAndPost));
+    Register("ANativeWindow_getLastQueueDuration",
+             reinterpret_cast<uintptr_t>(&ANativeWindow_getLastQueueDuration));
+    Register("ANativeWindow_getFrameTimestamps",
+             reinterpret_cast<uintptr_t>(&ANativeWindow_getFrameTimestamps));
 
     // AAssetManager & AAsset
     Register("AAssetManager_fromJava", reinterpret_cast<uintptr_t>(&AAssetManager_fromJava));
@@ -423,6 +437,7 @@ void NdkSymbolRegistry::RegisterAll()
              reinterpret_cast<uintptr_t>(&audio::AAudioStream_requestStop));
     Register("AAudioStream_close", reinterpret_cast<uintptr_t>(&audio::AAudioStream_close));
     Register("AAudioStream_write", reinterpret_cast<uintptr_t>(&audio::AAudioStream_write));
+    Register("AAudioStream_read", reinterpret_cast<uintptr_t>(&audio::AAudioStream_read));
     Register("AAudioStream_getSampleRate",
              reinterpret_cast<uintptr_t>(&audio::AAudioStream_getSampleRate));
     Register("AAudioStream_getChannelCount",
@@ -442,6 +457,213 @@ void NdkSymbolRegistry::RegisterAll()
     Register("SL_IID_PLAY", reinterpret_cast<uintptr_t>(&audio::SL_IID_PLAY));
     Register("SL_IID_VOLUME", reinterpret_cast<uintptr_t>(&audio::SL_IID_VOLUME));
     Register("SL_IID_BUFFERQUEUE", reinterpret_cast<uintptr_t>(&audio::SL_IID_BUFFERQUEUE));
+    Register("SL_IID_RECORD", reinterpret_cast<uintptr_t>(&audio::SL_IID_RECORD));
+
+    // Swappy Frame Pacing (SwappyVk & SwappyGL)
+    Register("SwappyVk_initAndGetRefreshCycleDuration",
+             reinterpret_cast<uintptr_t>(&SwappyVk_initAndGetRefreshCycleDuration));
+    Register("SwappyVk_setWindow", reinterpret_cast<uintptr_t>(&SwappyVk_setWindow));
+    Register("SwappyVk_queuePresent", reinterpret_cast<uintptr_t>(&SwappyVk_queuePresent));
+    Register("SwappyVk_destroySwapchain", reinterpret_cast<uintptr_t>(&SwappyVk_destroySwapchain));
+    Register("SwappyVk_destroyDevice", reinterpret_cast<uintptr_t>(&SwappyVk_destroyDevice));
+    Register("SwappyVk_setTargetFrameRateHz",
+             reinterpret_cast<uintptr_t>(&SwappyVk_setTargetFrameRateHz));
+    Register("SwappyVk_getSwapIntervalNS", reinterpret_cast<uintptr_t>(&SwappyVk_getSwapIntervalNS));
+    Register("SwappyVk_setAutoSwapInterval",
+             reinterpret_cast<uintptr_t>(&SwappyVk_setAutoSwapInterval));
+
+    Register("SwappyGL_init", reinterpret_cast<uintptr_t>(&SwappyGL_init));
+    Register("SwappyGL_setWindow", reinterpret_cast<uintptr_t>(&SwappyGL_setWindow));
+    Register("SwappyGL_swap", reinterpret_cast<uintptr_t>(&SwappyGL_swap));
+    Register("SwappyGL_destroy", reinterpret_cast<uintptr_t>(&SwappyGL_destroy));
+    Register("SwappyGL_setTargetFrameRateHz",
+             reinterpret_cast<uintptr_t>(&SwappyGL_setTargetFrameRateHz));
+    Register("SwappyGL_getSwapIntervalNS", reinterpret_cast<uintptr_t>(&SwappyGL_getSwapIntervalNS));
+    Register("SwappyGL_setAutoSwapInterval",
+             reinterpret_cast<uintptr_t>(&SwappyGL_setAutoSwapInterval));
+    Register("SwappyGL_isEnabled", reinterpret_cast<uintptr_t>(&SwappyGL_isEnabled));
+
+    // Camera2 NDK
+    Register("ACameraManager_create", reinterpret_cast<uintptr_t>(&ACameraManager_create));
+    Register("ACameraManager_delete", reinterpret_cast<uintptr_t>(&ACameraManager_delete));
+    Register("ACameraManager_getCameraIdList",
+             reinterpret_cast<uintptr_t>(&ACameraManager_getCameraIdList));
+    Register("ACameraManager_deleteCameraIdList",
+             reinterpret_cast<uintptr_t>(&ACameraManager_deleteCameraIdList));
+    Register("ACameraManager_getCameraCharacteristics",
+             reinterpret_cast<uintptr_t>(&ACameraManager_getCameraCharacteristics));
+    Register("ACameraManager_openCamera", reinterpret_cast<uintptr_t>(&ACameraManager_openCamera));
+    Register("ACameraManager_registerAvailabilityCallback",
+             reinterpret_cast<uintptr_t>(&ACameraManager_registerAvailabilityCallback));
+    Register("ACameraManager_unregisterAvailabilityCallback",
+             reinterpret_cast<uintptr_t>(&ACameraManager_unregisterAvailabilityCallback));
+    Register("ACameraDevice_close", reinterpret_cast<uintptr_t>(&ACameraDevice_close));
+    Register("ACameraDevice_getId", reinterpret_cast<uintptr_t>(&ACameraDevice_getId));
+    Register("ACameraDevice_createCaptureRequest",
+             reinterpret_cast<uintptr_t>(&ACameraDevice_createCaptureRequest));
+    Register("ACameraDevice_createCaptureSession",
+             reinterpret_cast<uintptr_t>(&ACameraDevice_createCaptureSession));
+    Register("ACameraDevice_createCaptureSessionWithSessionParameters",
+             reinterpret_cast<uintptr_t>(
+                 &ACameraDevice_createCaptureSessionWithSessionParameters));
+    Register("ACaptureRequest_free", reinterpret_cast<uintptr_t>(&ACaptureRequest_free));
+    Register("ACaptureRequest_addTarget", reinterpret_cast<uintptr_t>(&ACaptureRequest_addTarget));
+    Register("ACaptureRequest_removeTarget",
+             reinterpret_cast<uintptr_t>(&ACaptureRequest_removeTarget));
+    Register("ACaptureRequest_getAllOptions",
+             reinterpret_cast<uintptr_t>(&ACaptureRequest_getAllOptions));
+    Register("ACaptureRequest_setEntry_u8",
+             reinterpret_cast<uintptr_t>(&ACaptureRequest_setEntry_u8));
+    Register("ACaptureRequest_setEntry_i32",
+             reinterpret_cast<uintptr_t>(&ACaptureRequest_setEntry_i32));
+    Register("ACaptureRequest_setEntry_float",
+             reinterpret_cast<uintptr_t>(&ACaptureRequest_setEntry_float));
+    Register("ACameraCaptureSession_close",
+             reinterpret_cast<uintptr_t>(&ACameraCaptureSession_close));
+    Register("ACameraCaptureSession_getDevice",
+             reinterpret_cast<uintptr_t>(&ACameraCaptureSession_getDevice));
+    Register("ACameraCaptureSession_setRepeatingRequest",
+             reinterpret_cast<uintptr_t>(&ACameraCaptureSession_setRepeatingRequest));
+    Register("ACameraCaptureSession_capture",
+             reinterpret_cast<uintptr_t>(&ACameraCaptureSession_capture));
+    Register("ACameraCaptureSession_stopRepeating",
+             reinterpret_cast<uintptr_t>(&ACameraCaptureSession_stopRepeating));
+    Register("ACameraCaptureSession_abortCaptures",
+             reinterpret_cast<uintptr_t>(&ACameraCaptureSession_abortCaptures));
+    Register("ACameraOutputTarget_create",
+             reinterpret_cast<uintptr_t>(&ACameraOutputTarget_create));
+    Register("ACameraOutputTarget_free", reinterpret_cast<uintptr_t>(&ACameraOutputTarget_free));
+    Register("ACaptureSessionOutput_create",
+             reinterpret_cast<uintptr_t>(&ACaptureSessionOutput_create));
+    Register("ACaptureSessionOutput_free",
+             reinterpret_cast<uintptr_t>(&ACaptureSessionOutput_free));
+    Register("ACaptureSessionOutputContainer_create",
+             reinterpret_cast<uintptr_t>(&ACaptureSessionOutputContainer_create));
+    Register("ACaptureSessionOutputContainer_free",
+             reinterpret_cast<uintptr_t>(&ACaptureSessionOutputContainer_free));
+    Register("ACaptureSessionOutputContainer_add",
+             reinterpret_cast<uintptr_t>(&ACaptureSessionOutputContainer_add));
+    Register("ACaptureSessionOutputContainer_remove",
+             reinterpret_cast<uintptr_t>(&ACaptureSessionOutputContainer_remove));
+    Register("ACameraMetadata_free", reinterpret_cast<uintptr_t>(&ACameraMetadata_free));
+    Register("ACameraMetadata_getConstEntry",
+             reinterpret_cast<uintptr_t>(&ACameraMetadata_getConstEntry));
+
+    // Media NDK (ImageReader & Image)
+    Register("AImageReader_new", reinterpret_cast<uintptr_t>(&AImageReader_new));
+    Register("AImageReader_newWithUsage", reinterpret_cast<uintptr_t>(&AImageReader_newWithUsage));
+    Register("AImageReader_delete", reinterpret_cast<uintptr_t>(&AImageReader_delete));
+    Register("AImageReader_getWindow", reinterpret_cast<uintptr_t>(&AImageReader_getWindow));
+    Register("AImageReader_acquireNextImage",
+             reinterpret_cast<uintptr_t>(&AImageReader_acquireNextImage));
+    Register("AImageReader_acquireLatestImage",
+             reinterpret_cast<uintptr_t>(&AImageReader_acquireLatestImage));
+    Register("AImageReader_setImageListener",
+             reinterpret_cast<uintptr_t>(&AImageReader_setImageListener));
+    Register("AImage_delete", reinterpret_cast<uintptr_t>(&AImage_delete));
+    Register("AImage_getWidth", reinterpret_cast<uintptr_t>(&AImage_getWidth));
+    Register("AImage_getHeight", reinterpret_cast<uintptr_t>(&AImage_getHeight));
+    Register("AImage_getFormat", reinterpret_cast<uintptr_t>(&AImage_getFormat));
+    Register("AImage_getTimestamp", reinterpret_cast<uintptr_t>(&AImage_getTimestamp));
+    Register("AImage_getNumberOfPlanes", reinterpret_cast<uintptr_t>(&AImage_getNumberOfPlanes));
+    Register("AImage_getPlanePixelStride",
+             reinterpret_cast<uintptr_t>(&AImage_getPlanePixelStride));
+    Register("AImage_getPlaneRowStride", reinterpret_cast<uintptr_t>(&AImage_getPlaneRowStride));
+    Register("AImage_getPlaneData", reinterpret_cast<uintptr_t>(&AImage_getPlaneData));
+
+    // KeyStore NDK
+    Register("AKeyStore_create", reinterpret_cast<uintptr_t>(&AKeyStore_create));
+    Register("AKeyStore_delete", reinterpret_cast<uintptr_t>(&AKeyStore_delete));
+    Register("AKeyStore_containsAlias", reinterpret_cast<uintptr_t>(&AKeyStore_containsAlias));
+    Register("AKeyStore_deleteKey", reinterpret_cast<uintptr_t>(&AKeyStore_deleteKey));
+    Register("AKeyStore_listAliases", reinterpret_cast<uintptr_t>(&AKeyStore_listAliases));
+    Register("AKeyStore_deleteAliasList",
+             reinterpret_cast<uintptr_t>(&AKeyStore_deleteAliasList));
+    Register("AKeyStore_generateAesKey",
+             reinterpret_cast<uintptr_t>(&AKeyStore_generateAesKey));
+    Register("AKeyStore_generateRsaKeyPair",
+             reinterpret_cast<uintptr_t>(&AKeyStore_generateRsaKeyPair));
+    Register("AKeyStore_generateEcKeyPair",
+             reinterpret_cast<uintptr_t>(&AKeyStore_generateEcKeyPair));
+    Register("AKeyStore_encrypt", reinterpret_cast<uintptr_t>(&AKeyStore_encrypt));
+    Register("AKeyStore_decrypt", reinterpret_cast<uintptr_t>(&AKeyStore_decrypt));
+    Register("AKeyStore_sign", reinterpret_cast<uintptr_t>(&AKeyStore_sign));
+    Register("AKeyStore_verify", reinterpret_cast<uintptr_t>(&AKeyStore_verify));
+    Register("AKeyStore_freeBuffer", reinterpret_cast<uintptr_t>(&AKeyStore_freeBuffer));
+
+    // Location NDK
+    Register("ALocationManager_create", reinterpret_cast<uintptr_t>(&ALocationManager_create));
+    Register("ALocationManager_destroy", reinterpret_cast<uintptr_t>(&ALocationManager_destroy));
+    Register("ALocationManager_isProviderEnabled",
+             reinterpret_cast<uintptr_t>(&ALocationManager_isProviderEnabled));
+    Register("ALocationManager_getLastKnownLocation",
+             reinterpret_cast<uintptr_t>(&ALocationManager_getLastKnownLocation));
+    Register("ALocationManager_requestLocationUpdates",
+             reinterpret_cast<uintptr_t>(&ALocationManager_requestLocationUpdates));
+    Register("ALocationManager_removeUpdates",
+             reinterpret_cast<uintptr_t>(&ALocationManager_removeUpdates));
+    Register("ALocation_getLatitude", reinterpret_cast<uintptr_t>(&ALocation_getLatitude));
+    Register("ALocation_getLongitude", reinterpret_cast<uintptr_t>(&ALocation_getLongitude));
+    Register("ALocation_getAltitude", reinterpret_cast<uintptr_t>(&ALocation_getAltitude));
+    Register("ALocation_getAccuracy", reinterpret_cast<uintptr_t>(&ALocation_getAccuracy));
+    Register("ALocation_getSpeed", reinterpret_cast<uintptr_t>(&ALocation_getSpeed));
+    Register("ALocation_getBearing", reinterpret_cast<uintptr_t>(&ALocation_getBearing));
+    Register("ALocation_getTime", reinterpret_cast<uintptr_t>(&ALocation_getTime));
+    Register("ALocation_getElapsedRealtimeNanos",
+             reinterpret_cast<uintptr_t>(&ALocation_getElapsedRealtimeNanos));
+    Register("ALocation_hasAltitude", reinterpret_cast<uintptr_t>(&ALocation_hasAltitude));
+    Register("ALocation_hasSpeed", reinterpret_cast<uintptr_t>(&ALocation_hasSpeed));
+    Register("ALocation_hasBearing", reinterpret_cast<uintptr_t>(&ALocation_hasBearing));
+    Register("ALocation_hasAccuracy", reinterpret_cast<uintptr_t>(&ALocation_hasAccuracy));
+    Register("ALocation_destroy", reinterpret_cast<uintptr_t>(&ALocation_destroy));
+    Register("AGeofenceManager_addCircularGeofence",
+             reinterpret_cast<uintptr_t>(&AGeofenceManager_addCircularGeofence));
+    Register("AGeofenceManager_removeGeofence",
+             reinterpret_cast<uintptr_t>(&AGeofenceManager_removeGeofence));
+
+    // Clipboard & DragDrop NDK
+    Register("AClipboard_create", reinterpret_cast<uintptr_t>(&AClipboard_create));
+    Register("AClipboard_destroy", reinterpret_cast<uintptr_t>(&AClipboard_destroy));
+    Register("AClipboard_hasText", reinterpret_cast<uintptr_t>(&AClipboard_hasText));
+    Register("AClipboard_getText", reinterpret_cast<uintptr_t>(&AClipboard_getText));
+    Register("AClipboard_setText", reinterpret_cast<uintptr_t>(&AClipboard_setText));
+    Register("AClipboard_hasPrimaryClip", reinterpret_cast<uintptr_t>(&AClipboard_hasPrimaryClip));
+    Register("AClipboard_clear", reinterpret_cast<uintptr_t>(&AClipboard_clear));
+    Register("AClipboard_addPrimaryClipChangedListener",
+             reinterpret_cast<uintptr_t>(&AClipboard_addPrimaryClipChangedListener));
+    Register("AClipboard_removePrimaryClipChangedListener",
+             reinterpret_cast<uintptr_t>(&AClipboard_removePrimaryClipChangedListener));
+    Register("ADragDrop_registerDropListener",
+             reinterpret_cast<uintptr_t>(&ADragDrop_registerDropListener));
+    Register("ADragDrop_unregisterDropListener",
+             reinterpret_cast<uintptr_t>(&ADragDrop_unregisterDropListener));
+
+    // Power & Battery NDK
+    Register("APowerManager_create", reinterpret_cast<uintptr_t>(&APowerManager_create));
+    Register("APowerManager_destroy", reinterpret_cast<uintptr_t>(&APowerManager_destroy));
+    Register("APowerManager_isInteractive",
+             reinterpret_cast<uintptr_t>(&APowerManager_isInteractive));
+    Register("APowerManager_isPowerSaveMode",
+             reinterpret_cast<uintptr_t>(&APowerManager_isPowerSaveMode));
+    Register("AWakeLock_create", reinterpret_cast<uintptr_t>(&AWakeLock_create));
+    Register("AWakeLock_acquire", reinterpret_cast<uintptr_t>(&AWakeLock_acquire));
+    Register("AWakeLock_release", reinterpret_cast<uintptr_t>(&AWakeLock_release));
+    Register("AWakeLock_isHeld", reinterpret_cast<uintptr_t>(&AWakeLock_isHeld));
+    Register("AWakeLock_destroy", reinterpret_cast<uintptr_t>(&AWakeLock_destroy));
+    Register("ABatteryManager_create", reinterpret_cast<uintptr_t>(&ABatteryManager_create));
+    Register("ABatteryManager_destroy", reinterpret_cast<uintptr_t>(&ABatteryManager_destroy));
+    Register("ABatteryManager_getCapacity",
+             reinterpret_cast<uintptr_t>(&ABatteryManager_getCapacity));
+    Register("ABatteryManager_isCharging",
+             reinterpret_cast<uintptr_t>(&ABatteryManager_isCharging));
+    Register("ABatteryManager_getStatus", reinterpret_cast<uintptr_t>(&ABatteryManager_getStatus));
+    Register("ABatteryManager_getHealth", reinterpret_cast<uintptr_t>(&ABatteryManager_getHealth));
+    Register("ABatteryManager_getPluggedType",
+             reinterpret_cast<uintptr_t>(&ABatteryManager_getPluggedType));
+    Register("ABatteryManager_getVoltage",
+             reinterpret_cast<uintptr_t>(&ABatteryManager_getVoltage));
+    Register("ABatteryManager_getTemperature",
+             reinterpret_cast<uintptr_t>(&ABatteryManager_getTemperature));
 
     // libdl
     Register("dlopen", reinterpret_cast<uintptr_t>(&dlopen));
@@ -614,6 +836,10 @@ void NdkSymbolRegistry::RegisterAll()
     Register("AParcel_readByteArray", reinterpret_cast<uintptr_t>(&AParcel_readByteArray));
     Register("AParcel_readParcelFileDescriptor",
              reinterpret_cast<uintptr_t>(&AParcel_readParcelFileDescriptor));
+    Register("AParcel_writeStrongBinder",
+             reinterpret_cast<uintptr_t>(&AParcel_writeStrongBinder));
+    Register("AParcel_readStrongBinder",
+             reinterpret_cast<uintptr_t>(&AParcel_readStrongBinder));
 
     // AIBinder
     Register("AIBinder_Class_define", reinterpret_cast<uintptr_t>(&AIBinder_Class_define));
@@ -640,6 +866,63 @@ void NdkSymbolRegistry::RegisterAll()
              reinterpret_cast<uintptr_t>(&AServiceManager_getService));
     Register("AServiceManager_waitForService",
              reinterpret_cast<uintptr_t>(&AServiceManager_waitForService));
+
+    // AStorageManager
+    Register("AStorageManager_new", reinterpret_cast<uintptr_t>(&AStorageManager_new));
+    Register("AStorageManager_delete", reinterpret_cast<uintptr_t>(&AStorageManager_delete));
+    Register("AStorageManager_mountObb", reinterpret_cast<uintptr_t>(&AStorageManager_mountObb));
+    Register("AStorageManager_unmountObb",
+             reinterpret_cast<uintptr_t>(&AStorageManager_unmountObb));
+    Register("AStorageManager_isObbMounted",
+             reinterpret_cast<uintptr_t>(&AStorageManager_isObbMounted));
+    Register("AStorageManager_getMountedObbPath",
+             reinterpret_cast<uintptr_t>(&AStorageManager_getMountedObbPath));
+
+    // Multinetwork
+    Register("android_setsocknetwork", reinterpret_cast<uintptr_t>(&android_setsocknetwork));
+    Register("android_setprocnetwork", reinterpret_cast<uintptr_t>(&android_setprocnetwork));
+    Register("android_getprocnetwork", reinterpret_cast<uintptr_t>(&android_getprocnetwork));
+    Register("android_getaddrinfofornetwork",
+             reinterpret_cast<uintptr_t>(&android_getaddrinfofornetwork));
+    Register("android_freeaddrinfofornetwork",
+             reinterpret_cast<uintptr_t>(&android_freeaddrinfofornetwork));
+    Register("android_res_nquery", reinterpret_cast<uintptr_t>(&android_res_nquery));
+    Register("android_res_nsearch", reinterpret_cast<uintptr_t>(&android_res_nsearch));
+    Register("android_res_nsend", reinterpret_cast<uintptr_t>(&android_res_nsend));
+    Register("android_res_nresult", reinterpret_cast<uintptr_t>(&android_res_nresult));
+    Register("android_res_cancel", reinterpret_cast<uintptr_t>(&android_res_cancel));
+    Register("android_freeaddrinfo", reinterpret_cast<uintptr_t>(&android_freeaddrinfo));
+    Register("freeaddrinfo", reinterpret_cast<uintptr_t>(&android_freeaddrinfo));
+
+    // AThermalManager
+    Register("AThermalManager_acquireManager",
+             reinterpret_cast<uintptr_t>(&AThermalManager_acquireManager));
+    Register("AThermalManager_releaseManager",
+             reinterpret_cast<uintptr_t>(&AThermalManager_releaseManager));
+    Register("AThermalManager_getCurrentThermalStatus",
+             reinterpret_cast<uintptr_t>(&AThermalManager_getCurrentThermalStatus));
+    Register("AThermalManager_registerThermalStatusListener",
+             reinterpret_cast<uintptr_t>(&AThermalManager_registerThermalStatusListener));
+    Register("AThermalManager_unregisterThermalStatusListener",
+             reinterpret_cast<uintptr_t>(&AThermalManager_unregisterThermalStatusListener));
+    Register("AThermalManager_getThermalHeadroom",
+             reinterpret_cast<uintptr_t>(&AThermalManager_getThermalHeadroom));
+
+    // APerformanceHintManager & APerformanceHintSession
+    Register("APerformanceHintManager_create",
+             reinterpret_cast<uintptr_t>(&APerformanceHintManager_create));
+    Register("APerformanceHintManager_createSession",
+             reinterpret_cast<uintptr_t>(&APerformanceHintManager_createSession));
+    Register("APerformanceHintManager_getPreferredUpdateRateNanos",
+             reinterpret_cast<uintptr_t>(&APerformanceHintManager_getPreferredUpdateRateNanos));
+    Register("APerformanceHintSession_updateTargetWorkDuration",
+             reinterpret_cast<uintptr_t>(&APerformanceHintSession_updateTargetWorkDuration));
+    Register("APerformanceHintSession_reportActualWorkDuration",
+             reinterpret_cast<uintptr_t>(&APerformanceHintSession_reportActualWorkDuration));
+    Register("APerformanceHintSession_close",
+             reinterpret_cast<uintptr_t>(&APerformanceHintSession_close));
+    Register("APerformanceHintSession_setThreads",
+             reinterpret_cast<uintptr_t>(&APerformanceHintSession_setThreads));
 
     portage::gles::InitializeGlesDispatcher();
 }
@@ -779,7 +1062,44 @@ __attribute__((sysv_abi)) int32_t ANativeWindow_unlockAndPost(ANativeWindow *win
     }
 
     portage::wsi::WindowManager::Instance().RecordFramePresented();
+    auto now_nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                         std::chrono::steady_clock::now().time_since_epoch())
+                         .count();
+    window->last_queue_time_nanos = now_nanos;
+    window->last_latch_time_nanos = now_nanos;
+    window->last_present_time_nanos = now_nanos;
+    window->frame_index++;
     window->is_locked = false;
+    return 0;
+}
+
+__attribute__((sysv_abi)) int32_t ANativeWindow_getLastQueueDuration(ANativeWindow *window,
+                                                                     int64_t *outDuration)
+{
+    if (!window || !outDuration) {
+        return -1;
+    }
+    *outDuration = window->last_queue_duration_nanos;
+    return 0;
+}
+
+__attribute__((sysv_abi)) int32_t
+ANativeWindow_getFrameTimestamps(ANativeWindow *window, uint64_t frameId, int64_t *outQueueTime,
+                                 int64_t *outLatchTime, int64_t *outPresentTime)
+{
+    if (!window) {
+        return -1;
+    }
+    (void)frameId;
+    if (outQueueTime) {
+        *outQueueTime = window->last_queue_time_nanos;
+    }
+    if (outLatchTime) {
+        *outLatchTime = window->last_latch_time_nanos;
+    }
+    if (outPresentTime) {
+        *outPresentTime = window->last_present_time_nanos;
+    }
     return 0;
 }
 

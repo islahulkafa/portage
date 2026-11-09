@@ -1,4 +1,6 @@
 #include "package_manager.hpp"
+#include "fs/vfs.hpp"
+#include "syscall/syscall_dispatcher.hpp"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -96,6 +98,7 @@ std::optional<PackageInfo> PackageManager::InstallPackage(const std::filesystem:
     pkg.cache_dir = sandbox_base_ / "data" / "data" / manifest->package_name / "cache";
     pkg.external_data_dir =
         sandbox_base_ / "sdcard" / "Android" / "data" / manifest->package_name / "files";
+    pkg.obb_dir = sandbox_base_ / "sdcard" / "Android" / "obb" / manifest->package_name;
 
     std::error_code ec;
     std::filesystem::create_directories(pkg.app_dir, ec);
@@ -103,10 +106,34 @@ std::optional<PackageInfo> PackageManager::InstallPackage(const std::filesystem:
     std::filesystem::create_directories(pkg.data_dir, ec);
     std::filesystem::create_directories(pkg.cache_dir, ec);
     std::filesystem::create_directories(pkg.external_data_dir, ec);
+    std::filesystem::create_directories(pkg.obb_dir, ec);
+    std::filesystem::create_directories(sandbox_base_ / "sdcard" / "Download", ec);
+    std::filesystem::create_directories(sandbox_base_ / "sdcard" / "DCIM", ec);
+    std::filesystem::create_directories(sandbox_base_ / "sdcard" / "Documents", ec);
+
+    auto *vfs = syscall::SyscallDispatcher::GetVfs();
+    if (vfs) {
+        vfs->AddMount("/sdcard", sandbox_base_ / "sdcard");
+    }
 
     // Copy base.apk into app directory
     std::filesystem::copy_file(apk_path, pkg.app_dir / "base.apk",
                                std::filesystem::copy_options::overwrite_existing, ec);
+
+    // Copy expansion OBB files alongside the APK into obb_dir
+    auto apk_dir = apk_path.parent_path();
+    if (!apk_dir.empty() && std::filesystem::exists(apk_dir, ec)) {
+        for (const auto &dir_entry : std::filesystem::directory_iterator(apk_dir, ec)) {
+            if (dir_entry.is_regular_file() && dir_entry.path().extension() == ".obb") {
+                auto obb_filename = dir_entry.path().filename().string();
+                if (obb_filename.find(manifest->package_name) != std::string::npos) {
+                    std::filesystem::copy_file(dir_entry.path(), pkg.obb_dir / obb_filename,
+                                               std::filesystem::copy_options::overwrite_existing,
+                                               ec);
+                }
+            }
+        }
+    }
 
     // Extract native libraries for x86_64
     for (const auto &entry : pkg.archive->GetAllEntries()) {
@@ -190,6 +217,16 @@ std::filesystem::path PackageManager::GetPrimaryLibraryPath(const PackageInfo &p
     }
 
     return pkg.lib_dir / "libmain.so";
+}
+
+std::filesystem::path PackageManager::GetObbDir(std::string_view package_name) const
+{
+    return sandbox_base_ / "sdcard" / "Android" / "obb" / package_name;
+}
+
+std::filesystem::path PackageManager::GetObbMountBase() const
+{
+    return sandbox_base_ / "data" / "obb_mounts";
 }
 
 } // namespace portage::package

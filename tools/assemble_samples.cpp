@@ -38,24 +38,24 @@ static uint32_t CalculateCrc32(const uint8_t *data, size_t length)
 std::vector<uint8_t> BuildManifest(const std::string &pkg_name, const std::string &lib_name)
 {
     std::vector<std::string> string_pool = {
-        "manifest",                   // 0
-        "package",                    // 1
-        pkg_name,                     // 2
-        "versionCode",                // 3
-        "versionName",                // 4
-        "1.0.0",                      // 5
-        "uses-sdk",                   // 6
-        "minSdkVersion",              // 7
-        "targetSdkVersion",           // 8
-        "application",                // 9
-        "hasCode",                    // 10
-        "activity",                   // 11
-        "name",                       // 12
-        "android.app.NativeActivity", // 13
-        "meta-data",                  // 14
-        "android.app.lib_name",       // 15
-        lib_name,                     // 16
-        "http://schemas.android.com/apk/res/android" // 17
+        "manifest",
+        "package",
+        pkg_name,
+        "versionCode",
+        "versionName",
+        "1.0.0",
+        "uses-sdk",
+        "minSdkVersion",
+        "targetSdkVersion",
+        "application",
+        "hasCode",
+        "activity",
+        "name",
+        "android.app.NativeActivity",
+        "meta-data",
+        "android.app.lib_name",
+        lib_name,
+        "http://schemas.android.com/apk/res/android"
     };
 
     std::vector<uint8_t> sp_chunk;
@@ -80,12 +80,12 @@ std::vector<uint8_t> BuildManifest(const std::string &pkg_name, const std::strin
 
     uint32_t sp_chunk_size = strings_start + static_cast<uint32_t>(str_data.size());
 
-    WriteU16(sp_chunk, 0x0001); // CHUNK_STRING_POOL
+    WriteU16(sp_chunk, 0x0001);
     WriteU16(sp_chunk, static_cast<uint16_t>(sp_hdr_size));
     WriteU32(sp_chunk, sp_chunk_size);
     WriteU32(sp_chunk, str_count);
     WriteU32(sp_chunk, 0);
-    WriteU32(sp_chunk, (1 << 8)); // UTF-8
+    WriteU32(sp_chunk, (1 << 8));
     WriteU32(sp_chunk, strings_start);
     WriteU32(sp_chunk, 0);
 
@@ -114,13 +114,13 @@ std::vector<uint8_t> BuildManifest(const std::string &pkg_name, const std::strin
         WriteU16(body, 0);
 
         for (const auto &attr : attrs) {
-            WriteU32(body, 17);           // uri: android
-            WriteU32(body, attr.first);   // name index
-            WriteU32(body, attr.second);  // value string index
-            WriteU16(body, 8);            // Res_value size
-            WriteU8(body, 0);             // res0
-            WriteU8(body, 0x03);          // TYPE_STRING
-            WriteU32(body, attr.second);  // data
+            WriteU32(body, 17);
+            WriteU32(body, attr.first);
+            WriteU32(body, attr.second);
+            WriteU16(body, 8);
+            WriteU8(body, 0);
+            WriteU8(body, 0x03);
+            WriteU32(body, attr.second);
         }
     };
 
@@ -134,20 +134,15 @@ std::vector<uint8_t> BuildManifest(const std::string &pkg_name, const std::strin
         WriteU32(body, name_idx);
     };
 
-    // <manifest package=pkg_name versionCode=1 versionName="1.0.0">
     write_start_elem(0, {{1, 2}, {3, 5}, {4, 5}});
 
-    // <uses-sdk minSdkVersion=21 targetSdkVersion=34>
     write_start_elem(6, {{7, 5}, {8, 5}});
     write_end_elem(6);
 
-    // <application hasCode=false>
     write_start_elem(9, {{10, 5}});
 
-    // <activity name="android.app.NativeActivity">
     write_start_elem(11, {{12, 13}});
 
-    // <meta-data name="android.app.lib_name" value=lib_name>
     write_start_elem(14, {{12, 15}, {16, 16}});
     write_end_elem(14);
 
@@ -158,7 +153,7 @@ std::vector<uint8_t> BuildManifest(const std::string &pkg_name, const std::strin
     std::vector<uint8_t> doc;
     uint32_t doc_size = 8 + static_cast<uint32_t>(sp_chunk.size() + body.size());
 
-    WriteU16(doc, 0x0003); // CHUNK_AXML_ROOT
+    WriteU16(doc, 0x0003);
     WriteU16(doc, 8);
     WriteU32(doc, doc_size);
 
@@ -209,7 +204,7 @@ std::vector<uint8_t> BuildStringPool(const std::vector<std::string> &strings, bo
 
     uint32_t total_size = strings_start + static_cast<uint32_t>(str_data.size());
 
-    WriteU16(pool, 0x0001); // RES_STRING_POOL_TYPE
+    WriteU16(pool, 0x0001);
     WriteU16(pool, static_cast<uint16_t>(header_size));
     WriteU32(pool, total_size);
     WriteU32(pool, string_count);
@@ -231,27 +226,26 @@ std::vector<uint8_t> BuildResourceTable(const std::string &pkg_name)
     std::vector<uint8_t> table;
 
     std::vector<std::string> global_strings = {
-        "Portage Game Engine", // 0
-        "Welcome to Portage!", // 1
+        "Portage Game Engine",
+        "Welcome to Portage!",
     };
     auto global_pool = BuildStringPool(global_strings, true);
 
     std::vector<std::string> type_strings = {
-        "string",  // 0 (id 1)
-        "integer", // 1 (id 2)
-        "bool",    // 2 (id 3)
+        "string",
+        "integer",
+        "bool",
     };
     auto type_pool = BuildStringPool(type_strings, true);
 
     std::vector<std::string> key_strings = {
-        "app_name",        // 0
-        "welcome_message", // 1
-        "game_difficulty", // 2
-        "sound_enabled",   // 3
+        "app_name",
+        "welcome_message",
+        "game_difficulty",
+        "sound_enabled",
     };
     auto key_pool = BuildStringPool(key_strings, true);
 
-    // Type 1 (string)
     std::vector<uint8_t> type1_spec;
     WriteU16(type1_spec, 0x0202);
     WriteU16(type1_spec, 16);
@@ -285,7 +279,6 @@ std::vector<uint8_t> BuildResourceTable(const std::string &pkg_name)
     WriteU32(type1_type, 0);
     WriteU32(type1_type, entry_size);
 
-    // Entry 0: app_name -> string index 0 ("Portage Game Engine")
     WriteU16(type1_type, 8);
     WriteU16(type1_type, 0);
     WriteU32(type1_type, 0);
@@ -294,7 +287,6 @@ std::vector<uint8_t> BuildResourceTable(const std::string &pkg_name)
     WriteU8(type1_type, 0x03);
     WriteU32(type1_type, 0);
 
-    // Entry 1: welcome_message -> string index 1 ("Welcome to Portage!")
     WriteU16(type1_type, 8);
     WriteU16(type1_type, 0);
     WriteU32(type1_type, 1);
@@ -303,7 +295,6 @@ std::vector<uint8_t> BuildResourceTable(const std::string &pkg_name)
     WriteU8(type1_type, 0x03);
     WriteU32(type1_type, 1);
 
-    // Type 2 (integer)
     std::vector<uint8_t> type2_spec;
     WriteU16(type2_spec, 0x0202);
     WriteU16(type2_spec, 16);
@@ -332,16 +323,14 @@ std::vector<uint8_t> BuildResourceTable(const std::string &pkg_name)
     }
     WriteU32(type2_type, 0);
 
-    // Entry 0: game_difficulty -> 42
     WriteU16(type2_type, 8);
     WriteU16(type2_type, 0);
     WriteU32(type2_type, 2);
     WriteU16(type2_type, 8);
     WriteU8(type2_type, 0);
-    WriteU8(type2_type, 0x10); // TYPE_INT_DEC
+    WriteU8(type2_type, 0x10);
     WriteU32(type2_type, 42);
 
-    // Type 3 (bool)
     std::vector<uint8_t> type3_spec;
     WriteU16(type3_spec, 0x0202);
     WriteU16(type3_spec, 16);
@@ -370,16 +359,14 @@ std::vector<uint8_t> BuildResourceTable(const std::string &pkg_name)
     }
     WriteU32(type3_type, 0);
 
-    // Entry 0: sound_enabled -> true (1)
     WriteU16(type3_type, 8);
     WriteU16(type3_type, 0);
     WriteU32(type3_type, 3);
     WriteU16(type3_type, 8);
     WriteU8(type3_type, 0);
-    WriteU8(type3_type, 0x12); // TYPE_INT_BOOLEAN
+    WriteU8(type3_type, 0x12);
     WriteU32(type3_type, 1);
 
-    // Package header
     uint32_t pkg_hdr_size = 288;
     uint32_t type_strings_offset = pkg_hdr_size;
     uint32_t key_strings_offset = type_strings_offset + static_cast<uint32_t>(type_pool.size());
@@ -389,7 +376,7 @@ std::vector<uint8_t> BuildResourceTable(const std::string &pkg_name)
                                                    type3_spec.size() + type3_type.size());
 
     std::vector<uint8_t> pkg;
-    WriteU16(pkg, 0x0200); // RES_TABLE_PACKAGE_TYPE
+    WriteU16(pkg, 0x0200);
     WriteU16(pkg, static_cast<uint16_t>(pkg_hdr_size));
     WriteU32(pkg, pkg_total_size);
     WriteU32(pkg, 0x7F);
@@ -414,12 +401,11 @@ std::vector<uint8_t> BuildResourceTable(const std::string &pkg_name)
     pkg.insert(pkg.end(), type3_spec.begin(), type3_spec.end());
     pkg.insert(pkg.end(), type3_type.begin(), type3_type.end());
 
-    // Root table
     uint32_t table_hdr_size = 12;
     uint32_t table_total_size =
         table_hdr_size + static_cast<uint32_t>(global_pool.size() + pkg.size());
 
-    WriteU16(table, 0x0002); // RES_TABLE_TYPE
+    WriteU16(table, 0x0002);
     WriteU16(table, static_cast<uint16_t>(table_hdr_size));
     WriteU32(table, table_total_size);
     WriteU32(table, 1);
@@ -431,9 +417,7 @@ std::vector<uint8_t> BuildResourceTable(const std::string &pkg_name)
 }
 
 std::vector<uint8_t>
-AssembleApk(const std::vector<uint8_t> &manifest, const std::vector<uint8_t> &resources,
-            const std::vector<std::pair<std::string, std::vector<uint8_t>>> &assets,
-            const std::vector<std::pair<std::string, std::vector<uint8_t>>> &libs)
+AssembleZip(const std::vector<std::pair<std::string, std::vector<uint8_t>>> &files)
 {
     struct FileEntry {
         std::string name;
@@ -442,15 +426,9 @@ AssembleApk(const std::vector<uint8_t> &manifest, const std::vector<uint8_t> &re
         uint32_t offset{0};
     };
 
-    std::vector<FileEntry> entries = {
-        {"AndroidManifest.xml", manifest, 0, 0},
-        {"resources.arsc", resources, 0, 0},
-    };
-    for (const auto &asset : assets) {
-        entries.push_back({asset.first, asset.second, 0, 0});
-    }
-    for (const auto &lib : libs) {
-        entries.push_back({"lib/x86_64/" + lib.first, lib.second, 0, 0});
+    std::vector<FileEntry> entries;
+    for (const auto &[name, data] : files) {
+        entries.push_back({name, data, 0, 0});
     }
 
     std::vector<uint8_t> zip;
@@ -461,7 +439,7 @@ AssembleApk(const std::vector<uint8_t> &manifest, const std::vector<uint8_t> &re
         WriteU32(zip, 0x04034b50);
         WriteU16(zip, 20);
         WriteU16(zip, 0);
-        WriteU16(zip, 0); // Stored
+        WriteU16(zip, 0);
         WriteU16(zip, 0);
         WriteU16(zip, 0);
         WriteU32(zip, e.crc);
@@ -508,6 +486,23 @@ AssembleApk(const std::vector<uint8_t> &manifest, const std::vector<uint8_t> &re
     return zip;
 }
 
+std::vector<uint8_t>
+AssembleApk(const std::vector<uint8_t> &manifest, const std::vector<uint8_t> &resources,
+            const std::vector<std::pair<std::string, std::vector<uint8_t>>> &assets,
+            const std::vector<std::pair<std::string, std::vector<uint8_t>>> &libs)
+{
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> files;
+    files.push_back({"AndroidManifest.xml", manifest});
+    files.push_back({"resources.arsc", resources});
+    for (const auto &asset : assets) {
+        files.push_back({asset.first, asset.second});
+    }
+    for (const auto &lib : libs) {
+        files.push_back({"lib/x86_64/" + lib.first, lib.second});
+    }
+    return AssembleZip(files);
+}
+
 int main(int argc, char *argv[])
 {
     if (argc < 5) {
@@ -537,7 +532,6 @@ int main(int argc, char *argv[])
     auto manifest = BuildManifest(pkg_name, lib_name);
     auto resources = BuildResourceTable(pkg_name);
 
-    // Bundle sample assets into APK
     std::string vert_shader =
         "attribute vec2 a_pos;\nvoid main() {\n  gl_Position = vec4(a_pos, 0.0, 1.0);\n}\n";
     std::string config_dat = "PORTAGE_CONFIG_VERSION=1\nENGINE_MODE=FAST\n";
@@ -555,7 +549,36 @@ int main(int argc, char *argv[])
                   static_cast<std::streamsize>(apk_bytes.size()));
     apk_out.close();
 
+    std::string obb_asset = "OBB_CONTENT_OK\n";
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> obb_files = {
+        {"obb_asset.txt", std::vector<uint8_t>(obb_asset.begin(), obb_asset.end())},
+    };
+    auto obb_bytes = AssembleZip(obb_files);
+
+    uint32_t footer_size = static_cast<uint32_t>(32 + pkg_name.size());
+    WriteU32(obb_bytes, 1);
+    WriteU32(obb_bytes, 1);
+    WriteU32(obb_bytes, 0);
+    for (int j = 0; j < 8; ++j) {
+        WriteU8(obb_bytes, 0);
+    }
+    WriteU32(obb_bytes, static_cast<uint32_t>(pkg_name.size()));
+    obb_bytes.insert(obb_bytes.end(), pkg_name.begin(), pkg_name.end());
+    WriteU32(obb_bytes, footer_size);
+    WriteU32(obb_bytes, 0x01059983);
+
+    auto apk_path_obj = stdfs::path(out_apk);
+    auto obb_filename = "main.1." + pkg_name + ".obb";
+    auto obb_out_path = apk_path_obj.parent_path() / obb_filename;
+
+    std::ofstream obb_out(obb_out_path, std::ios::binary);
+    obb_out.write(reinterpret_cast<const char *>(obb_bytes.data()),
+                  static_cast<std::streamsize>(obb_bytes.size()));
+    obb_out.close();
+
     std::cout << "Successfully assembled: " << out_apk << " (" << apk_bytes.size() << " bytes, "
               << libs.size() << " libraries, " << assets.size() << " assets)\n";
+    std::cout << "Successfully assembled OBB: " << obb_out_path << " (" << obb_bytes.size()
+              << " bytes)\n";
     return 0;
 }

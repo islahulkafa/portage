@@ -24,6 +24,7 @@ struct PackageInfo {
     std::filesystem::path data_dir{};
     std::filesystem::path cache_dir{};
     std::filesystem::path external_data_dir{};
+    std::filesystem::path obb_dir{};
     std::vector<std::string> native_libraries{};
     std::shared_ptr<ZipArchive> archive{nullptr};
     std::shared_ptr<ResourceTable> resource_table{nullptr};
@@ -44,6 +45,8 @@ class PackageManager {
     void SetActivePackage(std::string_view package_name);
 
     [[nodiscard]] std::filesystem::path GetPrimaryLibraryPath(const PackageInfo &pkg) const;
+    [[nodiscard]] std::filesystem::path GetObbDir(std::string_view package_name) const;
+    [[nodiscard]] std::filesystem::path GetObbMountBase() const;
     [[nodiscard]] const std::filesystem::path &GetSandboxBase() const noexcept
     {
         return sandbox_base_;

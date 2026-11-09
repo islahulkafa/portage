@@ -406,3 +406,146 @@ AMediaCodec_releaseOutputBufferAtTime(AMediaCodec *codec, size_t idx, int64_t re
     (void)renderTimestampNs;
     return 0;
 }
+
+struct AImageReader;
+typedef struct AImageReader AImageReader;
+
+struct AImage;
+typedef struct AImage AImage;
+
+typedef struct AImageReader_ImageListener {
+    void *context;
+    void (*onImageAvailable)(void *context, AImageReader *reader);
+} AImageReader_ImageListener;
+
+__attribute__((visibility("default"))) int32_t
+AImageReader_new(int32_t width, int32_t height, int32_t format, int32_t maxImages,
+                 AImageReader **reader)
+{
+    (void)width;
+    (void)height;
+    (void)format;
+    (void)maxImages;
+    (void)reader;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int32_t
+AImageReader_newWithUsage(int32_t width, int32_t height, int32_t format, uint64_t usage,
+                          int32_t maxImages, AImageReader **reader)
+{
+    (void)width;
+    (void)height;
+    (void)format;
+    (void)usage;
+    (void)maxImages;
+    (void)reader;
+    return 0;
+}
+
+__attribute__((visibility("default"))) void AImageReader_delete(AImageReader *reader)
+{
+    (void)reader;
+}
+
+__attribute__((visibility("default"))) int32_t
+AImageReader_getWindow(AImageReader *reader, ANativeWindow **window)
+{
+    (void)reader;
+    (void)window;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int32_t
+AImageReader_acquireNextImage(AImageReader *reader, AImage **image)
+{
+    (void)reader;
+    (void)image;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int32_t
+AImageReader_acquireLatestImage(AImageReader *reader, AImage **image)
+{
+    (void)reader;
+    (void)image;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int32_t
+AImageReader_setImageListener(AImageReader *reader, AImageReader_ImageListener *listener)
+{
+    (void)reader;
+    (void)listener;
+    return 0;
+}
+
+__attribute__((visibility("default"))) void AImage_delete(AImage *image)
+{
+    (void)image;
+}
+
+__attribute__((visibility("default"))) int32_t AImage_getWidth(const AImage *image, int32_t *width)
+{
+    (void)image;
+    (void)width;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int32_t AImage_getHeight(const AImage *image, int32_t *height)
+{
+    (void)image;
+    (void)height;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int32_t AImage_getFormat(const AImage *image, int32_t *format)
+{
+    (void)image;
+    (void)format;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int32_t
+AImage_getTimestamp(const AImage *image, int64_t *timestamp)
+{
+    (void)image;
+    (void)timestamp;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int32_t
+AImage_getNumberOfPlanes(const AImage *image, int32_t *numPlanes)
+{
+    (void)image;
+    (void)numPlanes;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int32_t
+AImage_getPlanePixelStride(const AImage *image, int32_t planeIdx, int32_t *pixelStride)
+{
+    (void)image;
+    (void)planeIdx;
+    (void)pixelStride;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int32_t
+AImage_getPlaneRowStride(const AImage *image, int32_t planeIdx, int32_t *rowStride)
+{
+    (void)image;
+    (void)planeIdx;
+    (void)rowStride;
+    return 0;
+}
+
+__attribute__((visibility("default"))) int32_t
+AImage_getPlaneData(const AImage *image, int32_t planeIdx, uint8_t **data, int *dataLength)
+{
+    (void)image;
+    (void)planeIdx;
+    (void)data;
+    (void)dataLength;
+    return 0;
+}

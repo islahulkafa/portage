@@ -42,7 +42,7 @@ void *memcpy(void *dest, const void *src, size_t len)
 
 __attribute__((force_align_arg_pointer)) void _start(void)
 {
-    // 1. ANativeWindow API verification
+    // ANativeWindow API verification
     struct ANativeWindow *window = ANativeWindow_create(800, 600);
     if (!window) {
         sys_exit(1);
@@ -52,7 +52,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
     }
     ANativeWindow_acquire(window);
 
-    // 2. Initialize Vulkan instance with surface extensions
+    // Initialize Vulkan instance with surface extensions
     VkApplicationInfo app_info;
     memset(&app_info, 0, sizeof(app_info));
     app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -77,7 +77,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(3);
     }
 
-    // 3. Create Android Surface
+    // Create Android Surface
     VkAndroidSurfaceCreateInfoKHR surf_info;
     memset(&surf_info, 0, sizeof(surf_info));
     surf_info.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
@@ -89,7 +89,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(4);
     }
 
-    // 4. Enumerate GPU and verify presentation support
+    // Enumerate GPU and verify presentation support
     uint32_t gpu_count = 0;
     if (vkEnumeratePhysicalDevices(instance, &gpu_count, NULL) != VK_SUCCESS || gpu_count == 0) {
         sys_exit(5);
@@ -112,7 +112,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(7);
     }
 
-    // 5. Create logical device with VK_KHR_swapchain
+    // Create logical device with VK_KHR_swapchain
     float priority = 1.0f;
     VkDeviceQueueCreateInfo q_info;
     memset(&q_info, 0, sizeof(q_info));
@@ -142,7 +142,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
     VkQueue queue = VK_NULL_HANDLE;
     vkGetDeviceQueue(device, 0, 0, &queue);
 
-    // 6. Create Swapchain
+    // Create Swapchain
     VkSwapchainCreateInfoKHR swap_info;
     memset(&swap_info, 0, sizeof(swap_info));
     swap_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -158,7 +158,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(9);
     }
 
-    // 7. Enumerate images and acquire
+    // Enumerate images and acquire
     uint32_t img_count = 0;
     if (vkGetSwapchainImagesKHR(device, swapchain, &img_count, NULL) != VK_SUCCESS ||
         img_count < 2) {
@@ -176,7 +176,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(11);
     }
 
-    // 8. Present frame to surface
+    // Present frame to surface
     VkPresentInfoKHR pres_info;
     memset(&pres_info, 0, sizeof(pres_info));
     pres_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -188,7 +188,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(12);
     }
 
-    // 9. Teardown
+    // Teardown
     vkDestroySwapchainKHR(device, swapchain, NULL);
     vkDestroyDevice(device, NULL);
     vkDestroySurfaceKHR(instance, surface, NULL);

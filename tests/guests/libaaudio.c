@@ -24,6 +24,12 @@ __attribute__((visibility("default"))) void AAudioStreamBuilder_setFormat(void *
     (void)f;
 }
 
+__attribute__((visibility("default"))) void AAudioStreamBuilder_setDirection(void *b, int32_t d)
+{
+    (void)b;
+    (void)d;
+}
+
 __attribute__((visibility("default"))) void AAudioStreamBuilder_setDataCallback(void *b, void *cb,
                                                                                 void *u)
 {
@@ -65,6 +71,15 @@ __attribute__((visibility("default"))) int32_t AAudioStream_close(void *s)
 
 __attribute__((visibility("default"))) int32_t AAudioStream_write(void *s, const void *b, int32_t n,
                                                                   int64_t t)
+{
+    (void)s;
+    (void)b;
+    (void)t;
+    return n;
+}
+
+__attribute__((visibility("default"))) int32_t AAudioStream_read(void *s, void *b, int32_t n,
+                                                                 int64_t t)
 {
     (void)s;
     (void)b;

@@ -181,7 +181,7 @@ static struct PropInfo *to_prop_info(uint8_t *data, uint32_t off)
 
 void _start(void)
 {
-    // 1. Open and mmap /dev/__properties__/properties_serial
+    // Open and mmap /dev/__properties__/properties_serial
     const char serial_path[] = "/dev/__properties__/properties_serial";
     int sfd = (int)sys_openat(-100, serial_path, O_RDONLY, 0);
     if (sfd < 0) {
@@ -199,7 +199,7 @@ void _start(void)
     uint32_t initial_serial = s_hdr->serial;
     sys_close(sfd);
 
-    // 2. Open and mmap /dev/__properties__/u:object_r:default_prop:s0
+    // Open and mmap /dev/__properties__/u:object_r:default_prop:s0
     const char default_prop_path[] = "/dev/__properties__/u:object_r:default_prop:s0";
     int pfd = (int)sys_openat(-100, default_prop_path, O_RDONLY, 0);
     if (pfd < 0) {
@@ -218,7 +218,7 @@ void _start(void)
     uint8_t *data = (uint8_t *)p_map + sizeof(struct PropAreaHeader);
     struct PropTrieNode *root = (struct PropTrieNode *)data;
 
-    // 3. Find ro.build.version.sdk
+    // Find ro.build.version.sdk
     const char *segments[] = {"ro", "build", "version", "sdk"};
     struct PropTrieNode *curr = root;
 
@@ -257,7 +257,7 @@ void _start(void)
     }
     sys_close(pfd);
 
-    // 4. Connect to property_service and set a property
+    // Connect to property_service and set a property
     int sock = (int)sys_socket(AF_UNIX, SOCK_STREAM, 0);
     if (sock < 0) {
         sys_exit(11);
@@ -295,7 +295,7 @@ void _start(void)
     }
     sys_close(sock);
 
-    // 5. Verify properties_serial was bumped
+    // Verify properties_serial was bumped
     if (s_hdr->serial <= initial_serial) {
         sys_exit(15);
     }

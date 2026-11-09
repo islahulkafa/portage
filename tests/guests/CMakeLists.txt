@@ -298,6 +298,125 @@ add_custom_command(
     COMMENT "Cross-compiling Android x86_64 libbinder_ndk shared library: libbinder_ndk.so"
 )
 
+# Shared library libswappy_vk.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libswappy_vk.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/libswappy_vk.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libswappy_vk.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libswappy_vk.c"
+    COMMENT "Cross-compiling Android x86_64 libswappy_vk shared library: libswappy_vk.so"
+)
+
+# Shared library libswappy_gl.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libswappy_gl.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/libswappy_gl.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libswappy_gl.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libswappy_gl.c"
+    COMMENT "Cross-compiling Android x86_64 libswappy_gl shared library: libswappy_gl.so"
+)
+
+# Shared library libcamera2ndk.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libcamera2ndk.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/libcamera2ndk.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libcamera2ndk.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libcamera2ndk.c"
+    COMMENT "Cross-compiling Android x86_64 libcamera2ndk shared library: libcamera2ndk.so"
+)
+
+# Shared library libkeystorendk.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libkeystorendk.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/libkeystorendk.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libkeystorendk.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libkeystorendk.c"
+    COMMENT "Cross-compiling Android x86_64 libkeystorendk shared library: libkeystorendk.so"
+)
+
+# Shared library liblocationndk.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/liblocationndk.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/liblocationndk.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/liblocationndk.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/liblocationndk.c"
+    COMMENT "Cross-compiling Android x86_64 liblocationndk shared library: liblocationndk.so"
+)
+
+# Shared library libclipboardndk.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libclipboardndk.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/libclipboardndk.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libclipboardndk.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libclipboardndk.c"
+    COMMENT "Cross-compiling Android x86_64 libclipboardndk shared library: libclipboardndk.so"
+)
+
+# Shared library libpowerndk.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libpowerndk.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/libpowerndk.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libpowerndk.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libpowerndk.c"
+    COMMENT "Cross-compiling Android x86_64 libpowerndk shared library: libpowerndk.so"
+)
+
 # Shared library libtest_gles_quad.so
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/libtest_gles_quad.so"
@@ -428,6 +547,13 @@ add_custom_target(build_guest_binaries
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libjnigraphics.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libmediandk.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libbinder_ndk.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libswappy_vk.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libswappy_gl.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libcamera2ndk.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libkeystorendk.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/liblocationndk.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libclipboardndk.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libpowerndk.so"
         "${CMAKE_CURRENT_BINARY_DIR}/test_vulkan_device.elf"
         "${CMAKE_CURRENT_BINARY_DIR}/test_vulkan_presentation.elf"
         "${CMAKE_CURRENT_BINARY_DIR}/test_audio_pcm.elf"
@@ -441,6 +567,7 @@ add_custom_target(build_guest_binaries
 
 add_custom_command(
     OUTPUT "${CMAKE_BINARY_DIR}/game_engine.apk"
+           "${CMAKE_BINARY_DIR}/main.1.com.portage.gameengine.obb"
     COMMAND assemble_samples
         "${CMAKE_BINARY_DIR}/game_engine.apk"
         com.portage.gameengine
@@ -453,9 +580,10 @@ add_custom_command(
         "${CMAKE_CURRENT_BINARY_DIR}/libtest_game_engine.so"
         "${CMAKE_CURRENT_BINARY_DIR}/libgame_math.so"
         "${CMAKE_CURRENT_BINARY_DIR}/libgame_plugin.so"
-    COMMENT "Assembling sample game_engine.apk with multi-library dependencies"
+    COMMENT "Assembling sample game_engine.apk with multi-library dependencies and OBB"
 )
 
 add_custom_target(sample_game_engine_apk ALL
     DEPENDS "${CMAKE_BINARY_DIR}/game_engine.apk"
+            "${CMAKE_BINARY_DIR}/main.1.com.portage.gameengine.obb"
 )

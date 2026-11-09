@@ -48,6 +48,17 @@ set(UNIT_TEST_SOURCES
     unit/test_mediandk.cpp
     unit/test_binder_ndk.cpp
     unit/test_input_gamepad.cpp
+    unit/test_storage_manager.cpp
+    unit/test_play_services.cpp
+    unit/test_multinetwork.cpp
+    unit/test_adpf.cpp
+    unit/test_audio_recording.cpp
+    unit/test_swappy.cpp
+    unit/test_camera.cpp
+    unit/test_keystore.cpp
+    unit/test_location.cpp
+    unit/test_clipboard.cpp
+    unit/test_power.cpp
 )
 
 set(INTEGRATION_TEST_SOURCES

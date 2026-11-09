@@ -67,7 +67,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
 {
     char buf[512];
 
-    // 1. Read /proc/cpuinfo
+    // Read /proc/cpuinfo
     int fd_cpu = sys_openat(AT_FDCWD, "/proc/cpuinfo", O_RDONLY, 0);
     if (fd_cpu < 0)
         sys_exit(1);
@@ -78,7 +78,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(2);
     }
 
-    // 2. Read /proc/meminfo
+    // Read /proc/meminfo
     int fd_mem = sys_openat(AT_FDCWD, "/proc/meminfo", O_RDONLY, 0);
     if (fd_mem < 0)
         sys_exit(3);
@@ -89,7 +89,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(4);
     }
 
-    // 3. Read /proc/version
+    // Read /proc/version
     int fd_ver = sys_openat(AT_FDCWD, "/proc/version", O_RDONLY, 0);
     if (fd_ver < 0)
         sys_exit(5);

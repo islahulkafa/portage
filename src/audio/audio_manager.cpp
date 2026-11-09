@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstring>
 #include <memory>
@@ -80,15 +81,55 @@ struct AudioManager::Impl {
     uint32_t host_rate{48000};
     uint32_t host_channels{2};
 
+    // Capture configuration and state
+    mutable std::mutex cap_mutex{};
+    std::condition_variable cap_cv{};
+    std::condition_variable cap_cv_read{};
+
+    uint32_t cap_guest_rate{48000};
+    uint32_t cap_guest_channels{1};
+    int32_t cap_guest_format{SNDRV_PCM_FORMAT_S16_LE};
+    uint32_t cap_guest_frame_size{2};
+    PcmState cap_state{SNDRV_PCM_STATE_OPEN};
+
+    std::vector<uint8_t> cap_ring_buffer{};
+    size_t cap_ring_head{0};
+    size_t cap_ring_tail{0};
+    size_t cap_ring_available{0};
+
+    std::atomic<uint64_t> total_frames_captured{0};
+    std::atomic<uint64_t> total_frames_read{0};
+
+    std::atomic<bool> cap_is_running{false};
+    std::atomic<bool> cap_stop_requested{false};
+    std::thread cap_worker_thread{};
+
+    bool cap_is_null_source{false};
+    bool cap_force_null_source{false};
+    float cap_tone_freq{440.0f};
+    double cap_phase{0.0};
+
+    IMMDevice *cap_device{nullptr};
+    IAudioClient *cap_audio_client{nullptr};
+    IAudioCaptureClient *cap_capture_client{nullptr};
+    WAVEFORMATEX *cap_mix_format{nullptr};
+    UINT32 cap_buffer_frame_count{0};
+    bool cap_host_is_float{true};
+    uint32_t cap_host_rate{48000};
+    uint32_t cap_host_channels{1};
+
     Impl()
     {
         ring_buffer.resize(256 * 1024, 0); // 256 KB default ring
+        cap_ring_buffer.resize(256 * 1024, 0);
     }
 
     ~Impl()
     {
         StopPlayback();
+        StopCapture();
         CleanupWasapi();
+        CleanupWasapiCapture();
     }
 
     void InitWasapi()
@@ -400,6 +441,350 @@ struct AudioManager::Impl {
         ring_available -= bytes_to_consume;
         total_frames_rendered += frames_to_consume;
         cv_write.notify_all();
+    }
+
+    void InitWasapiCapture()
+    {
+        if (cap_force_null_source) {
+            cap_is_null_source = true;
+            return;
+        }
+
+        if (cap_audio_client) {
+            return;
+        }
+
+        HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        if (SUCCEEDED(hr) || hr == S_FALSE || hr == RPC_E_CHANGED_MODE) {
+            com_initialized = true;
+        }
+
+        if (!enumerator) {
+            hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                  __uuidof(IMMDeviceEnumerator),
+                                  reinterpret_cast<void **>(&enumerator));
+            if (FAILED(hr) || !enumerator) {
+                cap_is_null_source = true;
+                return;
+            }
+        }
+
+        hr = enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &cap_device);
+        if (FAILED(hr) || !cap_device) {
+            cap_is_null_source = true;
+            return;
+        }
+
+        hr = cap_device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                                  reinterpret_cast<void **>(&cap_audio_client));
+        if (FAILED(hr) || !cap_audio_client) {
+            cap_is_null_source = true;
+            return;
+        }
+
+        hr = cap_audio_client->GetMixFormat(&cap_mix_format);
+        if (FAILED(hr) || !cap_mix_format) {
+            cap_is_null_source = true;
+            return;
+        }
+
+        cap_host_rate = cap_mix_format->nSamplesPerSec;
+        cap_host_channels = cap_mix_format->nChannels;
+
+        if (cap_mix_format->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
+            cap_host_is_float = true;
+        } else if (cap_mix_format->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+            auto *ext = reinterpret_cast<const WAVEFORMATEXTENSIBLE *>(cap_mix_format);
+            cap_host_is_float =
+                (std::memcmp(&ext->SubFormat, &PORTAGE_SUBTYPE_IEEE_FLOAT, sizeof(GUID)) == 0);
+        } else {
+            cap_host_is_float = false;
+        }
+
+        REFERENCE_TIME duration = 500000;
+        hr = cap_audio_client->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, duration, 0, cap_mix_format,
+                                          nullptr);
+        if (FAILED(hr)) {
+            cap_is_null_source = true;
+            return;
+        }
+
+        hr = cap_audio_client->GetBufferSize(&cap_buffer_frame_count);
+        if (FAILED(hr)) {
+            cap_is_null_source = true;
+            return;
+        }
+
+        hr = cap_audio_client->GetService(__uuidof(IAudioCaptureClient),
+                                          reinterpret_cast<void **>(&cap_capture_client));
+        if (FAILED(hr) || !cap_capture_client) {
+            cap_is_null_source = true;
+            return;
+        }
+
+        cap_is_null_source = false;
+    }
+
+    void CleanupWasapiCapture()
+    {
+        if (cap_capture_client) {
+            cap_capture_client->Release();
+            cap_capture_client = nullptr;
+        }
+        if (cap_mix_format) {
+            CoTaskMemFree(cap_mix_format);
+            cap_mix_format = nullptr;
+        }
+        if (cap_audio_client) {
+            cap_audio_client->Release();
+            cap_audio_client = nullptr;
+        }
+        if (cap_device) {
+            cap_device->Release();
+            cap_device = nullptr;
+        }
+    }
+
+    void StartCapture()
+    {
+        if (cap_is_running) {
+            return;
+        }
+
+        InitWasapiCapture();
+
+        cap_stop_requested = false;
+        cap_is_running = true;
+
+        if (!cap_is_null_source && cap_audio_client) {
+            cap_audio_client->Start();
+        }
+
+        cap_worker_thread = std::thread([this] { CaptureWorker(); });
+    }
+
+    void StopCapture()
+    {
+        if (!cap_is_running) {
+            return;
+        }
+
+        cap_stop_requested = true;
+        cap_cv.notify_all();
+        cap_cv_read.notify_all();
+
+        if (cap_worker_thread.joinable()) {
+            if (cap_worker_thread.get_id() != std::this_thread::get_id()) {
+                cap_worker_thread.join();
+            }
+        }
+
+        if (!cap_is_null_source && cap_audio_client) {
+            cap_audio_client->Stop();
+        }
+
+        cap_is_running = false;
+    }
+
+    void PushCapturedFrames(const uint8_t *data, size_t byte_count)
+    {
+        if (byte_count == 0) {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(cap_mutex);
+        size_t capacity = cap_ring_buffer.size();
+        if (capacity == 0) {
+            return;
+        }
+
+        for (size_t i = 0; i < byte_count; ++i) {
+            cap_ring_buffer[cap_ring_head] = data[i];
+            cap_ring_head = (cap_ring_head + 1) % capacity;
+            if (cap_ring_available < capacity) {
+                ++cap_ring_available;
+            } else {
+                cap_ring_tail = (cap_ring_tail + 1) % capacity;
+            }
+        }
+        total_frames_captured += (byte_count / cap_guest_frame_size);
+        cap_cv_read.notify_all();
+    }
+
+    void CaptureWorker()
+    {
+        while (!cap_stop_requested) {
+            if (cap_is_null_source) {
+                std::unique_lock<std::mutex> lock(cap_mutex);
+                cap_cv.wait_for(lock, std::chrono::milliseconds(10),
+                                [this] { return cap_stop_requested.load(); });
+                if (cap_stop_requested) {
+                    break;
+                }
+
+                uint32_t rate = cap_guest_rate;
+                size_t gen_frames = (rate * 10) / 1000;
+                if (gen_frames == 0) {
+                    gen_frames = 1;
+                }
+
+                std::vector<uint8_t> frame_bytes(gen_frames * cap_guest_frame_size, 0);
+
+                for (size_t f = 0; f < gen_frames; ++f) {
+                    float sample = 0.0f;
+                    if (cap_tone_freq > 0.0f) {
+                        sample = static_cast<float>(
+                            std::sin(cap_phase * 2.0 * 3.14159265358979323846) * 0.5);
+                        cap_phase += static_cast<double>(cap_tone_freq) / static_cast<double>(rate);
+                        if (cap_phase >= 1.0) {
+                            cap_phase -= 1.0;
+                        }
+                    }
+
+                    if (cap_guest_format == SNDRV_PCM_FORMAT_S16_LE) {
+                        int16_t s16 =
+                            static_cast<int16_t>(std::clamp(sample, -1.0f, 1.0f) * 32767.0f);
+                        for (uint32_t c = 0; c < cap_guest_channels; ++c) {
+                            size_t offset = (f * cap_guest_frame_size) + (c * 2);
+                            std::memcpy(&frame_bytes[offset], &s16, sizeof(int16_t));
+                        }
+                    } else if (cap_guest_format == SNDRV_PCM_FORMAT_FLOAT_LE) {
+                        for (uint32_t c = 0; c < cap_guest_channels; ++c) {
+                            size_t offset = (f * cap_guest_frame_size) + (c * 4);
+                            std::memcpy(&frame_bytes[offset], &sample, sizeof(float));
+                        }
+                    }
+                }
+                lock.unlock();
+
+                PushCapturedFrames(frame_bytes.data(), frame_bytes.size());
+            } else {
+                UINT32 packet_length = 0;
+                HRESULT hr = cap_capture_client->GetNextPacketSize(&packet_length);
+                if (FAILED(hr)) {
+                    break;
+                }
+
+                while (packet_length > 0) {
+                    BYTE *pData = nullptr;
+                    UINT32 num_frames = 0;
+                    DWORD flags = 0;
+                    hr = cap_capture_client->GetBuffer(&pData, &num_frames, &flags, nullptr,
+                                                       nullptr);
+                    if (SUCCEEDED(hr)) {
+                        std::vector<uint8_t> converted_bytes(num_frames * cap_guest_frame_size, 0);
+
+                        for (UINT32 f = 0; f < num_frames; ++f) {
+                            float sample = 0.0f;
+                            if (!(flags & AUDCLNT_BUFFERFLAGS_SILENT) && pData) {
+                                if (cap_host_is_float) {
+                                    const auto *f_in =
+                                        reinterpret_cast<const float *>(pData) + (f * cap_host_channels);
+                                    sample = f_in[0];
+                                } else {
+                                    const auto *s_in =
+                                        reinterpret_cast<const int16_t *>(pData) + (f * cap_host_channels);
+                                    sample = static_cast<float>(s_in[0]) / 32768.0f;
+                                }
+                            }
+
+                            if (cap_guest_format == SNDRV_PCM_FORMAT_S16_LE) {
+                                int16_t s16 =
+                                    static_cast<int16_t>(std::clamp(sample, -1.0f, 1.0f) * 32767.0f);
+                                for (uint32_t c = 0; c < cap_guest_channels; ++c) {
+                                    size_t offset = (f * cap_guest_frame_size) + (c * 2);
+                                    std::memcpy(&converted_bytes[offset], &s16, sizeof(int16_t));
+                                }
+                            } else if (cap_guest_format == SNDRV_PCM_FORMAT_FLOAT_LE) {
+                                for (uint32_t c = 0; c < cap_guest_channels; ++c) {
+                                    size_t offset = (f * cap_guest_frame_size) + (c * 4);
+                                    std::memcpy(&converted_bytes[offset], &sample, sizeof(float));
+                                }
+                            }
+                        }
+
+                        PushCapturedFrames(converted_bytes.data(), converted_bytes.size());
+                        cap_capture_client->ReleaseBuffer(num_frames);
+                    }
+
+                    hr = cap_capture_client->GetNextPacketSize(&packet_length);
+                    if (FAILED(hr)) {
+                        break;
+                    }
+                }
+
+                std::unique_lock<std::mutex> lock(cap_mutex);
+                cap_cv.wait_for(lock, std::chrono::milliseconds(5),
+                                [this] { return cap_stop_requested.load(); });
+            }
+        }
+    }
+
+    int64_t ReadPcmBytes(void *buf, size_t count)
+    {
+        if (!buf || count == 0) {
+            return 0;
+        }
+
+        std::unique_lock<std::mutex> lock(cap_mutex);
+        if (cap_ring_available == 0 && cap_is_running) {
+            cap_cv_read.wait_for(lock, std::chrono::milliseconds(100),
+                                 [this] { return cap_ring_available > 0 || !cap_is_running; });
+        }
+
+        size_t to_read = std::min(count, cap_ring_available);
+        if (to_read == 0) {
+            return 0;
+        }
+
+        auto *out_ptr = static_cast<uint8_t *>(buf);
+        size_t capacity = cap_ring_buffer.size();
+        for (size_t i = 0; i < to_read; ++i) {
+            out_ptr[i] = cap_ring_buffer[cap_ring_tail];
+            cap_ring_tail = (cap_ring_tail + 1) % capacity;
+        }
+        cap_ring_available -= to_read;
+        total_frames_read += (to_read / cap_guest_frame_size);
+        return static_cast<int64_t>(to_read);
+    }
+
+    int64_t ReadiFrames(void *buf, uint64_t frames, int64_t timeout_nanos)
+    {
+        if (!buf || frames == 0) {
+            return 0;
+        }
+
+        uint64_t bytes_needed = frames * cap_guest_frame_size;
+        std::unique_lock<std::mutex> lock(cap_mutex);
+
+        if (cap_ring_available < bytes_needed && cap_is_running) {
+            if (timeout_nanos > 0) {
+                cap_cv_read.wait_for(lock, std::chrono::nanoseconds(timeout_nanos),
+                                     [this, bytes_needed] {
+                                         return cap_ring_available >= bytes_needed ||
+                                                !cap_is_running;
+                                     });
+            } else if (timeout_nanos < 0) {
+                cap_cv_read.wait(lock, [this, bytes_needed] {
+                    return cap_ring_available >= bytes_needed || !cap_is_running;
+                });
+            }
+        }
+
+        size_t to_read = std::min(static_cast<size_t>(bytes_needed), cap_ring_available);
+        if (to_read == 0) {
+            return 0;
+        }
+
+        auto *out_ptr = static_cast<uint8_t *>(buf);
+        size_t capacity = cap_ring_buffer.size();
+        for (size_t i = 0; i < to_read; ++i) {
+            out_ptr[i] = cap_ring_buffer[cap_ring_tail];
+            cap_ring_tail = (cap_ring_tail + 1) % capacity;
+        }
+        cap_ring_available -= to_read;
+        size_t frames_read = to_read / cap_guest_frame_size;
+        total_frames_read += frames_read;
+        return static_cast<int64_t>(frames_read);
     }
 };
 
@@ -772,6 +1157,81 @@ int64_t AudioManager::HandleControlIoctl(uint32_t cmd, void *arg)
     }
 
     return LINUX_ENOTTY;
+}
+
+bool AudioManager::ConfigureCaptureStream(uint32_t sample_rate, uint32_t channels, int32_t format)
+{
+    std::lock_guard<std::mutex> lock(m_impl->cap_mutex);
+    m_impl->cap_guest_rate = (sample_rate > 0) ? sample_rate : 48000;
+    m_impl->cap_guest_channels = (channels > 0) ? channels : 1;
+    m_impl->cap_guest_format = format;
+    m_impl->cap_guest_frame_size =
+        m_impl->cap_guest_channels * (format == SNDRV_PCM_FORMAT_FLOAT_LE ? 4 : 2);
+    m_impl->cap_ring_buffer.assign(256 * 1024, 0);
+    m_impl->cap_ring_head = 0;
+    m_impl->cap_ring_tail = 0;
+    m_impl->cap_ring_available = 0;
+    m_impl->cap_state = SNDRV_PCM_STATE_SETUP;
+    return true;
+}
+
+bool AudioManager::StartCapture()
+{
+    m_impl->StartCapture();
+    return true;
+}
+
+void AudioManager::StopCapture()
+{
+    m_impl->StopCapture();
+}
+
+void AudioManager::CloseCaptureStream()
+{
+    m_impl->StopCapture();
+    m_impl->CleanupWasapiCapture();
+    std::lock_guard<std::mutex> lock(m_impl->cap_mutex);
+    m_impl->cap_state = SNDRV_PCM_STATE_OPEN;
+}
+
+int64_t AudioManager::ReadPcmBytes(void *buf, size_t count)
+{
+    return m_impl->ReadPcmBytes(buf, count);
+}
+
+int64_t AudioManager::ReadiFrames(void *buf, uint64_t frames, int64_t timeout_nanos)
+{
+    return m_impl->ReadiFrames(buf, frames, timeout_nanos);
+}
+
+void AudioManager::SetCaptureToneFrequency(float freq_hz)
+{
+    std::lock_guard<std::mutex> lock(m_impl->cap_mutex);
+    m_impl->cap_tone_freq = freq_hz;
+}
+
+void AudioManager::ForceCaptureNullSource(bool enable)
+{
+    std::lock_guard<std::mutex> lock(m_impl->cap_mutex);
+    m_impl->cap_force_null_source = enable;
+    if (enable) {
+        m_impl->cap_is_null_source = true;
+    }
+}
+
+AudioCaptureStats AudioManager::GetCaptureStats() const
+{
+    std::lock_guard<std::mutex> lock(m_impl->cap_mutex);
+    return AudioCaptureStats{
+        .total_frames_captured = m_impl->total_frames_captured.load(),
+        .total_frames_read = m_impl->total_frames_read.load(),
+        .sample_rate = m_impl->cap_guest_rate,
+        .channels = m_impl->cap_guest_channels,
+        .format = m_impl->cap_guest_format,
+        .current_state = m_impl->cap_state,
+        .is_null_source = m_impl->cap_is_null_source,
+        .is_running = m_impl->cap_is_running.load(),
+    };
 }
 
 } // namespace portage::audio

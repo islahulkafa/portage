@@ -65,7 +65,7 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
 
     const auto *ehdr = reinterpret_cast<const Elf64_Ehdr *>(buffer.data());
 
-    // 1. Validate magic and architecture
+    // Validate magic and architecture
     if (ehdr->e_ident[EI_MAG0] != ELFMAG0 || ehdr->e_ident[EI_MAG1] != ELFMAG1 ||
         ehdr->e_ident[EI_MAG2] != ELFMAG2 || ehdr->e_ident[EI_MAG3] != ELFMAG3) {
         return LoaderError::InvalidMagic;
@@ -84,7 +84,7 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
         return LoaderError::UnsupportedType;
     }
 
-    // 2. Scan PT_LOAD headers to determine address span
+    // Scan PT_LOAD headers to determine address span
     if (ehdr->e_phoff + ehdr->e_phnum * sizeof(Elf64_Phdr) > buffer.size()) {
         return LoaderError::FileTooSmall;
     }
@@ -117,7 +117,7 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
         return LoaderError::NoLoadSegments;
     }
 
-    // 3. Compute load bias and reserve virtual address space
+    // Compute load bias and reserve virtual address space
     min_vaddr = AlignDown(min_vaddr, mem::PAGE_SIZE_4KB);
     max_vaddr = AlignUp(max_vaddr, mem::PAGE_SIZE_4KB);
     const size_t total_span = max_vaddr - min_vaddr;
@@ -142,7 +142,7 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
         load_bias = 0;
     }
 
-    // 4. Allocate adjacent trampoline island within +/- 2GB
+    // Allocate adjacent trampoline island within +/- 2GB
     constexpr size_t TRAMPOLINE_ISLAND_SIZE = 65536;
     uintptr_t entry_point = load_bias + ehdr->e_entry;
     void *island =
@@ -165,7 +165,7 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
     loaded_elf.trampoline_island = island;
     loaded_elf.trampoline_size = TRAMPOLINE_ISLAND_SIZE;
 
-    // 5. Commit and map each PT_LOAD segment
+    // Commit and map each PT_LOAD segment
     for (uint16_t i = 0; i < ehdr->e_phnum; i++) {
         const auto &phdr = phdrs[i];
         if (phdr.p_type == PT_LOAD) {
@@ -209,7 +209,7 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
         loaded_elf.phdr_address = load_bias + ehdr->e_phoff;
     }
 
-    // 6. If PT_INTERP is present and VFS is available, load the interpreter
+    // Load dynamic interpreter if PT_INTERP is present and VFS is available
     if (vfs != nullptr && !interp_path.empty()) {
         auto resolved = vfs->Resolve(interp_path);
         std::filesystem::path interp_host_path = resolved.host_path;
@@ -295,10 +295,10 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
         }
     }
 
-    // 7. Initialize heap break
+    // Initialize heap break
     address_space_->InitBrk(load_bias + max_vaddr);
 
-    // 8. Populate auxv entries
+    // Populate auxv entries
     loaded_elf.auxv_entries = {
         {AT_PHDR, loaded_elf.phdr_address},
         {AT_PHENT, ehdr->e_phentsize},
@@ -312,7 +312,7 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
         {AT_SECURE, 0},
     };
 
-    // 9. Populate symbols from section headers (DYNSYM and SYMTAB)
+    // Populate symbols from section headers (DYNSYM and SYMTAB)
     if (ehdr->e_shoff != 0 && ehdr->e_shnum > 0 &&
         ehdr->e_shoff + ehdr->e_shnum * sizeof(Elf64_Shdr) <= buffer.size()) {
         const auto *shdrs = reinterpret_cast<const Elf64_Shdr *>(buffer.data() + ehdr->e_shoff);
@@ -345,7 +345,7 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
         }
     }
 
-    // 8. Process dynamic relocations if PT_DYNAMIC is present
+    // Process dynamic relocations if PT_DYNAMIC is present
     for (uint16_t i = 0; i < ehdr->e_phnum; i++) {
         if (phdrs[i].p_type == PT_DYNAMIC) {
             uintptr_t dyn_addr = load_bias + phdrs[i].p_vaddr;

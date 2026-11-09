@@ -1,7 +1,9 @@
 #include "wsi/window_manager.hpp"
+#include "clipboard/clipboard_manager.hpp"
 #include "input/input_manager.hpp"
 #include "ndk/sensor.hpp"
 
+#include <shellapi.h>
 #include <chrono>
 #include <string>
 
@@ -212,6 +214,29 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         uint32_t w = LOWORD(lParam);
         uint32_t h = HIWORD(lParam);
         WindowManager::Instance().DispatchResize(w, h);
+        return 0;
+    }
+    case WM_CLIPBOARDUPDATE:
+        clipboard::ClipboardManager::Instance().OnHostClipboardUpdated();
+        return 0;
+    case WM_DROPFILES: {
+        HDROP hDrop = reinterpret_cast<HDROP>(wParam);
+        if (hDrop) {
+            POINT pt;
+            DragQueryPoint(hDrop, &pt);
+            UINT file_count = DragQueryFileW(hDrop, 0xFFFFFFFF, nullptr, 0);
+            for (UINT i = 0; i < file_count; ++i) {
+                wchar_t path[MAX_PATH];
+                if (DragQueryFileW(hDrop, i, path, MAX_PATH) > 0) {
+                    char utf8_path[MAX_PATH * 3];
+                    WideCharToMultiByte(CP_UTF8, 0, path, -1, utf8_path, sizeof(utf8_path),
+                                        nullptr, nullptr);
+                    clipboard::ClipboardManager::Instance().DispatchDropEvent(
+                        static_cast<float>(pt.x), static_cast<float>(pt.y), utf8_path);
+                }
+            }
+            DragFinish(hDrop);
+        }
         return 0;
     }
     case WM_CLOSE:
@@ -443,6 +468,8 @@ void WindowManager::WindowThreadFunc(uint32_t width, uint32_t height, std::wstri
 
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
+    DragAcceptFiles(hwnd, TRUE);
+    AddClipboardFormatListener(hwnd);
 
     MSG msg;
     while (m_running.load()) {
@@ -457,6 +484,7 @@ void WindowManager::WindowThreadFunc(uint32_t width, uint32_t height, std::wstri
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
+    RemoveClipboardFormatListener(hwnd);
     ::DestroyWindow(hwnd);
     UnregisterClassW(L"PortageWindowClass", m_hinstance);
 

@@ -518,6 +518,78 @@ std::vector<uint8_t> AssembleEngineApk(const std::vector<uint8_t> &manifest,
     return zip;
 }
 
+std::vector<uint8_t> CreateEngineObb(const std::string &pkg_name)
+{
+    std::string content = "OBB_CONTENT_OK\n";
+    std::vector<uint8_t> data(content.begin(), content.end());
+    uint32_t crc = static_cast<uint32_t>(crc32(0L, data.data(), static_cast<uInt>(data.size())));
+
+    std::vector<uint8_t> zip;
+    std::string entry_name = "obb_asset.txt";
+
+    // Local Header
+    WriteU32(zip, 0x04034b50);
+    WriteU16(zip, 20);
+    WriteU16(zip, 0);
+    WriteU16(zip, 0); // Stored
+    WriteU16(zip, 0);
+    WriteU16(zip, 0);
+    WriteU32(zip, crc);
+    WriteU32(zip, static_cast<uint32_t>(data.size()));
+    WriteU32(zip, static_cast<uint32_t>(data.size()));
+    WriteU16(zip, static_cast<uint16_t>(entry_name.size()));
+    WriteU16(zip, 0);
+    zip.insert(zip.end(), entry_name.begin(), entry_name.end());
+    zip.insert(zip.end(), data.begin(), data.end());
+
+    uint32_t cd_offset = static_cast<uint32_t>(zip.size());
+    // Central Directory
+    WriteU32(zip, 0x02014b50);
+    WriteU16(zip, 20);
+    WriteU16(zip, 20);
+    WriteU16(zip, 0);
+    WriteU16(zip, 0);
+    WriteU16(zip, 0);
+    WriteU16(zip, 0);
+    WriteU32(zip, crc);
+    WriteU32(zip, static_cast<uint32_t>(data.size()));
+    WriteU32(zip, static_cast<uint32_t>(data.size()));
+    WriteU16(zip, static_cast<uint16_t>(entry_name.size()));
+    WriteU16(zip, 0);
+    WriteU16(zip, 0);
+    WriteU16(zip, 0);
+    WriteU16(zip, 0);
+    WriteU32(zip, 0);
+    WriteU32(zip, 0);
+    zip.insert(zip.end(), entry_name.begin(), entry_name.end());
+
+    uint32_t cd_size = static_cast<uint32_t>(zip.size()) - cd_offset;
+    // EOCD
+    WriteU32(zip, 0x06054b50);
+    WriteU16(zip, 0);
+    WriteU16(zip, 0);
+    WriteU16(zip, 1);
+    WriteU16(zip, 1);
+    WriteU32(zip, cd_size);
+    WriteU32(zip, cd_offset);
+    WriteU16(zip, 0);
+
+    // OBB Footer
+    uint32_t footer_size = static_cast<uint32_t>(32 + pkg_name.size());
+    WriteU32(zip, 1);
+    WriteU32(zip, 1);
+    WriteU32(zip, 0);
+    for (int j = 0; j < 8; ++j) {
+        WriteU8(zip, 0);
+    }
+    WriteU32(zip, static_cast<uint32_t>(pkg_name.size()));
+    zip.insert(zip.end(), pkg_name.begin(), pkg_name.end());
+    WriteU32(zip, footer_size);
+    WriteU32(zip, 0x01059983);
+
+    return zip;
+}
+
 } // namespace
 
 class GameEngineExecutionFixture : public ::testing::Test {
@@ -567,6 +639,13 @@ class GameEngineExecutionFixture : public ::testing::Test {
         apk_out.write(reinterpret_cast<const char *>(apk_bytes.data()),
                       static_cast<std::streamsize>(apk_bytes.size()));
         apk_out.close();
+
+        auto obb_bytes = CreateEngineObb("com.portage.gameengine");
+        stdfs::path obb_path = test_dir_ / "main.1.com.portage.gameengine.obb";
+        std::ofstream obb_out(obb_path, std::ios::binary);
+        obb_out.write(reinterpret_cast<const char *>(obb_bytes.data()),
+                      static_cast<std::streamsize>(obb_bytes.size()));
+        obb_out.close();
 
         address_space_ = std::make_unique<mem::AddressSpace>();
         vfs_ = std::make_unique<fs::Vfs>("");
@@ -829,6 +908,150 @@ TEST_F(GameEngineExecutionFixture, RunsAndroidNativeAppGlueLoop)
         std::string content;
         std::getline(ifs, content);
         EXPECT_EQ(content, "SURFACE_OK");
+    }
+
+    stdfs::path storage_marker = pkg.data_dir / "engine_storage_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(storage_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(storage_marker));
+    {
+        std::ifstream ifs(storage_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "STORAGE_OK");
+    }
+
+    stdfs::path licensing_marker = pkg.data_dir / "engine_licensing_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(licensing_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(licensing_marker));
+    {
+        std::ifstream ifs(licensing_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "LICENSING_OK");
+    }
+
+    stdfs::path billing_marker = pkg.data_dir / "engine_billing_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(billing_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(billing_marker));
+    {
+        std::ifstream ifs(billing_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "BILLING_OK");
+    }
+
+    stdfs::path multinetwork_marker = pkg.data_dir / "engine_multinetwork_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(multinetwork_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(multinetwork_marker));
+    {
+        std::ifstream ifs(multinetwork_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "MULTINETWORK_OK");
+    }
+
+    stdfs::path adpf_marker = pkg.data_dir / "engine_adpf_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(adpf_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(adpf_marker));
+    {
+        std::ifstream ifs(adpf_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "ADPF_OK");
+    }
+
+    stdfs::path audio_record_marker = pkg.data_dir / "engine_audio_record_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(audio_record_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(audio_record_marker));
+    {
+        std::ifstream ifs(audio_record_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "AUDIO_RECORD_OK");
+    }
+
+    stdfs::path swappy_marker = pkg.data_dir / "engine_swappy_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(swappy_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(swappy_marker));
+    {
+        std::ifstream ifs(swappy_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "SWAPPY_OK");
+    }
+
+    stdfs::path camera_marker = pkg.data_dir / "engine_camera_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(camera_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(camera_marker));
+    {
+        std::ifstream ifs(camera_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "CAMERA_OK");
+    }
+
+    stdfs::path keystore_marker = pkg.data_dir / "engine_keystore_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(keystore_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(keystore_marker));
+    {
+        std::ifstream ifs(keystore_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "KEYSTORE_OK");
+    }
+
+    stdfs::path location_marker = pkg.data_dir / "engine_location_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(location_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(location_marker));
+    {
+        std::ifstream ifs(location_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "LOCATION_OK");
+    }
+
+    stdfs::path clipboard_marker = pkg.data_dir / "engine_clipboard_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(clipboard_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(clipboard_marker));
+    {
+        std::ifstream ifs(clipboard_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "CLIPBOARD_OK");
+    }
+
+    stdfs::path power_marker = pkg.data_dir / "engine_power_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(power_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(power_marker));
+    {
+        std::ifstream ifs(power_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "POWER_OK");
     }
 
     // Verify logs in LogcatBuffer

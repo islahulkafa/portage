@@ -12,7 +12,7 @@ static std::string SanitizeGlesShaderSource(std::string_view src)
 {
     std::string out(src);
 
-    // 1. Remove "precision <qualifier> <type>;" by replacing with spaces
+    // Replace precision qualifiers with spaces
     size_t pos = 0;
     while ((pos = out.find("precision", pos)) != std::string::npos) {
         bool before_ok =
@@ -33,7 +33,7 @@ static std::string SanitizeGlesShaderSource(std::string_view src)
         pos += 9;
     }
 
-    // 2. Prepend compatibility defines for lowp, mediump, highp if not already present
+    // Prepend compatibility defines for lowp, mediump, highp if not already present
     std::string prefix = "#ifndef GL_ES\n"
                          "#define lowp\n"
                          "#define mediump\n"

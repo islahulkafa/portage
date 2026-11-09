@@ -389,9 +389,12 @@ struct JniSyntheticObject {
     std::string class_name;
     std::unordered_map<std::string, std::string> string_fields;
     std::unordered_map<std::string, int32_t> int_fields;
+    std::unordered_map<std::string, int64_t> long_fields;
     std::unordered_map<std::string, float> float_fields;
+    std::unordered_map<std::string, double> double_fields;
     std::unordered_map<std::string, uint8_t> bool_fields;
     std::unordered_map<std::string, jobject> object_fields;
+    std::unordered_map<std::string, std::vector<uint8_t>> binary_fields;
 
     void *buffer_address{nullptr};
     jlong buffer_capacity{0};

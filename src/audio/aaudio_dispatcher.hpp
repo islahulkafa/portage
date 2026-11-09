@@ -40,6 +40,8 @@ aaudio_result_t AAudioStream_requestStop(AAudioStream *stream) __attribute__((sy
 aaudio_result_t AAudioStream_close(AAudioStream *stream) __attribute__((sysv_abi));
 aaudio_result_t AAudioStream_write(AAudioStream *stream, const void *buffer, int32_t numFrames,
                                    int64_t timeoutNanoseconds) __attribute__((sysv_abi));
+aaudio_result_t AAudioStream_read(AAudioStream *stream, void *buffer, int32_t numFrames,
+                                  int64_t timeoutNanoseconds) __attribute__((sysv_abi));
 
 int32_t AAudioStream_getSampleRate(AAudioStream *stream) __attribute__((sysv_abi));
 int32_t AAudioStream_getChannelCount(AAudioStream *stream) __attribute__((sysv_abi));

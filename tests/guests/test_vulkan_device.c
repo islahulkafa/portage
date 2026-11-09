@@ -28,7 +28,7 @@ static inline void sys_exit(int code)
 
 __attribute__((force_align_arg_pointer)) void _start(void)
 {
-    // 1. Create Vulkan Instance
+    // Create Vulkan Instance
     VkApplicationInfo app_info = {0};
     app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     app_info.pApplicationName = "PortageVulkanDeviceTest";
@@ -45,7 +45,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(1);
     }
 
-    // 2. Enumerate Physical Devices
+    // Enumerate Physical Devices
     uint32_t phys_count = 0;
     r = vkEnumeratePhysicalDevices(instance, &phys_count, NULL);
     if (r != VK_SUCCESS || phys_count == 0) {
@@ -62,7 +62,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(3);
     }
 
-    // 3. Inspect Physical Device Properties
+    // Inspect Physical Device Properties
     VkPhysicalDeviceProperties props = {0};
     vkGetPhysicalDeviceProperties(phys_devices[0], &props);
     if (props.deviceName[0] == '\0') {
@@ -70,7 +70,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(4);
     }
 
-    // 4. Query Queue Family Properties
+    // Query Queue Family Properties
     uint32_t qf_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(phys_devices[0], &qf_count, NULL);
     if (qf_count == 0) {
@@ -78,7 +78,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(5);
     }
 
-    // 5. Create Logical Device
+    // Create Logical Device
     float queue_priority = 1.0f;
     VkDeviceQueueCreateInfo q_info = {0};
     q_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -98,7 +98,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(6);
     }
 
-    // 6. Create Buffer
+    // Create Buffer
     VkBufferCreateInfo buf_info = {0};
     buf_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     buf_info.size = 256;
@@ -113,7 +113,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(7);
     }
 
-    // 7. Query Memory Requirements & Find Host-Visible Memory
+    // Query Memory Requirements & Find Host-Visible Memory
     VkMemoryRequirements mem_reqs = {0};
     vkGetBufferMemoryRequirements(device, buffer, &mem_reqs);
 
@@ -146,7 +146,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(8);
     }
 
-    // 8. Allocate and Bind Memory
+    // Allocate and Bind Memory
     VkMemoryAllocateInfo alloc_info = {0};
     alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     alloc_info.allocationSize = mem_reqs.size;
@@ -170,7 +170,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(10);
     }
 
-    // 9. Map Memory, Write Magic Pattern, Verify
+    // Map Memory, Write Magic Pattern, Verify
     void *mapped_ptr = NULL;
     r = vkMapMemory(device, dev_mem, 0, 256, 0, &mapped_ptr);
     if (r != VK_SUCCESS || mapped_ptr == NULL) {
@@ -196,7 +196,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
 
     vkUnmapMemory(device, dev_mem);
 
-    // 10. Clean Up Resources
+    // Clean Up Resources
     vkDestroyBuffer(device, buffer, NULL);
     vkFreeMemory(device, dev_mem, NULL);
     vkDestroyDevice(device, NULL);

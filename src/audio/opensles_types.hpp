@@ -74,11 +74,14 @@ inline constexpr SLInterfaceID_ SL_IID_VOLUME_VAL = {
     0x09e85e00, 0x51ca, 0x11d8, 0x9c, 0xb8, {0x00, 0x20, 0xaf, 0x0b, 0x41, 0x05}};
 inline constexpr SLInterfaceID_ SL_IID_BUFFERQUEUE_VAL = {
     0x3ab16fb0, 0x51ca, 0x11d8, 0xa7, 0x88, {0x00, 0x20, 0xaf, 0x0b, 0x41, 0x05}};
+inline constexpr SLInterfaceID_ SL_IID_RECORD_VAL = {
+    0xc5742e80, 0x51c9, 0x11d8, 0x98, 0x07, {0x00, 0x20, 0xaf, 0x0b, 0x41, 0x05}};
 
 inline constexpr SLInterfaceID SL_IID_ENGINE = &SL_IID_ENGINE_VAL;
 inline constexpr SLInterfaceID SL_IID_ANDROIDSIMPLEBUFFERQUEUE =
     &SL_IID_ANDROIDSIMPLEBUFFERQUEUE_VAL;
 inline constexpr SLInterfaceID SL_IID_PLAY = &SL_IID_PLAY_VAL;
+inline constexpr SLInterfaceID SL_IID_RECORD = &SL_IID_RECORD_VAL;
 inline constexpr SLInterfaceID SL_IID_VOLUME = &SL_IID_VOLUME_VAL;
 inline constexpr SLInterfaceID SL_IID_BUFFERQUEUE = &SL_IID_BUFFERQUEUE_VAL;
 
@@ -90,6 +93,9 @@ using SLEngineItf = const struct SLEngineItf_ **;
 
 struct SLPlayItf_;
 using SLPlayItf = const struct SLPlayItf_ **;
+
+struct SLRecordItf_;
+using SLRecordItf = const struct SLRecordItf_ **;
 
 struct SLAndroidSimpleBufferQueueItf_;
 using SLAndroidSimpleBufferQueueItf = const struct SLAndroidSimpleBufferQueueItf_ **;
@@ -103,6 +109,22 @@ using slObjectCallback = __attribute__((sysv_abi)) void (*)(SLObjectItf caller, 
 
 using slAndroidSimpleBufferQueueCallback =
     __attribute__((sysv_abi)) void (*)(SLAndroidSimpleBufferQueueItf caller, void *context);
+
+using slRecordCallback =
+    __attribute__((sysv_abi)) void (*)(SLRecordItf caller, void *pContext, SLuint32 event);
+
+inline constexpr SLuint32 SL_RECORDSTATE_STOPPED = 0x00000001;
+inline constexpr SLuint32 SL_RECORDSTATE_PAUSED = 0x00000002;
+inline constexpr SLuint32 SL_RECORDSTATE_RECORDING = 0x00000003;
+
+inline constexpr SLuint32 SL_RECORDEVENT_HEADATLIMIT = 0x00000001;
+inline constexpr SLuint32 SL_RECORDEVENT_HEADMOVING = 0x00000002;
+inline constexpr SLuint32 SL_RECORDEVENT_BUFFER_FULL = 0x00000004;
+inline constexpr SLuint32 SL_RECORDEVENT_HEADATMARKER = 0x00000008;
+inline constexpr SLuint32 SL_RECORDEVENT_HEADATNEWPOS = 0x00000010;
+
+inline constexpr SLuint32 SL_DATALOCATOR_IODEVICE = 0x00000003;
+inline constexpr SLuint32 SL_IODEVICE_AUDIOINPUT = 0x00000001;
 
 struct SLObjectItf_ {
     SLresult (*Realize)(SLObjectItf self, SLboolean async) __attribute__((sysv_abi));
@@ -141,6 +163,13 @@ struct SLDataLocator_AndroidSimpleBufferQueue {
 struct SLDataLocator_OutputMix {
     SLuint32 locatorType;
     SLObjectItf outputMix;
+};
+
+struct SLDataLocator_IODevice {
+    SLuint32 locatorType;
+    SLuint32 deviceType;
+    SLuint32 deviceID;
+    SLObjectItf device;
 };
 
 struct SLDataFormat_PCM {
@@ -209,6 +238,26 @@ struct SLPlayItf_ {
     SLresult (*GetMarkerPosition)(SLPlayItf self, SLuint32 *pMsec) __attribute__((sysv_abi));
     SLresult (*SetPositionUpdatePeriod)(SLPlayItf self, SLuint32 mSec) __attribute__((sysv_abi));
     SLresult (*GetPositionUpdatePeriod)(SLPlayItf self, SLuint32 *pMsec) __attribute__((sysv_abi));
+};
+
+struct SLRecordItf_ {
+    SLresult (*SetRecordState)(SLRecordItf self, SLuint32 state) __attribute__((sysv_abi));
+    SLresult (*GetRecordState)(SLRecordItf self, SLuint32 *pState) __attribute__((sysv_abi));
+    SLresult (*SetDurationLimit)(SLRecordItf self, SLuint32 msec) __attribute__((sysv_abi));
+    SLresult (*GetPosition)(SLRecordItf self, SLuint32 *pMsec) __attribute__((sysv_abi));
+    SLresult (*RegisterCallback)(SLRecordItf self, slRecordCallback callback, void *pContext)
+        __attribute__((sysv_abi));
+    SLresult (*SetCallbackEventsMask)(SLRecordItf self, SLuint32 eventFlags)
+        __attribute__((sysv_abi));
+    SLresult (*GetCallbackEventsMask)(SLRecordItf self, SLuint32 *pEventFlags)
+        __attribute__((sysv_abi));
+    SLresult (*SetMarkerPosition)(SLRecordItf self, SLuint32 mSec) __attribute__((sysv_abi));
+    SLresult (*ClearMarkerPosition)(SLRecordItf self) __attribute__((sysv_abi));
+    SLresult (*GetMarkerPosition)(SLRecordItf self, SLuint32 *pMsec) __attribute__((sysv_abi));
+    SLresult (*SetPositionUpdatePeriod)(SLRecordItf self, SLuint32 mSec)
+        __attribute__((sysv_abi));
+    SLresult (*GetPositionUpdatePeriod)(SLRecordItf self, SLuint32 *pMsec)
+        __attribute__((sysv_abi));
 };
 
 struct SLAndroidSimpleBufferQueueState {

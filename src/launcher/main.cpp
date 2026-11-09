@@ -4,8 +4,10 @@
 #include "fs/fd_table.hpp"
 #include "fs/vfs.hpp"
 #include "mem/address_space.hpp"
+#include "location/location_manager.hpp"
 #include "ndk/android_log.hpp"
 #include "ndk/libandroid_thunks.hpp"
+#include "power/power_manager.hpp"
 #include "package/jni_env.hpp"
 #include "package/native_activity.hpp"
 #include "package/package_manager.hpp"
@@ -21,7 +23,7 @@ int main(int argc, char *argv[])
 {
     if (argc < 2) {
         std::cerr
-            << "Usage: portage [--verbose] [--rootfs <path>] <elf_binary | app.apk> [args...]\n"
+            << "Usage: portage [--verbose] [--headless] [--location <lat>,<lon>] [--battery <level>,<charging>] [--rootfs <path>] <elf_binary | app.apk> [args...]\n"
             << "       portage run <app.apk>\n"
             << "       portage logcat\n";
         return 1;
@@ -51,6 +53,33 @@ int main(int argc, char *argv[])
             headless = true;
         } else if (arg == "--interactive") {
             headless = false;
+        } else if (arg == "--location") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: missing coordinates after --location\n";
+                return 1;
+            }
+            std::string loc_str = argv[++i];
+            auto comma = loc_str.find(',');
+            if (comma != std::string::npos) {
+                double lat = std::stod(loc_str.substr(0, comma));
+                double lon = std::stod(loc_str.substr(comma + 1));
+                portage::location::LocationManager::Instance().SetLocation(lat, lon);
+            }
+        } else if (arg == "--battery") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: missing parameters after --battery\n";
+                return 1;
+            }
+            std::string bat_str = argv[++i];
+            auto comma = bat_str.find(',');
+            if (comma != std::string::npos) {
+                int32_t level = std::stoi(bat_str.substr(0, comma));
+                bool charging = (std::stoi(bat_str.substr(comma + 1)) != 0);
+                portage::power::PowerManager::Instance().SetSimulatedBattery(level, charging);
+            } else {
+                int32_t level = std::stoi(bat_str);
+                portage::power::PowerManager::Instance().SetSimulatedBattery(level, true);
+            }
         } else if (arg == "--rootfs") {
             if (i + 1 >= argc) {
                 std::cerr << "Error: missing path after --rootfs\n";

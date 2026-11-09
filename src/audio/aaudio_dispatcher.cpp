@@ -190,8 +190,14 @@ aaudio_result_t AAudioStream_requestStart(AAudioStream *stream)
 
     int32_t alsa_format = (stream->format == AAUDIO_FORMAT_PCM_FLOAT) ? SNDRV_PCM_FORMAT_FLOAT_LE
                                                                       : SNDRV_PCM_FORMAT_S16_LE;
-    AudioManager::Instance().ConfigureStream(stream->sample_rate, stream->channel_count,
-                                             alsa_format);
+    if (stream->direction == AAUDIO_DIRECTION_INPUT) {
+        AudioManager::Instance().ConfigureCaptureStream(stream->sample_rate, stream->channel_count,
+                                                        alsa_format);
+        AudioManager::Instance().StartCapture();
+    } else {
+        AudioManager::Instance().ConfigureStream(stream->sample_rate, stream->channel_count,
+                                                 alsa_format);
+    }
 
     stream->state.store(AAUDIO_STREAM_STATE_STARTED);
 
@@ -213,16 +219,30 @@ aaudio_result_t AAudioStream_requestStart(AAudioStream *stream)
 
             while (stream->pump_running.load() &&
                    stream->state.load() == AAUDIO_STREAM_STATE_STARTED) {
-                std::fill(buffer.begin(), buffer.end(), 0);
-
-                aaudio_data_callback_result_t cb_res =
-                    stream->data_callback(stream, stream->user_data, buffer.data(), frames);
-
-                if (cb_res == AAUDIO_CALLBACK_RESULT_CONTINUE) {
-                    AudioManager::Instance().WritePcmBytes(buffer.data(), buffer.size());
+                if (stream->direction == AAUDIO_DIRECTION_INPUT) {
+                    int64_t read_frames = AudioManager::Instance().ReadiFrames(
+                        buffer.data(), frames, period_duration.count() * 1000);
+                    if (read_frames <= 0) {
+                        std::fill(buffer.begin(), buffer.end(), 0);
+                    }
+                    aaudio_data_callback_result_t cb_res =
+                        stream->data_callback(stream, stream->user_data, buffer.data(), frames);
+                    if (cb_res != AAUDIO_CALLBACK_RESULT_CONTINUE) {
+                        stream->state.store(AAUDIO_STREAM_STATE_STOPPED);
+                        break;
+                    }
                 } else {
-                    stream->state.store(AAUDIO_STREAM_STATE_STOPPED);
-                    break;
+                    std::fill(buffer.begin(), buffer.end(), 0);
+
+                    aaudio_data_callback_result_t cb_res =
+                        stream->data_callback(stream, stream->user_data, buffer.data(), frames);
+
+                    if (cb_res == AAUDIO_CALLBACK_RESULT_CONTINUE) {
+                        AudioManager::Instance().WritePcmBytes(buffer.data(), buffer.size());
+                    } else {
+                        stream->state.store(AAUDIO_STREAM_STATE_STOPPED);
+                        break;
+                    }
                 }
 
                 std::unique_lock<std::mutex> lock(stream->pump_mutex);
@@ -241,6 +261,9 @@ aaudio_result_t AAudioStream_requestPause(AAudioStream *stream)
         return AAUDIO_ERROR_NULL;
     }
     stream->StopPump();
+    if (stream->direction == AAUDIO_DIRECTION_INPUT) {
+        AudioManager::Instance().StopCapture();
+    }
     stream->state.store(AAUDIO_STREAM_STATE_PAUSED);
     return AAUDIO_OK;
 }
@@ -251,6 +274,9 @@ aaudio_result_t AAudioStream_requestStop(AAudioStream *stream)
         return AAUDIO_ERROR_NULL;
     }
     stream->StopPump();
+    if (stream->direction == AAUDIO_DIRECTION_INPUT) {
+        AudioManager::Instance().StopCapture();
+    }
     stream->state.store(AAUDIO_STREAM_STATE_STOPPED);
     return AAUDIO_OK;
 }
@@ -261,6 +287,9 @@ aaudio_result_t AAudioStream_close(AAudioStream *stream)
         return AAUDIO_ERROR_NULL;
     }
     stream->StopPump();
+    if (stream->direction == AAUDIO_DIRECTION_INPUT) {
+        AudioManager::Instance().CloseCaptureStream();
+    }
     stream->state.store(AAUDIO_STREAM_STATE_CLOSED);
     delete stream;
     return AAUDIO_OK;
@@ -293,6 +322,37 @@ aaudio_result_t AAudioStream_write(AAudioStream *stream, const void *buffer, int
         return AAUDIO_ERROR_INTERNAL;
     }
     return numFrames;
+}
+
+aaudio_result_t AAudioStream_read(AAudioStream *stream, void *buffer, int32_t numFrames,
+                                  int64_t timeoutNanoseconds)
+{
+    if (!stream || !buffer) {
+        return AAUDIO_ERROR_NULL;
+    }
+    if (numFrames <= 0) {
+        return 0;
+    }
+    if (stream->direction != AAUDIO_DIRECTION_INPUT) {
+        return AAUDIO_ERROR_INVALID_STATE;
+    }
+
+    if (stream->state.load() != AAUDIO_STREAM_STATE_STARTED) {
+        int32_t alsa_format = (stream->format == AAUDIO_FORMAT_PCM_FLOAT)
+                                  ? SNDRV_PCM_FORMAT_FLOAT_LE
+                                  : SNDRV_PCM_FORMAT_S16_LE;
+        AudioManager::Instance().ConfigureCaptureStream(stream->sample_rate, stream->channel_count,
+                                                        alsa_format);
+        AudioManager::Instance().StartCapture();
+        stream->state.store(AAUDIO_STREAM_STATE_STARTED);
+    }
+
+    int64_t frames_read =
+        AudioManager::Instance().ReadiFrames(buffer, numFrames, timeoutNanoseconds);
+    if (frames_read < 0) {
+        return AAUDIO_ERROR_INTERNAL;
+    }
+    return static_cast<aaudio_result_t>(frames_read);
 }
 
 int32_t AAudioStream_getSampleRate(AAudioStream *stream)

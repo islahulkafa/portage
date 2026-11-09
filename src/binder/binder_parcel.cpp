@@ -1,4 +1,5 @@
 #include "binder_parcel.hpp"
+#include "binder_ndk.hpp"
 #include "fs/fd_table.hpp"
 #include "syscall/syscall_dispatcher.hpp"
 
@@ -408,6 +409,34 @@ AParcel_readParcelFileDescriptor(const AParcel *parcel, int *outFd)
         *outFd = stored_fd;
     }
     return STATUS_OK;
+}
+
+__attribute__((sysv_abi)) binder_status_t
+AParcel_writeStrongBinder(AParcel *parcel, AIBinder *binder)
+{
+    if (!parcel) {
+        return STATUS_BAD_VALUE;
+    }
+    uint64_t val = reinterpret_cast<uint64_t>(binder);
+    binder_status_t s = WriteAligned(parcel, val);
+    if (s == STATUS_OK && binder) {
+        AIBinder_incStrong(binder);
+    }
+    return s;
+}
+
+__attribute__((sysv_abi)) binder_status_t
+AParcel_readStrongBinder(const AParcel *parcel, AIBinder **binder)
+{
+    if (!parcel || !binder) {
+        return STATUS_BAD_VALUE;
+    }
+    uint64_t val = 0;
+    binder_status_t s = ReadAligned(parcel, &val);
+    if (s == STATUS_OK) {
+        *binder = reinterpret_cast<AIBinder *>(val);
+    }
+    return s;
 }
 
 } // extern "C"

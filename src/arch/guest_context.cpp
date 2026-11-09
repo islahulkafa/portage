@@ -19,12 +19,12 @@ LONG WINAPI VectoredHandler(PEXCEPTION_POINTERS ExceptionInfo)
 {
     DWORD code = ExceptionInfo->ExceptionRecord->ExceptionCode;
 
-    // 0. Ignore debugger print exceptions from Windows DLLs
+    // Ignore debugger print exceptions from Windows DLLs
     if (code == 0x40010006 || code == 0x4001000A) {
         return EXCEPTION_CONTINUE_EXECUTION;
     }
 
-    // 1. FS base recovery on Access Violation
+    // Recover guest FS base on Access Violation
     if (code == EXCEPTION_ACCESS_VIOLATION) {
         ULONG_PTR fault_addr = ExceptionInfo->ExceptionRecord->ExceptionInformation[1];
         if (fault_addr < 0x1000 && t_active_tcb != 0) {
@@ -33,12 +33,12 @@ LONG WINAPI VectoredHandler(PEXCEPTION_POINTERS ExceptionInfo)
         }
     }
 
-    // 2. Hardware fault to Linux signal translation (SIGSEGV, SIGILL, SIGFPE)
+    // Translate hardware faults to Linux signals (SIGSEGV, SIGILL, SIGFPE)
     if (signal::SignalManager::Instance().DeliverFault(ExceptionInfo)) {
         return EXCEPTION_CONTINUE_EXECUTION;
     }
 
-    // 3. Syscall trap fallback via INT 3 (0xCC)
+    // Syscall trap fallback via INT 3 (0xCC)
     if (code == EXCEPTION_BREAKPOINT) {
         auto *ctx = ExceptionInfo->ContextRecord;
         uint8_t *exc_addr =

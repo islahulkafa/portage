@@ -717,3 +717,50 @@ __attribute__((visibility("default"))) float AMotionEvent_getHistoricalToolMajor
 __attribute__((visibility("default"))) float AMotionEvent_getHistoricalToolMinor(const struct AInputEvent *event, size_t pointer_index, size_t history_index) { (void)event; (void)pointer_index; (void)history_index; return 0.0f; }
 __attribute__((visibility("default"))) float AMotionEvent_getHistoricalOrientation(const struct AInputEvent *event, size_t pointer_index, size_t history_index) { (void)event; (void)pointer_index; (void)history_index; return 0.0f; }
 __attribute__((visibility("default"))) float AMotionEvent_getHistoricalAxisValue(const struct AInputEvent *event, int32_t axis, size_t pointer_index, size_t history_index) { (void)event; (void)axis; (void)pointer_index; (void)history_index; return 0.0f; }
+
+struct AStorageManager;
+typedef void (*AStorageManager_obbCallbackFunc)(const char *filename, const int32_t state, void *data);
+
+__attribute__((visibility("default"))) struct AStorageManager *AStorageManager_new(void) { return NULL; }
+__attribute__((visibility("default"))) void AStorageManager_delete(struct AStorageManager *mgr) { (void)mgr; }
+__attribute__((visibility("default"))) void AStorageManager_mountObb(struct AStorageManager *mgr, const char *filename, const char *key, AStorageManager_obbCallbackFunc cb, void *data) { (void)mgr; (void)filename; (void)key; (void)cb; (void)data; }
+__attribute__((visibility("default"))) void AStorageManager_unmountObb(struct AStorageManager *mgr, const char *filename, const int force, AStorageManager_obbCallbackFunc cb, void *data) { (void)mgr; (void)filename; (void)force; (void)cb; (void)data; }
+__attribute__((visibility("default"))) int AStorageManager_isObbMounted(struct AStorageManager *mgr, const char *filename) { (void)mgr; (void)filename; return 0; }
+__attribute__((visibility("default"))) const char *AStorageManager_getMountedObbPath(struct AStorageManager *mgr, const char *filename) { (void)mgr; (void)filename; return NULL; }
+
+typedef int64_t net_handle_t;
+struct addrinfo;
+
+__attribute__((visibility("default"))) int android_setsocknetwork(net_handle_t network, int fd) { (void)network; (void)fd; return 0; }
+__attribute__((visibility("default"))) int android_setprocnetwork(net_handle_t network) { (void)network; return 0; }
+__attribute__((visibility("default"))) int android_getprocnetwork(net_handle_t *network) { if (network) *network = 0; return 0; }
+__attribute__((visibility("default"))) int android_getaddrinfofornetwork(net_handle_t network, const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res) { (void)network; (void)node; (void)service; (void)hints; if (res) *res = NULL; return 0; }
+__attribute__((visibility("default"))) void android_freeaddrinfofornetwork(struct addrinfo *ai) { (void)ai; }
+__attribute__((visibility("default"))) int android_res_nquery(net_handle_t network, const char *dname, int ns_class, int ns_type, uint32_t flags) { (void)network; (void)dname; (void)ns_class; (void)ns_type; (void)flags; return -1; }
+__attribute__((visibility("default"))) int android_res_nsearch(net_handle_t network, const char *dname, int ns_class, int ns_type, uint32_t flags) { (void)network; (void)dname; (void)ns_class; (void)ns_type; (void)flags; return -1; }
+__attribute__((visibility("default"))) int android_res_nsend(net_handle_t network, const uint8_t *msg, size_t msglen, uint32_t flags) { (void)network; (void)msg; (void)msglen; (void)flags; return -1; }
+__attribute__((visibility("default"))) int android_res_nresult(int fd, int *rcode) { (void)fd; if (rcode) *rcode = 0; return -1; }
+__attribute__((visibility("default"))) void android_res_cancel(int nsend_fd) { (void)nsend_fd; }
+__attribute__((visibility("default"))) void android_freeaddrinfo(struct addrinfo *ai) { (void)ai; }
+
+enum AThermalStatus;
+struct AThermalManager;
+typedef void (*AThermal_StatusCallback)(void *data, int status);
+
+__attribute__((visibility("default"))) struct AThermalManager *AThermalManager_acquireManager(void) { return (struct AThermalManager *)0x1; }
+__attribute__((visibility("default"))) void AThermalManager_releaseManager(struct AThermalManager *manager) { (void)manager; }
+__attribute__((visibility("default"))) int AThermalManager_getCurrentThermalStatus(struct AThermalManager *manager) { (void)manager; return 0; }
+__attribute__((visibility("default"))) int AThermalManager_registerThermalStatusListener(struct AThermalManager *manager, AThermal_StatusCallback callback, void *data) { (void)manager; (void)callback; (void)data; return 0; }
+__attribute__((visibility("default"))) int AThermalManager_unregisterThermalStatusListener(struct AThermalManager *manager, AThermal_StatusCallback callback, void *data) { (void)manager; (void)callback; (void)data; return 0; }
+__attribute__((visibility("default"))) float AThermalManager_getThermalHeadroom(struct AThermalManager *manager, int forecastSeconds) { (void)manager; (void)forecastSeconds; return 0.5f; }
+
+struct APerformanceHintManager;
+struct APerformanceHintSession;
+
+__attribute__((visibility("default"))) struct APerformanceHintManager *APerformanceHintManager_create(void) { return (struct APerformanceHintManager *)0x1; }
+__attribute__((visibility("default"))) struct APerformanceHintSession *APerformanceHintManager_createSession(struct APerformanceHintManager *manager, const int32_t *threadIds, size_t size, int64_t initialTargetWorkDurationNanos) { (void)manager; (void)threadIds; (void)size; (void)initialTargetWorkDurationNanos; return (struct APerformanceHintSession *)0x1; }
+__attribute__((visibility("default"))) int64_t APerformanceHintManager_getPreferredUpdateRateNanos(struct APerformanceHintManager *manager) { (void)manager; return 16666666LL; }
+__attribute__((visibility("default"))) int APerformanceHintSession_updateTargetWorkDuration(struct APerformanceHintSession *session, int64_t targetDurationNanos) { (void)session; (void)targetDurationNanos; return 0; }
+__attribute__((visibility("default"))) int APerformanceHintSession_reportActualWorkDuration(struct APerformanceHintSession *session, int64_t actualDurationNanos) { (void)session; (void)actualDurationNanos; return 0; }
+__attribute__((visibility("default"))) void APerformanceHintSession_close(struct APerformanceHintSession *session) { (void)session; }
+__attribute__((visibility("default"))) int APerformanceHintSession_setThreads(struct APerformanceHintSession *session, const int32_t *threadIds, size_t size) { (void)session; (void)threadIds; (void)size; return 0; }

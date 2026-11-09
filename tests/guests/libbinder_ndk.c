@@ -235,6 +235,22 @@ AParcel_writeParcelFileDescriptor(AParcel *parcel, int fd)
 }
 
 __attribute__((visibility("default"))) binder_status_t
+AParcel_writeStrongBinder(AParcel *parcel, AIBinder *binder)
+{
+    (void)parcel;
+    (void)binder;
+    return 0;
+}
+
+__attribute__((visibility("default"))) binder_status_t
+AParcel_readStrongBinder(const AParcel *parcel, AIBinder **out)
+{
+    (void)parcel;
+    (void)out;
+    return 0;
+}
+
+__attribute__((visibility("default"))) binder_status_t
 AParcel_readInt32(const AParcel *parcel, int32_t *out)
 {
     (void)parcel;

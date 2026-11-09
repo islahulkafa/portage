@@ -171,7 +171,7 @@ void *memset(void *dest, int val, size_t len)
 
 __attribute__((force_align_arg_pointer)) void _start(void)
 {
-    // 1. Control device verification
+    // Control device verification
     int ctl_fd = (int)sys_openat(AT_FDCWD, "/dev/snd/controlC0", O_RDWR, 0);
     if (ctl_fd < 0) {
         sys_exit(1);
@@ -190,7 +190,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
     }
     sys_close(ctl_fd);
 
-    // 2. PCM playback device verification
+    // PCM playback device verification
     int pcm_fd = (int)sys_openat(AT_FDCWD, "/dev/snd/pcmC0D0p", O_RDWR, 0);
     if (pcm_fd < 0) {
         sys_exit(4);
@@ -209,7 +209,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(6);
     }
 
-    // 3. Configure HW parameters (48000 Hz, 2 ch, S16_LE)
+    // Configure HW parameters (48000 Hz, 2 ch, S16_LE)
     struct snd_pcm_hw_params params;
     memset(&params, 0, sizeof(params));
     params.masks[SNDRV_PCM_HW_PARAM_FORMAT].bits[0] = (1u << SNDRV_PCM_FORMAT_S16_LE);
@@ -222,27 +222,26 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(7);
     }
 
-    // 4. Prepare stream
+    // Prepare stream
     if (sys_ioctl(pcm_fd, SNDRV_PCM_IOCTL_PREPARE, 0) != 0) {
         sys_exit(8);
     }
 
-    // 5. Generate 512 frames of synthetic 440 Hz audio (1024 samples of int16_t)
+    // Generate 512 frames of synthetic 440 Hz audio (1024 samples of int16_t)
     int16_t audio_buf[1024];
     for (int i = 0; i < 512; ++i) {
-        // Simple synthetic stepped triangle waveform
         int16_t val = (int16_t)(((i % 100) - 50) * 400);
-        audio_buf[i * 2 + 0] = val; // Left channel
-        audio_buf[i * 2 + 1] = val; // Right channel
+        audio_buf[i * 2 + 0] = val;
+        audio_buf[i * 2 + 1] = val;
     }
 
-    // 6. Test sys_write transfer path (512 frames * 4 bytes = 2048 bytes)
+    // Test sys_write transfer path (512 frames * 4 bytes = 2048 bytes)
     int64_t written_bytes = sys_write(pcm_fd, audio_buf, sizeof(audio_buf));
     if (written_bytes != (int64_t)sizeof(audio_buf)) {
         sys_exit(9);
     }
 
-    // 7. Test SNDRV_PCM_IOCTL_WRITEI_FRAMES transfer path
+    // Test SNDRV_PCM_IOCTL_WRITEI_FRAMES transfer path
     struct snd_xferi xfer;
     xfer.result = 0;
     xfer.buf = audio_buf;
@@ -252,7 +251,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(10);
     }
 
-    // 8. Verify status
+    // Verify status
     struct snd_pcm_status status;
     memset(&status, 0, sizeof(status));
     if (sys_ioctl(pcm_fd, SNDRV_PCM_IOCTL_STATUS, &status) != 0 ||
@@ -260,7 +259,7 @@ __attribute__((force_align_arg_pointer)) void _start(void)
         sys_exit(11);
     }
 
-    // 9. Drop and close
+    // Drop and close
     sys_ioctl(pcm_fd, SNDRV_PCM_IOCTL_DROP, 0);
     sys_close(pcm_fd);
 

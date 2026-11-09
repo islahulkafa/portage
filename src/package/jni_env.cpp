@@ -1,4 +1,13 @@
 #include "jni_env.hpp"
+#include "audio/audio_manager.hpp"
+#include "camera/camera_manager.hpp"
+#include "clipboard/clipboard_manager.hpp"
+#include "location/location_manager.hpp"
+#include "power/power_manager.hpp"
+#include "security/keystore_manager.hpp"
+#include "ndk/multinetwork.hpp"
+#include "ndk/performance_hint.hpp"
+#include "ndk/thermal.hpp"
 #include "package_manager.hpp"
 #include "resource_table.hpp"
 
@@ -146,10 +155,19 @@ static __attribute__((sysv_abi)) jobject Env_NewLocalRef(JNIEnv *, jobject obj) 
 
 static __attribute__((sysv_abi)) jint Env_EnsureLocalCapacity(JNIEnv *, jint) { return JNI_OK; }
 
+static void InitSyntheticObjectState(const std::shared_ptr<JniSyntheticObject> &obj)
+{
+    if (obj && obj->class_name == "android/media/AudioRecord") {
+        obj->int_fields["getState"] = 1;
+        obj->int_fields["getRecordingState"] = 1;
+    }
+}
+
 static __attribute__((sysv_abi)) jobject Env_AllocObject(JNIEnv *, jclass clazz)
 {
     auto obj = std::make_shared<JniSyntheticObject>();
     obj->class_name = clazz ? reinterpret_cast<const char *>(clazz) : "java/lang/Object";
+    InitSyntheticObjectState(obj);
     return JniEnvironment::Instance().RegisterObject(obj);
 }
 
@@ -157,6 +175,7 @@ static __attribute__((sysv_abi)) jobject Env_NewObject(JNIEnv *, jclass clazz, j
 {
     auto obj = std::make_shared<JniSyntheticObject>();
     obj->class_name = clazz ? reinterpret_cast<const char *>(clazz) : "java/lang/Object";
+    InitSyntheticObjectState(obj);
     return JniEnvironment::Instance().RegisterObject(obj);
 }
 
@@ -164,6 +183,7 @@ static __attribute__((sysv_abi)) jobject Env_NewObjectV(JNIEnv *, jclass clazz, 
 {
     auto obj = std::make_shared<JniSyntheticObject>();
     obj->class_name = clazz ? reinterpret_cast<const char *>(clazz) : "java/lang/Object";
+    InitSyntheticObjectState(obj);
     return JniEnvironment::Instance().RegisterObject(obj);
 }
 
@@ -172,6 +192,7 @@ static __attribute__((sysv_abi)) jobject Env_NewObjectA(JNIEnv *, jclass clazz, 
 {
     auto obj = std::make_shared<JniSyntheticObject>();
     obj->class_name = clazz ? reinterpret_cast<const char *>(clazz) : "java/lang/Object";
+    InitSyntheticObjectState(obj);
     return JniEnvironment::Instance().RegisterObject(obj);
 }
 
@@ -232,7 +253,11 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
                                                               jmethodID methodID, ...)
 {
     uintptr_t arg0 = 0;
+    uintptr_t arg1 = 0;
+#if defined(__x86_64__) || defined(_M_X64)
     __asm__ volatile("movq %%rcx, %0" : "=r"(arg0));
+    __asm__ volatile("movq %%r8, %0" : "=r"(arg1));
+#endif
 
     if (!methodID) {
         return nullptr;
@@ -243,8 +268,52 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
     if (std::strcmp(mname, "getPackageName") == 0) {
         return env.CreateString(env.GetPackageName());
     }
-    if (std::strcmp(mname, "getFilesDir") == 0 || std::strcmp(mname, "getAbsolutePath") == 0) {
+    if (std::strcmp(mname, "getFilesDir") == 0) {
         return env.CreateString(env.GetFilesDir());
+    }
+    if (std::strcmp(mname, "getAbsolutePath") == 0 || std::strcmp(mname, "getPath") == 0) {
+        if (obj) {
+            auto synth = env.LookupObject(obj);
+            if (synth) {
+                auto it = synth->string_fields.find("path");
+                if (it != synth->string_fields.end()) {
+                    return env.CreateString(it->second);
+                }
+            }
+        }
+        return env.CreateString(env.GetFilesDir());
+    }
+    if (std::strcmp(mname, "getObbDir") == 0) {
+        auto obj_ret = std::make_shared<JniSyntheticObject>();
+        obj_ret->class_name = "java/io/File";
+        std::string pkg = env.GetPackageName();
+        if (pkg.empty()) {
+            const auto *active_pkg = PackageManager::Instance().GetActivePackage();
+            if (active_pkg) {
+                pkg = active_pkg->manifest.package_name;
+            }
+        }
+        obj_ret->string_fields["path"] = "/storage/emulated/0/Android/obb/" + pkg;
+        return env.RegisterObject(obj_ret);
+    }
+    if (std::strcmp(mname, "getObbDirs") == 0) {
+        auto file_obj = std::make_shared<JniSyntheticObject>();
+        file_obj->class_name = "java/io/File";
+        std::string pkg = env.GetPackageName();
+        if (pkg.empty()) {
+            const auto *active_pkg = PackageManager::Instance().GetActivePackage();
+            if (active_pkg) {
+                pkg = active_pkg->manifest.package_name;
+            }
+        }
+        file_obj->string_fields["path"] = "/storage/emulated/0/Android/obb/" + pkg;
+        jobject file_job = env.RegisterObject(file_obj);
+
+        auto arr_obj = std::make_shared<JniSyntheticObject>();
+        arr_obj->type = JniObjectType::ObjectArray;
+        arr_obj->class_name = "java/io/File";
+        arr_obj->object_data.push_back(file_job);
+        return env.RegisterObject(arr_obj);
     }
     if (std::strcmp(mname, "getCacheDir") == 0) {
         return env.CreateString(env.GetCacheDir());
@@ -307,6 +376,461 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
         }
         return const_cast<char *>("java/lang/Object");
     }
+    if (std::strcmp(mname, "requestReviewFlow") == 0 ||
+        std::strcmp(mname, "launchReviewFlow") == 0 ||
+        std::strcmp(mname, "getAppUpdateInfo") == 0 ||
+        std::strcmp(mname, "startUpdateFlowForResult") == 0 ||
+        std::strcmp(mname, "makeGooglePlayServicesAvailable") == 0) {
+        auto task = std::make_shared<JniSyntheticObject>();
+        task->class_name = "com/google/android/gms/tasks/Task";
+        task->int_fields["isSuccessful"] = 1;
+        task->int_fields["isComplete"] = 1;
+        return env.RegisterObject(task);
+    }
+    if (std::strcmp(mname, "getSystemService") == 0) {
+        jstring name_str = reinterpret_cast<jstring>(arg0);
+        const char *svc = env.GetStringChars(name_str);
+        if (svc && std::strcmp(svc, "connectivity") == 0) {
+            auto cm = std::make_shared<JniSyntheticObject>();
+            cm->class_name = "android/net/ConnectivityManager";
+            return env.RegisterObject(cm);
+        }
+        if (svc && std::strcmp(svc, "power") == 0) {
+            auto pm = std::make_shared<JniSyntheticObject>();
+            pm->class_name = "android/os/PowerManager";
+            return env.RegisterObject(pm);
+        }
+        if (svc && std::strcmp(svc, "performance_hint") == 0) {
+            auto phm = std::make_shared<JniSyntheticObject>();
+            phm->class_name = "android/os/PerformanceHintManager";
+            return env.RegisterObject(phm);
+        }
+        if (svc && std::strcmp(svc, "camera") == 0) {
+            auto cm = std::make_shared<JniSyntheticObject>();
+            cm->class_name = "android/hardware/camera2/CameraManager";
+            return env.RegisterObject(cm);
+        }
+        if (svc && std::strcmp(svc, "location") == 0) {
+            auto lm = std::make_shared<JniSyntheticObject>();
+            lm->class_name = "android/location/LocationManager";
+            return env.RegisterObject(lm);
+        }
+        if (svc && std::strcmp(svc, "clipboard") == 0) {
+            auto cm = std::make_shared<JniSyntheticObject>();
+            cm->class_name = "android/content/ClipboardManager";
+            return env.RegisterObject(cm);
+        }
+        if (svc && (std::strcmp(svc, "batterymanager") == 0 || std::strcmp(svc, "battery") == 0)) {
+            auto bm = std::make_shared<JniSyntheticObject>();
+            bm->class_name = "android/os/BatteryManager";
+            return env.RegisterObject(bm);
+        }
+    }
+    if (std::strcmp(mname, "getPrimaryClip") == 0) {
+        auto clip = clipboard::ClipboardManager::Instance().GetPrimaryClip();
+        if (clip.items.empty()) {
+            return nullptr;
+        }
+        auto clip_obj = std::make_shared<JniSyntheticObject>();
+        clip_obj->class_name = "android/content/ClipData";
+        clip_obj->string_fields["label"] = clip.label;
+        clip_obj->int_fields["item_count"] = static_cast<int32_t>(clip.items.size());
+
+        auto desc_obj = std::make_shared<JniSyntheticObject>();
+        desc_obj->class_name = "android/content/ClipDescription";
+        desc_obj->string_fields["label"] = clip.label;
+        desc_obj->int_fields["mime_count"] = static_cast<int32_t>(clip.mime_types.size());
+        for (size_t i = 0; i < clip.mime_types.size(); ++i) {
+            desc_obj->string_fields["mime_" + std::to_string(i)] = clip.mime_types[i];
+        }
+        clip_obj->object_fields["description"] = env.RegisterObject(desc_obj);
+
+        for (size_t i = 0; i < clip.items.size(); ++i) {
+            auto item_obj = std::make_shared<JniSyntheticObject>();
+            item_obj->class_name = "android/content/ClipData$Item";
+            item_obj->string_fields["text"] = clip.items[i].text;
+            item_obj->string_fields["htmlText"] = clip.items[i].html_text;
+            item_obj->string_fields["uri"] = clip.items[i].uri;
+            clip_obj->object_fields["item_" + std::to_string(i)] = env.RegisterObject(item_obj);
+        }
+        return env.RegisterObject(clip_obj);
+    }
+    if (std::strcmp(mname, "getItemAt") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn) {
+            int idx = static_cast<int>(arg0);
+            std::string key = "item_" + std::to_string(idx);
+            if (syn->object_fields.count(key)) {
+                return syn->object_fields[key];
+            }
+        }
+        return nullptr;
+    }
+    if (std::strcmp(mname, "getDescription") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn && syn->object_fields.count("description")) {
+            return syn->object_fields["description"];
+        }
+        return nullptr;
+    }
+    if (std::strcmp(mname, "getText") == 0) {
+        if (obj) {
+            auto syn = env.LookupObject(obj);
+            if (syn) {
+                if (syn->class_name == "android/content/ClipData$Item" &&
+                    syn->string_fields.count("text")) {
+                    return env.CreateString(syn->string_fields["text"]);
+                }
+                if (syn->class_name == "android/content/ClipboardManager") {
+                    return env.CreateString(clipboard::ClipboardManager::Instance().GetText());
+                }
+            }
+        }
+        return env.CreateString(clipboard::ClipboardManager::Instance().GetText());
+    }
+    if (std::strcmp(mname, "getHtmlText") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn && syn->string_fields.count("htmlText")) {
+            return env.CreateString(syn->string_fields["htmlText"]);
+        }
+        return env.CreateString("");
+    }
+    if (std::strcmp(mname, "getUri") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn && syn->string_fields.count("uri")) {
+            return env.CreateString(syn->string_fields["uri"]);
+        }
+        return env.CreateString("");
+    }
+    if (std::strcmp(mname, "getLabel") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn && syn->string_fields.count("label")) {
+            return env.CreateString(syn->string_fields["label"]);
+        }
+        return env.CreateString("");
+    }
+    if (std::strcmp(mname, "getMimeType") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn) {
+            int idx = static_cast<int>(arg0);
+            std::string key = "mime_" + std::to_string(idx);
+            if (syn->string_fields.count(key)) {
+                return env.CreateString(syn->string_fields[key]);
+            }
+        }
+        return env.CreateString("text/plain");
+    }
+    if (std::strcmp(mname, "getLastKnownLocation") == 0) {
+        jstring prov_str = reinterpret_cast<jstring>(arg0);
+        const char *prov = env.GetStringChars(prov_str);
+        std::string provider = prov ? prov : "gps";
+        auto fix = location::LocationManager::Instance().GetLastKnownLocation(provider);
+
+        auto loc_obj = std::make_shared<JniSyntheticObject>();
+        loc_obj->class_name = "android/location/Location";
+        loc_obj->string_fields["provider"] = fix.provider;
+        loc_obj->double_fields["latitude"] = fix.latitude;
+        loc_obj->double_fields["longitude"] = fix.longitude;
+        loc_obj->double_fields["altitude"] = fix.altitude;
+        loc_obj->float_fields["accuracy"] = fix.accuracy;
+        loc_obj->float_fields["speed"] = fix.speed;
+        loc_obj->float_fields["bearing"] = fix.bearing;
+        loc_obj->long_fields["time"] = fix.time_ms;
+        loc_obj->long_fields["elapsedRealtimeNanos"] = fix.elapsed_realtime_ns;
+        loc_obj->bool_fields["hasAltitude"] = fix.has_altitude ? 1 : 0;
+        loc_obj->bool_fields["hasSpeed"] = fix.has_speed ? 1 : 0;
+        loc_obj->bool_fields["hasBearing"] = fix.has_bearing ? 1 : 0;
+        loc_obj->bool_fields["hasAccuracy"] = fix.has_accuracy ? 1 : 0;
+        return env.RegisterObject(loc_obj);
+    }
+    if (std::strcmp(mname, "getAllProviders") == 0 || std::strcmp(mname, "getProviders") == 0) {
+        auto prov_list = std::make_shared<JniSyntheticObject>();
+        prov_list->type = JniObjectType::ObjectArray;
+        prov_list->class_name = "java/util/List";
+        auto provs = location::LocationManager::Instance().GetAllProviders();
+        for (const auto &p : provs) {
+            prov_list->object_data.push_back(env.CreateString(p));
+        }
+        return env.RegisterObject(prov_list);
+    }
+    if (std::strcmp(mname, "getProvider") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn && syn->string_fields.count("provider")) {
+            return env.CreateString(syn->string_fields["provider"]);
+        }
+        return env.CreateString("gps");
+    }
+    if (std::strcmp(mname, "getCameraIdList") == 0) {
+        auto cam_ids = camera::CameraManager::Instance().GetCameraIds();
+        auto arr_obj = std::make_shared<JniSyntheticObject>();
+        arr_obj->type = JniObjectType::ObjectArray;
+        arr_obj->class_name = "java/lang/String";
+        for (const auto &cid : cam_ids) {
+            arr_obj->object_data.push_back(env.CreateString(cid));
+        }
+        return env.RegisterObject(arr_obj);
+    }
+    if (std::strcmp(mname, "getCameraCharacteristics") == 0) {
+        jstring cid_str = reinterpret_cast<jstring>(arg0);
+        const char *cid = env.GetStringChars(cid_str);
+        std::string target_id = cid ? cid : "0";
+        auto chars = std::make_shared<JniSyntheticObject>();
+        chars->class_name = "android/hardware/camera2/CameraCharacteristics";
+        const auto *info = camera::CameraManager::Instance().GetDeviceInfo(target_id);
+        if (info) {
+            chars->int_fields["facing"] = info->facing;
+            chars->int_fields["orientation"] = info->orientation;
+            chars->int_fields["width"] = info->width;
+            chars->int_fields["height"] = info->height;
+        } else {
+            chars->int_fields["facing"] = 1;
+            chars->int_fields["orientation"] = 90;
+            chars->int_fields["width"] = 1920;
+            chars->int_fields["height"] = 1080;
+        }
+        return env.RegisterObject(chars);
+    }
+    if (std::strcmp(mname, "get") == 0 && obj) {
+        auto syn_obj = env.LookupObject(obj);
+        if (syn_obj && syn_obj->class_name == "android/hardware/camera2/CameraCharacteristics") {
+            auto int_val = std::make_shared<JniSyntheticObject>();
+            int_val->class_name = "java/lang/Integer";
+            int_val->int_fields["value"] = syn_obj->int_fields["facing"];
+            return env.RegisterObject(int_val);
+        }
+    }
+    if (std::strcmp(mname, "getKey") == 0) {
+        jstring alias_str = reinterpret_cast<jstring>(arg0);
+        const char *alias = env.GetStringChars(alias_str);
+        auto key_obj = std::make_shared<JniSyntheticObject>();
+        key_obj->class_name = "javax/crypto/SecretKey";
+        key_obj->string_fields["alias"] = alias ? alias : "";
+        return env.RegisterObject(key_obj);
+    }
+    if (std::strcmp(mname, "generateKey") == 0) {
+        std::string alias = "default_aes_key";
+        if (obj) {
+            auto syn_obj = env.LookupObject(obj);
+            if (syn_obj && syn_obj->string_fields.count("alias")) {
+                alias = syn_obj->string_fields["alias"];
+            }
+        }
+        security::KeyStoreManager::Instance().GenerateKey(
+            alias, security::KeyAlgorithm::Aes, 256,
+            security::PurposeEncrypt | security::PurposeDecrypt,
+            security::BlockMode::Gcm, security::Padding::None);
+        auto key_obj = std::make_shared<JniSyntheticObject>();
+        key_obj->class_name = "javax/crypto/SecretKey";
+        key_obj->string_fields["alias"] = alias;
+        return env.RegisterObject(key_obj);
+    }
+    if (std::strcmp(mname, "generateKeyPair") == 0) {
+        std::string alias = "default_rsa_key";
+        std::string alg = "RSA";
+        if (obj) {
+            auto syn_obj = env.LookupObject(obj);
+            if (syn_obj) {
+                if (syn_obj->string_fields.count("alias")) alias = syn_obj->string_fields["alias"];
+                if (syn_obj->string_fields.count("algorithm")) alg = syn_obj->string_fields["algorithm"];
+            }
+        }
+        if (alg == "EC") {
+            security::KeyStoreManager::Instance().GenerateKeyPair(
+                alias, security::KeyAlgorithm::Ec, 256,
+                security::PurposeSign | security::PurposeVerify,
+                security::Digest::Sha256, security::Padding::None);
+        } else {
+            security::KeyStoreManager::Instance().GenerateKeyPair(
+                alias, security::KeyAlgorithm::Rsa, 2048,
+                security::PurposeSign | security::PurposeVerify,
+                security::Digest::Sha256, security::Padding::Pkcs1);
+        }
+        auto kp_obj = std::make_shared<JniSyntheticObject>();
+        kp_obj->class_name = "java/security/KeyPair";
+        kp_obj->string_fields["alias"] = alias;
+        return env.RegisterObject(kp_obj);
+    }
+    if (std::strcmp(mname, "getPrivate") == 0) {
+        auto priv_obj = std::make_shared<JniSyntheticObject>();
+        priv_obj->class_name = "java/security/PrivateKey";
+        if (obj) {
+            auto syn = env.LookupObject(obj);
+            if (syn && syn->string_fields.count("alias")) {
+                priv_obj->string_fields["alias"] = syn->string_fields["alias"];
+            }
+        }
+        return env.RegisterObject(priv_obj);
+    }
+    if (std::strcmp(mname, "getPublic") == 0) {
+        auto pub_obj = std::make_shared<JniSyntheticObject>();
+        pub_obj->class_name = "java/security/PublicKey";
+        if (obj) {
+            auto syn = env.LookupObject(obj);
+            if (syn && syn->string_fields.count("alias")) {
+                pub_obj->string_fields["alias"] = syn->string_fields["alias"];
+            }
+        }
+        return env.RegisterObject(pub_obj);
+    }
+    if (std::strcmp(mname, "getIV") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn && syn->binary_fields.count("iv")) {
+            const auto &iv_vec = syn->binary_fields["iv"];
+            jbyteArray arr = env.GetJNIEnv()->functions->NewByteArray(env.GetJNIEnv(), static_cast<jsize>(iv_vec.size()));
+            auto arr_obj = env.LookupObject(arr);
+            if (arr_obj) {
+                arr_obj->byte_data.assign(iv_vec.begin(), iv_vec.end());
+            }
+            return arr;
+        }
+        return nullptr;
+    }
+    if (std::strcmp(mname, "doFinal") == 0) {
+        jbyteArray input_arr = reinterpret_cast<jbyteArray>(arg0);
+        std::vector<uint8_t> input_bytes;
+        if (input_arr) {
+            auto syn_arr = env.LookupObject(input_arr);
+            if (syn_arr && syn_arr->type == JniObjectType::ByteArray) {
+                input_bytes.assign(syn_arr->byte_data.begin(), syn_arr->byte_data.end());
+            }
+        }
+        std::string alias = "default_aes_key";
+        int opmode = 1;
+        if (obj) {
+            auto syn = env.LookupObject(obj);
+            if (syn) {
+                if (syn->string_fields.count("alias")) alias = syn->string_fields["alias"];
+                if (syn->int_fields.count("opmode")) opmode = syn->int_fields["opmode"];
+            }
+        }
+        if (opmode == 2) {
+            std::vector<uint8_t> iv, tag;
+            if (obj) {
+                auto syn = env.LookupObject(obj);
+                if (syn) {
+                    if (syn->binary_fields.count("iv")) iv = syn->binary_fields["iv"];
+                    if (syn->binary_fields.count("tag")) tag = syn->binary_fields["tag"];
+                }
+            }
+            auto res = security::KeyStoreManager::Instance().Decrypt(alias, input_bytes, iv, tag);
+            jbyteArray arr = env.GetJNIEnv()->functions->NewByteArray(env.GetJNIEnv(), static_cast<jsize>(res.data.size()));
+            auto arr_obj = env.LookupObject(arr);
+            if (arr_obj) {
+                arr_obj->byte_data.assign(res.data.begin(), res.data.end());
+            }
+            return arr;
+        } else {
+            auto res = security::KeyStoreManager::Instance().Encrypt(alias, input_bytes);
+            if (obj) {
+                auto syn = env.LookupObject(obj);
+                if (syn) {
+                    syn->binary_fields["iv"] = res.iv;
+                    syn->binary_fields["tag"] = res.tag;
+                }
+            }
+            jbyteArray arr = env.GetJNIEnv()->functions->NewByteArray(env.GetJNIEnv(), static_cast<jsize>(res.data.size()));
+            auto arr_obj = env.LookupObject(arr);
+            if (arr_obj) {
+                arr_obj->byte_data.assign(res.data.begin(), res.data.end());
+            }
+            return arr;
+        }
+    }
+    if (std::strcmp(mname, "sign") == 0) {
+        std::string alias = "default_rsa_key";
+        std::vector<uint8_t> data;
+        if (obj) {
+            auto syn = env.LookupObject(obj);
+            if (syn) {
+                if (syn->string_fields.count("alias")) alias = syn->string_fields["alias"];
+                if (syn->binary_fields.count("data")) {
+                    data = syn->binary_fields["data"];
+                    syn->binary_fields["data"].clear();
+                }
+            }
+        }
+        std::vector<uint8_t> sig;
+        security::KeyStoreManager::Instance().Sign(alias, data, sig);
+        jbyteArray arr = env.GetJNIEnv()->functions->NewByteArray(env.GetJNIEnv(), static_cast<jsize>(sig.size()));
+        auto arr_obj = env.LookupObject(arr);
+        if (arr_obj) {
+            arr_obj->byte_data.assign(sig.begin(), sig.end());
+        }
+        return arr;
+    }
+    if (std::strcmp(mname, "createHintSession") == 0) {
+        auto sess = std::make_shared<JniSyntheticObject>();
+        sess->class_name = "android/os/PerformanceHintManager$Session";
+        return env.RegisterObject(sess);
+    }
+    if (std::strcmp(mname, "getActiveNetwork") == 0) {
+        auto net = std::make_shared<JniSyntheticObject>();
+        net->class_name = "android/net/Network";
+        net_handle_t h = ndk::NET_HANDLE_DEFAULT;
+        ndk::MultinetworkManager::Instance().GetProcNetwork(&h);
+        net->long_fields["networkHandle"] = static_cast<int64_t>(h);
+        return env.RegisterObject(net);
+    }
+    if (std::strcmp(mname, "getNetworkCapabilities") == 0) {
+        auto caps = std::make_shared<JniSyntheticObject>();
+        caps->class_name = "android/net/NetworkCapabilities";
+        caps->int_fields["downstreamBandwidth"] = 100000;
+        caps->int_fields["upstreamBandwidth"] = 50000;
+        return env.RegisterObject(caps);
+    }
+    if (std::strcmp(mname, "getLinkProperties") == 0) {
+        auto lp = std::make_shared<JniSyntheticObject>();
+        lp->class_name = "android/net/LinkProperties";
+        lp->string_fields["interfaceName"] = "portage0";
+        return env.RegisterObject(lp);
+    }
+    if (std::strcmp(mname, "getActiveNetworkInfo") == 0) {
+        auto ni = std::make_shared<JniSyntheticObject>();
+        ni->class_name = "android/net/NetworkInfo";
+        ni->int_fields["type"] = 1; // TYPE_WIFI
+        ni->string_fields["typeName"] = "WIFI";
+        return env.RegisterObject(ni);
+    }
+    if (std::strcmp(mname, "getInterfaceName") == 0) {
+        if (obj) {
+            auto syn = env.LookupObject(obj);
+            if (syn && syn->string_fields.contains("interfaceName")) {
+                return env.CreateString(syn->string_fields["interfaceName"]);
+            }
+        }
+        return env.CreateString("portage0");
+    }
+    if (std::strcmp(mname, "getTypeName") == 0) {
+        return env.CreateString("WIFI");
+    }
+    if (std::strcmp(mname, "newWakeLock") == 0) {
+        int32_t flags = static_cast<int32_t>(arg0);
+        jstring tag_str = reinterpret_cast<jstring>(arg1);
+        const char *tag = env.GetStringChars(tag_str);
+        uint32_t id =
+            power::PowerManager::Instance().CreateWakeLock(flags, tag ? tag : "synthetic_lock");
+        auto wl = std::make_shared<JniSyntheticObject>();
+        wl->class_name = "android/os/PowerManager$WakeLock";
+        wl->int_fields["wakelock_id"] = static_cast<int32_t>(id);
+        wl->int_fields["flags"] = flags;
+        wl->string_fields["tag"] = tag ? tag : "";
+        return env.RegisterObject(wl);
+    }
+    if (std::strcmp(mname, "registerReceiver") == 0) {
+        auto intent = std::make_shared<JniSyntheticObject>();
+        intent->class_name = "android/content/Intent";
+        intent->string_fields["action"] = "android.intent.action.BATTERY_CHANGED";
+        auto state = power::PowerManager::Instance().GetBatteryState();
+        intent->int_fields["level"] = state.capacity_percent;
+        intent->int_fields["scale"] = 100;
+        intent->int_fields["status"] = state.status;
+        intent->int_fields["health"] = state.health;
+        intent->int_fields["plugged"] = state.plugged;
+        intent->int_fields["voltage"] = state.voltage_mv;
+        intent->int_fields["temperature"] = state.temperature_deci_c;
+        intent->int_fields["present"] = state.is_present ? 1 : 0;
+        return env.RegisterObject(intent);
+    }
 
     return nullptr;
 }
@@ -323,7 +847,7 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethodA(JNIEnv *env, jobj
     return Env_CallObjectMethod(env, obj, methodID);
 }
 
-static __attribute__((sysv_abi)) jboolean Env_CallBooleanMethod(JNIEnv *, jobject,
+static __attribute__((sysv_abi)) jboolean Env_CallBooleanMethod(JNIEnv *, jobject obj,
                                                                 jmethodID methodID, ...)
 {
     if (!methodID) {
@@ -331,9 +855,145 @@ static __attribute__((sysv_abi)) jboolean Env_CallBooleanMethod(JNIEnv *, jobjec
     }
     const char *mname = reinterpret_cast<const char *>(methodID);
     uintptr_t arg0 = 0;
+    uintptr_t arg1 = 0;
 #if defined(__x86_64__) || defined(_M_X64)
     __asm__ volatile("movq %%rcx, %0" : "=r"(arg0));
+    __asm__ volatile("movq %%r8, %0" : "=r"(arg1));
 #endif
+    if (std::strcmp(mname, "isInteractive") == 0) {
+        return power::PowerManager::Instance().IsInteractive() ? JNI_TRUE : JNI_FALSE;
+    }
+    if (std::strcmp(mname, "isPowerSaveMode") == 0) {
+        return power::PowerManager::Instance().IsPowerSaveMode() ? JNI_TRUE : JNI_FALSE;
+    }
+    if (std::strcmp(mname, "isDeviceIdleMode") == 0) {
+        return power::PowerManager::Instance().IsDeviceIdleMode() ? JNI_TRUE : JNI_FALSE;
+    }
+    if (std::strcmp(mname, "isHeld") == 0) {
+        if (obj) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn && syn->int_fields.count("wakelock_id")) {
+                uint32_t id = static_cast<uint32_t>(syn->int_fields["wakelock_id"]);
+                return power::PowerManager::Instance().IsWakeLockHeld(id) ? JNI_TRUE : JNI_FALSE;
+            }
+        }
+        return JNI_FALSE;
+    }
+    if (std::strcmp(mname, "isCharging") == 0) {
+        return power::PowerManager::Instance().IsCharging() ? JNI_TRUE : JNI_FALSE;
+    }
+    if (std::strcmp(mname, "getBooleanExtra") == 0) {
+        jstring name_str = reinterpret_cast<jstring>(arg0);
+        jboolean def_val = static_cast<jboolean>(arg1);
+        const char *key = JniEnvironment::Instance().GetStringChars(name_str);
+        if (obj && key) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn) {
+                if (syn->int_fields.count(key)) {
+                    return syn->int_fields[key] != 0 ? JNI_TRUE : JNI_FALSE;
+                }
+                if (syn->bool_fields.count(key)) {
+                    return syn->bool_fields[key] ? JNI_TRUE : JNI_FALSE;
+                }
+            }
+        }
+        return def_val;
+    }
+    if (std::strcmp(mname, "containsAlias") == 0) {
+        jstring alias_str = reinterpret_cast<jstring>(arg0);
+        const char *alias = JniEnvironment::Instance().GetStringChars(alias_str);
+        return security::KeyStoreManager::Instance().ContainsAlias(alias ? alias : "") ? JNI_TRUE
+                                                                                       : JNI_FALSE;
+    }
+    if (std::strcmp(mname, "isProviderEnabled") == 0) {
+        jstring prov_str = reinterpret_cast<jstring>(arg0);
+        const char *prov = JniEnvironment::Instance().GetStringChars(prov_str);
+        return location::LocationManager::Instance().IsProviderEnabled(prov ? prov : "gps")
+                   ? JNI_TRUE
+                   : JNI_FALSE;
+    }
+    if (std::strcmp(mname, "hasAltitude") == 0) {
+        if (obj) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn && syn->bool_fields.count("hasAltitude")) {
+                return syn->bool_fields["hasAltitude"] ? JNI_TRUE : JNI_FALSE;
+            }
+        }
+        return JNI_TRUE;
+    }
+    if (std::strcmp(mname, "hasSpeed") == 0) {
+        if (obj) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn && syn->bool_fields.count("hasSpeed")) {
+                return syn->bool_fields["hasSpeed"] ? JNI_TRUE : JNI_FALSE;
+            }
+        }
+        return JNI_TRUE;
+    }
+    if (std::strcmp(mname, "hasBearing") == 0) {
+        if (obj) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn && syn->bool_fields.count("hasBearing")) {
+                return syn->bool_fields["hasBearing"] ? JNI_TRUE : JNI_FALSE;
+            }
+        }
+        return JNI_TRUE;
+    }
+    if (std::strcmp(mname, "hasAccuracy") == 0) {
+        if (obj) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn && syn->bool_fields.count("hasAccuracy")) {
+                return syn->bool_fields["hasAccuracy"] ? JNI_TRUE : JNI_FALSE;
+            }
+        }
+        return JNI_TRUE;
+    }
+    if (std::strcmp(mname, "hasPrimaryClip") == 0) {
+        return clipboard::ClipboardManager::Instance().HasPrimaryClip() ? JNI_TRUE : JNI_FALSE;
+    }
+    if (std::strcmp(mname, "hasMimeType") == 0) {
+        jstring mime_str = reinterpret_cast<jstring>(arg0);
+        const char *mime = JniEnvironment::Instance().GetStringChars(mime_str);
+        if (obj && mime) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn) {
+                int count =
+                    syn->int_fields.count("mime_count") ? syn->int_fields["mime_count"] : 0;
+                for (int i = 0; i < count; ++i) {
+                    std::string key = "mime_" + std::to_string(i);
+                    if (syn->string_fields.count(key) && syn->string_fields[key] == mime) {
+                        return JNI_TRUE;
+                    }
+                }
+            }
+        }
+        return JNI_FALSE;
+    }
+    if (std::strcmp(mname, "verify") == 0) {
+        jbyteArray sig_arr = reinterpret_cast<jbyteArray>(arg0);
+        std::vector<uint8_t> sig_bytes;
+        if (sig_arr) {
+            auto syn_arr = JniEnvironment::Instance().LookupObject(sig_arr);
+            if (syn_arr && syn_arr->type == JniObjectType::ByteArray) {
+                sig_bytes.assign(syn_arr->byte_data.begin(), syn_arr->byte_data.end());
+            }
+        }
+        std::string alias = "default_rsa_key";
+        std::vector<uint8_t> data;
+        if (obj) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn) {
+                if (syn->string_fields.count("alias"))
+                    alias = syn->string_fields["alias"];
+                if (syn->binary_fields.count("data")) {
+                    data = syn->binary_fields["data"];
+                    syn->binary_fields["data"].clear();
+                }
+            }
+        }
+        auto status = security::KeyStoreManager::Instance().Verify(alias, data, sig_bytes);
+        return (status == security::KeyStoreStatus::Success) ? JNI_TRUE : JNI_FALSE;
+    }
     if (std::strcmp(mname, "getBoolean") == 0) {
         uint32_t res_id = static_cast<uint32_t>(arg0);
         const auto *pkg = PackageManager::Instance().GetActivePackage();
@@ -344,6 +1004,20 @@ static __attribute__((sysv_abi)) jboolean Env_CallBooleanMethod(JNIEnv *, jobjec
             }
         }
         return JNI_FALSE;
+    }
+    if (std::strcmp(mname, "isSuccessful") == 0 || std::strcmp(mname, "isComplete") == 0) {
+        return JNI_TRUE;
+    }
+    if (std::strcmp(mname, "hasCapability") == 0) {
+        return JNI_TRUE;
+    }
+    if (std::strcmp(mname, "hasTransport") == 0) {
+        int transport = static_cast<int>(arg0);
+        return (transport == 1 || transport == 3) ? JNI_TRUE : JNI_FALSE;
+    }
+    if (std::strcmp(mname, "isConnected") == 0 ||
+        std::strcmp(mname, "isConnectedOrConnecting") == 0) {
+        return JNI_TRUE;
     }
     return JNI_TRUE;
 }
@@ -441,6 +1115,22 @@ static __attribute__((sysv_abi)) jint Env_CallIntMethod(JNIEnv *, jobject obj, j
     if (std::strcmp(mname, "getWidth") == 0) {
         return JniEnvironment::Instance().GetDisplayWidth();
     }
+    if (std::strcmp(mname, "getIntProperty") == 0) {
+        int32_t prop_id = static_cast<int32_t>(arg0);
+        return power::PowerManager::Instance().GetBatteryProperty(prop_id);
+    }
+    if (std::strcmp(mname, "getIntExtra") == 0) {
+        jstring name_str = reinterpret_cast<jstring>(arg0);
+        int32_t def_val = static_cast<int32_t>(arg1);
+        const char *key = JniEnvironment::Instance().GetStringChars(name_str);
+        if (obj && key) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn && syn->int_fields.count(key)) {
+                return syn->int_fields[key];
+            }
+        }
+        return def_val;
+    }
     if (std::strcmp(mname, "getHeight") == 0) {
         return JniEnvironment::Instance().GetDisplayHeight();
     }
@@ -464,6 +1154,109 @@ static __attribute__((sysv_abi)) jint Env_CallIntMethod(JNIEnv *, jobject obj, j
         if (pkg && pkg->resource_table && name_str) {
             return static_cast<jint>(pkg->resource_table->GetIdentifier(
                 name_str, type_str ? type_str : "", pkg_str ? pkg_str : ""));
+        }
+        return 0;
+    }
+    if (std::strcmp(mname, "isGooglePlayServicesAvailable") == 0) {
+        return 0; // ConnectionResult.SUCCESS
+    }
+    if (std::strcmp(mname, "intValue") == 0 && obj) {
+        auto syn_obj = JniEnvironment::Instance().LookupObject(obj);
+        if (syn_obj) {
+            auto it = syn_obj->int_fields.find("value");
+            if (it != syn_obj->int_fields.end()) {
+                return it->second;
+            }
+        }
+    }
+    if (std::strcmp(mname, "getItemCount") == 0 && obj) {
+        auto syn = JniEnvironment::Instance().LookupObject(obj);
+        if (syn && syn->int_fields.count("item_count")) {
+            return syn->int_fields["item_count"];
+        }
+        return 0;
+    }
+    if (std::strcmp(mname, "getMimeTypeCount") == 0 && obj) {
+        auto syn = JniEnvironment::Instance().LookupObject(obj);
+        if (syn && syn->int_fields.count("mime_count")) {
+            return syn->int_fields["mime_count"];
+        }
+        return 0;
+    }
+    if (std::strcmp(mname, "getType") == 0) {
+        return 1; // TYPE_WIFI
+    }
+    if (std::strcmp(mname, "getLinkDownstreamBandwidthKbps") == 0) {
+        return 100000;
+    }
+    if (std::strcmp(mname, "getLinkUpstreamBandwidthKbps") == 0) {
+        return 50000;
+    }
+    if (std::strcmp(mname, "getCurrentThermalStatus") == 0) {
+        return static_cast<jint>(portage::ndk::ThermalManager::Instance().GetCurrentThermalStatus());
+    }
+    if (std::strcmp(mname, "reportActualWorkDuration") == 0 ||
+        std::strcmp(mname, "updateTargetWorkDuration") == 0) {
+        return 0;
+    }
+    if (std::strcmp(mname, "getState") == 0) {
+        if (obj) {
+            auto synth = JniEnvironment::Instance().LookupObject(obj);
+            if (synth) {
+                auto it = synth->int_fields.find("getState");
+                if (it != synth->int_fields.end()) {
+                    return it->second;
+                }
+            }
+        }
+        return 1;
+    }
+    if (std::strcmp(mname, "getRecordingState") == 0) {
+        if (obj) {
+            auto synth = JniEnvironment::Instance().LookupObject(obj);
+            if (synth) {
+                auto it = synth->int_fields.find("getRecordingState");
+                if (it != synth->int_fields.end()) {
+                    return it->second;
+                }
+            }
+        }
+        return audio::AudioManager::Instance().GetCaptureStats().is_running ? 3 : 1;
+    }
+    if (std::strcmp(mname, "getSampleRate") == 0) {
+        return static_cast<jint>(audio::AudioManager::Instance().GetCaptureStats().sample_rate);
+    }
+    if (std::strcmp(mname, "getChannelCount") == 0) {
+        return static_cast<jint>(audio::AudioManager::Instance().GetCaptureStats().channels);
+    }
+    if (std::strcmp(mname, "getAudioFormat") == 0) {
+        return 2;
+    }
+    if (std::strcmp(mname, "read") == 0) {
+        jobject arr_obj = reinterpret_cast<jobject>(arg0);
+        size_t offset = static_cast<size_t>(arg1);
+        size_t size = static_cast<size_t>(arg2);
+        if (size == 0) {
+            return 0;
+        }
+
+        auto synth = JniEnvironment::Instance().LookupObject(arr_obj);
+        if (synth && !synth->byte_data.empty()) {
+            if (synth->byte_data.size() >= (offset * 2) + (size * 2)) {
+                int64_t bytes_read = audio::AudioManager::Instance().ReadPcmBytes(
+                    synth->byte_data.data() + (offset * 2), size * 2);
+                return static_cast<jint>(bytes_read / 2);
+            }
+            if (synth->byte_data.size() >= offset + size) {
+                int64_t bytes_read = audio::AudioManager::Instance().ReadPcmBytes(
+                    synth->byte_data.data() + offset, size);
+                return static_cast<jint>(bytes_read);
+            }
+        }
+        if (arr_obj) {
+            int64_t bytes_read = audio::AudioManager::Instance().ReadPcmBytes(
+                reinterpret_cast<uint8_t *>(arr_obj) + offset, size);
+            return static_cast<jint>(bytes_read);
         }
         return 0;
     }
@@ -491,66 +1284,361 @@ static __attribute__((sysv_abi)) jint Env_CallIntMethodA(JNIEnv *env, jobject ob
     return Env_CallIntMethod(env, obj, methodID);
 }
 
-static __attribute__((sysv_abi)) jlong Env_CallLongMethod(JNIEnv *, jobject, jmethodID, ...)
+static __attribute__((sysv_abi)) jlong Env_CallLongMethod(JNIEnv *, jobject obj, jmethodID methodID,
+                                                          ...)
 {
+    if (!methodID) {
+        return 0;
+    }
+    const char *mname = reinterpret_cast<const char *>(methodID);
+    if (std::strcmp(mname, "getNetworkHandle") == 0) {
+        net_handle_t h = ndk::NET_HANDLE_DEFAULT;
+        ndk::MultinetworkManager::Instance().GetProcNetwork(&h);
+        return static_cast<jlong>(h);
+    }
+    if (obj) {
+        auto synth = JniEnvironment::Instance().LookupObject(obj);
+        if (synth) {
+            if (std::strcmp(mname, "getTime") == 0 && synth->long_fields.count("time")) {
+                return synth->long_fields["time"];
+            }
+            if (std::strcmp(mname, "getElapsedRealtimeNanos") == 0 &&
+                synth->long_fields.count("elapsedRealtimeNanos")) {
+                return synth->long_fields["elapsedRealtimeNanos"];
+            }
+            auto it = synth->long_fields.find(mname);
+            if (it != synth->long_fields.end()) {
+                return it->second;
+            }
+        }
+    }
     return 0;
 }
 
-static __attribute__((sysv_abi)) jlong Env_CallLongMethodV(JNIEnv *, jobject, jmethodID, va_list)
+static __attribute__((sysv_abi)) jlong Env_CallLongMethodV(JNIEnv *env, jobject obj,
+                                                           jmethodID methodID, va_list)
 {
-    return 0;
+    return Env_CallLongMethod(env, obj, methodID);
 }
 
-static __attribute__((sysv_abi)) jlong Env_CallLongMethodA(JNIEnv *, jobject, jmethodID,
-                                                           const void *)
+static __attribute__((sysv_abi)) jlong Env_CallLongMethodA(JNIEnv *env, jobject obj,
+                                                           jmethodID methodID, const void *)
 {
-    return 0;
+    return Env_CallLongMethod(env, obj, methodID);
 }
 
-static __attribute__((sysv_abi)) jfloat Env_CallFloatMethod(JNIEnv *, jobject, jmethodID, ...)
+static __attribute__((sysv_abi)) jfloat Env_CallFloatMethod(JNIEnv *, jobject obj,
+                                                             jmethodID methodID, ...)
 {
+    if (!methodID) {
+        return 0.0f;
+    }
+    const char *mname = reinterpret_cast<const char *>(methodID);
+    if (std::strcmp(mname, "getThermalHeadroom") == 0) {
+        uintptr_t arg0 = 0;
+#if defined(__x86_64__) || defined(_M_X64)
+        __asm__ volatile("movq %%rcx, %0" : "=r"(arg0));
+#endif
+        return portage::ndk::ThermalManager::Instance().GetThermalHeadroom(static_cast<int>(arg0));
+    }
+    if (obj) {
+        auto synth = JniEnvironment::Instance().LookupObject(obj);
+        if (synth) {
+            if (std::strcmp(mname, "getAccuracy") == 0 && synth->float_fields.count("accuracy")) {
+                return synth->float_fields["accuracy"];
+            }
+            if (std::strcmp(mname, "getSpeed") == 0 && synth->float_fields.count("speed")) {
+                return synth->float_fields["speed"];
+            }
+            if (std::strcmp(mname, "getBearing") == 0 && synth->float_fields.count("bearing")) {
+                return synth->float_fields["bearing"];
+            }
+            auto it = synth->float_fields.find(mname);
+            if (it != synth->float_fields.end()) {
+                return it->second;
+            }
+        }
+    }
     return 0.0f;
 }
 
-static __attribute__((sysv_abi)) jfloat Env_CallFloatMethodV(JNIEnv *, jobject, jmethodID, va_list)
+static __attribute__((sysv_abi)) jfloat Env_CallFloatMethodV(JNIEnv *env, jobject obj,
+                                                             jmethodID methodID, va_list)
 {
-    return 0.0f;
+    return Env_CallFloatMethod(env, obj, methodID);
 }
 
-static __attribute__((sysv_abi)) jfloat Env_CallFloatMethodA(JNIEnv *, jobject, jmethodID,
-                                                             const void *)
+static __attribute__((sysv_abi)) jfloat Env_CallFloatMethodA(JNIEnv *env, jobject obj,
+                                                             jmethodID methodID, const void *)
 {
-    return 0.0f;
+    return Env_CallFloatMethod(env, obj, methodID);
 }
 
-static __attribute__((sysv_abi)) jdouble Env_CallDoubleMethod(JNIEnv *, jobject, jmethodID, ...)
+static __attribute__((sysv_abi)) jdouble Env_CallDoubleMethod(JNIEnv *, jobject obj,
+                                                              jmethodID methodID, ...)
 {
+    if (obj && methodID) {
+        auto synth = JniEnvironment::Instance().LookupObject(obj);
+        if (synth) {
+            const char *mname = reinterpret_cast<const char *>(methodID);
+            if (std::strcmp(mname, "getLatitude") == 0 && synth->double_fields.count("latitude")) {
+                return synth->double_fields["latitude"];
+            }
+            if (std::strcmp(mname, "getLongitude") == 0 &&
+                synth->double_fields.count("longitude")) {
+                return synth->double_fields["longitude"];
+            }
+            if (std::strcmp(mname, "getAltitude") == 0 && synth->double_fields.count("altitude")) {
+                return synth->double_fields["altitude"];
+            }
+            auto it = synth->double_fields.find(mname);
+            if (it != synth->double_fields.end()) {
+                return it->second;
+            }
+        }
+    }
     return 0.0;
 }
 
-static __attribute__((sysv_abi)) jdouble Env_CallDoubleMethodV(JNIEnv *, jobject, jmethodID,
-                                                               va_list)
+static __attribute__((sysv_abi)) jdouble Env_CallDoubleMethodV(JNIEnv *env, jobject obj,
+                                                               jmethodID methodID, va_list)
 {
-    return 0.0;
+    return Env_CallDoubleMethod(env, obj, methodID);
 }
 
-static __attribute__((sysv_abi)) jdouble Env_CallDoubleMethodA(JNIEnv *, jobject, jmethodID,
-                                                               const void *)
+static __attribute__((sysv_abi)) jdouble Env_CallDoubleMethodA(JNIEnv *env, jobject obj,
+                                                               jmethodID methodID, const void *)
 {
-    return 0.0;
+    return Env_CallDoubleMethod(env, obj, methodID);
 }
 
-static __attribute__((sysv_abi)) void Env_CallVoidMethod(JNIEnv *, jobject, jmethodID, ...) {}
+static void DispatchVoidMethod(jobject obj, jmethodID methodID)
+{
+    if (methodID) {
+        const char *mname = reinterpret_cast<const char *>(methodID);
+        if (std::strcmp(mname, "startRecording") == 0) {
+            audio::AudioManager::Instance().StartCapture();
+            if (obj) {
+                auto synth = JniEnvironment::Instance().LookupObject(obj);
+                if (synth) {
+                    synth->int_fields["getRecordingState"] = 3;
+                }
+            }
+            return;
+        }
+        if (std::strcmp(mname, "stop") == 0) {
+            audio::AudioManager::Instance().StopCapture();
+            if (obj) {
+                auto synth = JniEnvironment::Instance().LookupObject(obj);
+                if (synth) {
+                    synth->int_fields["getRecordingState"] = 1;
+                }
+            }
+            return;
+        }
+        if (std::strcmp(mname, "release") == 0) {
+            audio::AudioManager::Instance().CloseCaptureStream();
+            if (obj) {
+                auto synth = JniEnvironment::Instance().LookupObject(obj);
+                if (synth) {
+                    synth->int_fields["getState"] = 0;
+                    synth->int_fields["getRecordingState"] = 1;
+                }
+            }
+            return;
+        }
+    }
+}
 
-static __attribute__((sysv_abi)) void Env_CallVoidMethodV(JNIEnv *, jobject, jmethodID, va_list) {}
+static __attribute__((sysv_abi)) void Env_CallVoidMethod(JNIEnv *, jobject obj, jmethodID methodID, ...)
+{
+    uintptr_t arg0 = 0;
+    uintptr_t arg1 = 0;
+#if defined(__x86_64__) || defined(_M_X64)
+    __asm__ volatile("movq %%rcx, %0" : "=r"(arg0));
+    __asm__ volatile("movq %%r8, %0" : "=r"(arg1));
+#endif
+    if (!methodID) return;
+    const char *mname = reinterpret_cast<const char *>(methodID);
+    if (std::strcmp(mname, "init") == 0 || std::strcmp(mname, "initialize") == 0) {
+        if (obj) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn) {
+                syn->int_fields["opmode"] = static_cast<int32_t>(arg0);
+                jobject key_obj = reinterpret_cast<jobject>(arg1);
+                if (key_obj) {
+                    auto key_syn = JniEnvironment::Instance().LookupObject(key_obj);
+                    if (key_syn && key_syn->string_fields.count("alias")) {
+                        syn->string_fields["alias"] = key_syn->string_fields["alias"];
+                    }
+                }
+            }
+        }
+        return;
+    }
+    if (std::strcmp(mname, "initSign") == 0 || std::strcmp(mname, "initVerify") == 0) {
+        if (obj) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn) {
+                syn->binary_fields["data"].clear();
+                jobject key_obj = reinterpret_cast<jobject>(arg0);
+                if (key_obj) {
+                    auto key_syn = JniEnvironment::Instance().LookupObject(key_obj);
+                    if (key_syn && key_syn->string_fields.count("alias")) {
+                        syn->string_fields["alias"] = key_syn->string_fields["alias"];
+                    }
+                }
+            }
+        }
+        return;
+    }
+    if (std::strcmp(mname, "update") == 0) {
+        jbyteArray data_arr = reinterpret_cast<jbyteArray>(arg0);
+        if (obj && data_arr) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            auto arr_syn = JniEnvironment::Instance().LookupObject(data_arr);
+            if (syn && arr_syn && arr_syn->type == JniObjectType::ByteArray) {
+                auto &buf = syn->binary_fields["data"];
+                buf.insert(buf.end(), arr_syn->byte_data.begin(), arr_syn->byte_data.end());
+            }
+        }
+        return;
+    }
+    if (std::strcmp(mname, "deleteEntry") == 0) {
+        jstring alias_str = reinterpret_cast<jstring>(arg0);
+        const char *alias = JniEnvironment::Instance().GetStringChars(alias_str);
+        if (alias) {
+            security::KeyStoreManager::Instance().DeleteKey(alias);
+        }
+        return;
+    }
+    if (std::strcmp(mname, "setPrimaryClip") == 0) {
+        jobject clip_arg = reinterpret_cast<jobject>(arg0);
+        if (clip_arg) {
+            auto clip_syn = JniEnvironment::Instance().LookupObject(clip_arg);
+            if (clip_syn) {
+                clipboard::ClipData clip;
+                clip.label = clip_syn->string_fields.count("label")
+                                 ? clip_syn->string_fields["label"]
+                                 : "text";
+                int count = clip_syn->int_fields.count("item_count")
+                                ? clip_syn->int_fields["item_count"]
+                                : 0;
+                for (int i = 0; i < count; ++i) {
+                    std::string key = "item_" + std::to_string(i);
+                    if (clip_syn->object_fields.count(key)) {
+                        auto item_syn =
+                            JniEnvironment::Instance().LookupObject(clip_syn->object_fields[key]);
+                        if (item_syn) {
+                            clipboard::ClipItem it;
+                            if (item_syn->string_fields.count("text")) {
+                                it.text = item_syn->string_fields["text"];
+                            }
+                            if (item_syn->string_fields.count("htmlText")) {
+                                it.html_text = item_syn->string_fields["htmlText"];
+                            }
+                            if (item_syn->string_fields.count("uri")) {
+                                it.uri = item_syn->string_fields["uri"];
+                            }
+                            clip.items.push_back(it);
+                        }
+                    }
+                }
+                if (clip_syn->object_fields.count("description")) {
+                    auto desc_syn = JniEnvironment::Instance().LookupObject(
+                        clip_syn->object_fields["description"]);
+                    if (desc_syn) {
+                        int mcount = desc_syn->int_fields.count("mime_count")
+                                         ? desc_syn->int_fields["mime_count"]
+                                         : 0;
+                        for (int i = 0; i < mcount; ++i) {
+                            std::string mkey = "mime_" + std::to_string(i);
+                            if (desc_syn->string_fields.count(mkey)) {
+                                clip.mime_types.push_back(desc_syn->string_fields[mkey]);
+                            }
+                        }
+                    }
+                }
+                if (clip.mime_types.empty()) {
+                    clip.mime_types.push_back("text/plain");
+                }
+                clipboard::ClipboardManager::Instance().SetPrimaryClip(clip);
+            }
+        }
+        return;
+    }
+    if (std::strcmp(mname, "clearPrimaryClip") == 0) {
+        clipboard::ClipboardManager::Instance().ClearPrimaryClip();
+        return;
+    }
+    if (std::strcmp(mname, "setText") == 0) {
+        jstring text_str = reinterpret_cast<jstring>(arg0);
+        if (text_str) {
+            const char *txt = JniEnvironment::Instance().GetStringChars(text_str);
+            if (txt) {
+                clipboard::ClipboardManager::Instance().SetText(txt);
+            }
+        }
+        return;
+    }
+    if (std::strcmp(mname, "acquire") == 0) {
+        if (obj) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn && syn->int_fields.count("wakelock_id")) {
+                uint32_t id = static_cast<uint32_t>(syn->int_fields["wakelock_id"]);
+                int64_t timeout_ms = static_cast<int64_t>(arg0);
+                power::PowerManager::Instance().AcquireWakeLock(id, timeout_ms > 0 ? timeout_ms : -1);
+            }
+        }
+        return;
+    }
+    if (std::strcmp(mname, "release") == 0) {
+        if (obj) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn && syn->int_fields.count("wakelock_id")) {
+                uint32_t id = static_cast<uint32_t>(syn->int_fields["wakelock_id"]);
+                power::PowerManager::Instance().ReleaseWakeLock(id);
+                return;
+            }
+        }
+    }
+    if (std::strcmp(mname, "setReferenceCounted") == 0) {
+        if (obj) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn && syn->int_fields.count("wakelock_id")) {
+                uint32_t id = static_cast<uint32_t>(syn->int_fields["wakelock_id"]);
+                power::PowerManager::Instance().SetWakeLockReferenceCounted(id, arg0 != 0);
+            }
+        }
+        return;
+    }
+    if (std::strcmp(mname, "addAction") == 0) {
+        jstring action_str = reinterpret_cast<jstring>(arg0);
+        const char *act = JniEnvironment::Instance().GetStringChars(action_str);
+        if (obj && act) {
+            auto syn = JniEnvironment::Instance().LookupObject(obj);
+            if (syn) {
+                syn->string_fields["action"] = act;
+            }
+        }
+        return;
+    }
+    DispatchVoidMethod(obj, methodID);
+}
 
-static __attribute__((sysv_abi)) void Env_CallVoidMethodA(JNIEnv *, jobject, jmethodID,
+static __attribute__((sysv_abi)) void Env_CallVoidMethodV(JNIEnv *, jobject obj, jmethodID methodID, va_list)
+{
+    DispatchVoidMethod(obj, methodID);
+}
+
+static __attribute__((sysv_abi)) void Env_CallVoidMethodA(JNIEnv *, jobject obj, jmethodID methodID,
                                                           const void *)
 {
+    DispatchVoidMethod(obj, methodID);
 }
 
 // Static method calls
-static __attribute__((sysv_abi)) jobject Env_CallStaticObjectMethod(JNIEnv *, jclass,
+static __attribute__((sysv_abi)) jobject Env_CallStaticObjectMethod(JNIEnv *, jclass clazz,
                                                                     jmethodID methodID, ...)
 {
     uintptr_t arg0 = 0;
@@ -578,6 +1666,158 @@ static __attribute__((sysv_abi)) jobject Env_CallStaticObjectMethod(JNIEnv *, jc
         }
         return JniEnvironment::Instance().CreateBitmap(w, h, fmt);
     }
+    if (std::strcmp(mname, "newPlainText") == 0) {
+        auto &env = JniEnvironment::Instance();
+        jstring label_str = reinterpret_cast<jstring>(arg0);
+        jstring text_str = reinterpret_cast<jstring>(arg1);
+        const char *label = label_str ? env.GetStringChars(label_str) : "text";
+        const char *text = text_str ? env.GetStringChars(text_str) : "";
+
+        auto clip_obj = std::make_shared<JniSyntheticObject>();
+        clip_obj->class_name = "android/content/ClipData";
+        clip_obj->string_fields["label"] = label ? label : "text";
+        clip_obj->int_fields["item_count"] = 1;
+
+        auto desc_obj = std::make_shared<JniSyntheticObject>();
+        desc_obj->class_name = "android/content/ClipDescription";
+        desc_obj->string_fields["label"] = label ? label : "text";
+        desc_obj->int_fields["mime_count"] = 1;
+        desc_obj->string_fields["mime_0"] = "text/plain";
+        clip_obj->object_fields["description"] = env.RegisterObject(desc_obj);
+
+        auto item_obj = std::make_shared<JniSyntheticObject>();
+        item_obj->class_name = "android/content/ClipData$Item";
+        item_obj->string_fields["text"] = text ? text : "";
+        clip_obj->object_fields["item_0"] = env.RegisterObject(item_obj);
+
+        return env.RegisterObject(clip_obj);
+    }
+    if (std::strcmp(mname, "newHtmlText") == 0) {
+        auto &env = JniEnvironment::Instance();
+        jstring label_str = reinterpret_cast<jstring>(arg0);
+        jstring text_str = reinterpret_cast<jstring>(arg1);
+        jstring html_str = reinterpret_cast<jstring>(arg2);
+        const char *label = label_str ? env.GetStringChars(label_str) : "html";
+        const char *text = text_str ? env.GetStringChars(text_str) : "";
+        const char *html = html_str ? env.GetStringChars(html_str) : "";
+
+        auto clip_obj = std::make_shared<JniSyntheticObject>();
+        clip_obj->class_name = "android/content/ClipData";
+        clip_obj->string_fields["label"] = label ? label : "html";
+        clip_obj->int_fields["item_count"] = 1;
+
+        auto desc_obj = std::make_shared<JniSyntheticObject>();
+        desc_obj->class_name = "android/content/ClipDescription";
+        desc_obj->string_fields["label"] = label ? label : "html";
+        desc_obj->int_fields["mime_count"] = 2;
+        desc_obj->string_fields["mime_0"] = "text/html";
+        desc_obj->string_fields["mime_1"] = "text/plain";
+        clip_obj->object_fields["description"] = env.RegisterObject(desc_obj);
+
+        auto item_obj = std::make_shared<JniSyntheticObject>();
+        item_obj->class_name = "android/content/ClipData$Item";
+        item_obj->string_fields["text"] = text ? text : "";
+        item_obj->string_fields["htmlText"] = html ? html : "";
+        clip_obj->object_fields["item_0"] = env.RegisterObject(item_obj);
+
+        return env.RegisterObject(clip_obj);
+    }
+    if (std::strcmp(mname, "newUri") == 0) {
+        auto &env = JniEnvironment::Instance();
+        jstring label_str = reinterpret_cast<jstring>(arg1);
+        jobject uri_obj = reinterpret_cast<jobject>(arg2);
+        const char *label = label_str ? env.GetStringChars(label_str) : "uri";
+        std::string uri_str = "content://media/external/1";
+        if (uri_obj) {
+            auto uri_syn = env.LookupObject(uri_obj);
+            if (uri_syn && uri_syn->string_fields.count("uri")) {
+                uri_str = uri_syn->string_fields["uri"];
+            }
+        }
+
+        auto clip_obj = std::make_shared<JniSyntheticObject>();
+        clip_obj->class_name = "android/content/ClipData";
+        clip_obj->string_fields["label"] = label ? label : "uri";
+        clip_obj->int_fields["item_count"] = 1;
+
+        auto desc_obj = std::make_shared<JniSyntheticObject>();
+        desc_obj->class_name = "android/content/ClipDescription";
+        desc_obj->string_fields["label"] = label ? label : "uri";
+        desc_obj->int_fields["mime_count"] = 1;
+        desc_obj->string_fields["mime_0"] = "text/uri-list";
+        clip_obj->object_fields["description"] = env.RegisterObject(desc_obj);
+
+        auto item_obj = std::make_shared<JniSyntheticObject>();
+        item_obj->class_name = "android/content/ClipData$Item";
+        item_obj->string_fields["uri"] = uri_str;
+        item_obj->string_fields["text"] = uri_str;
+        clip_obj->object_fields["item_0"] = env.RegisterObject(item_obj);
+
+        return env.RegisterObject(clip_obj);
+    }
+    if (std::strcmp(mname, "getExternalStorageDirectory") == 0) {
+        auto obj_ret = std::make_shared<JniSyntheticObject>();
+        obj_ret->class_name = "java/io/File";
+        obj_ret->string_fields["path"] = "/storage/emulated/0";
+        return JniEnvironment::Instance().RegisterObject(obj_ret);
+    }
+    if (std::strcmp(mname, "getExternalStorageState") == 0) {
+        return JniEnvironment::Instance().CreateString("mounted");
+    }
+    if (std::strcmp(mname, "getInstance") == 0) {
+        const char *cname = clazz ? reinterpret_cast<const char *>(clazz) : "";
+        auto &env = JniEnvironment::Instance();
+        if (std::strstr(cname, "KeyStore") != nullptr) {
+            auto obj_ret = std::make_shared<JniSyntheticObject>();
+            obj_ret->class_name = "java/security/KeyStore";
+            return env.RegisterObject(obj_ret);
+        }
+        if (std::strstr(cname, "KeyGenerator") != nullptr) {
+            auto obj_ret = std::make_shared<JniSyntheticObject>();
+            obj_ret->class_name = "javax/crypto/KeyGenerator";
+            if (arg0 != 0) {
+                const char *alg = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+                obj_ret->string_fields["algorithm"] = alg ? alg : "AES";
+            }
+            return env.RegisterObject(obj_ret);
+        }
+        if (std::strstr(cname, "KeyPairGenerator") != nullptr) {
+            auto obj_ret = std::make_shared<JniSyntheticObject>();
+            obj_ret->class_name = "java/security/KeyPairGenerator";
+            if (arg0 != 0) {
+                const char *alg = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+                obj_ret->string_fields["algorithm"] = alg ? alg : "RSA";
+            }
+            return env.RegisterObject(obj_ret);
+        }
+        if (std::strstr(cname, "Cipher") != nullptr) {
+            auto obj_ret = std::make_shared<JniSyntheticObject>();
+            obj_ret->class_name = "javax/crypto/Cipher";
+            if (arg0 != 0) {
+                const char *transf = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+                obj_ret->string_fields["transformation"] = transf ? transf : "AES/GCM/NoPadding";
+            }
+            return env.RegisterObject(obj_ret);
+        }
+        if (std::strstr(cname, "Signature") != nullptr) {
+            auto obj_ret = std::make_shared<JniSyntheticObject>();
+            obj_ret->class_name = "java/security/Signature";
+            if (arg0 != 0) {
+                const char *alg = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+                obj_ret->string_fields["algorithm"] = alg ? alg : "SHA256withRSA";
+            }
+            return env.RegisterObject(obj_ret);
+        }
+
+        auto obj_ret = std::make_shared<JniSyntheticObject>();
+        obj_ret->class_name = "com/google/android/gms/common/GoogleApiAvailability";
+        return JniEnvironment::Instance().RegisterObject(obj_ret);
+    }
+    if (std::strcmp(mname, "create") == 0) {
+        auto obj_ret = std::make_shared<JniSyntheticObject>();
+        obj_ret->class_name = "com/google/android/play/core/review/ReviewManager";
+        return JniEnvironment::Instance().RegisterObject(obj_ret);
+    }
     return nullptr;
 }
 
@@ -594,9 +1834,18 @@ static __attribute__((sysv_abi)) jobject Env_CallStaticObjectMethodA(JNIEnv *env
     return Env_CallStaticObjectMethod(env, clazz, methodID);
 }
 
-static __attribute__((sysv_abi)) jboolean Env_CallStaticBooleanMethod(JNIEnv *, jclass, jmethodID,
-                                                                      ...)
+static __attribute__((sysv_abi)) jboolean Env_CallStaticBooleanMethod(JNIEnv *, jclass,
+                                                                      jmethodID methodID, ...)
 {
+    if (methodID) {
+        const char *mname = reinterpret_cast<const char *>(methodID);
+        if (std::strcmp(mname, "isExternalStorageRemovable") == 0) {
+            return JNI_FALSE;
+        }
+        if (std::strcmp(mname, "isExternalStorageEmulated") == 0) {
+            return JNI_TRUE;
+        }
+    }
     return JNI_TRUE;
 }
 
@@ -663,20 +1912,31 @@ static __attribute__((sysv_abi)) jshort Env_CallStaticShortMethodA(JNIEnv *, jcl
     return 0;
 }
 
-static __attribute__((sysv_abi)) jint Env_CallStaticIntMethod(JNIEnv *, jclass, jmethodID, ...)
+static __attribute__((sysv_abi)) jint Env_CallStaticIntMethod(JNIEnv *, jclass,
+                                                              jmethodID methodID, ...)
 {
+    if (methodID) {
+        const char *mname = reinterpret_cast<const char *>(methodID);
+        if (std::strcmp(mname, "isGooglePlayServicesAvailable") == 0) {
+            return 0; // ConnectionResult.SUCCESS
+        }
+        if (std::strcmp(mname, "getMinBufferSize") == 0) {
+            return 4096;
+        }
+    }
     return 0;
 }
 
-static __attribute__((sysv_abi)) jint Env_CallStaticIntMethodV(JNIEnv *, jclass, jmethodID, va_list)
+static __attribute__((sysv_abi)) jint Env_CallStaticIntMethodV(JNIEnv *env, jclass clazz,
+                                                               jmethodID methodID, va_list)
 {
-    return 0;
+    return Env_CallStaticIntMethod(env, clazz, methodID);
 }
 
-static __attribute__((sysv_abi)) jint Env_CallStaticIntMethodA(JNIEnv *, jclass, jmethodID,
-                                                               const void *)
+static __attribute__((sysv_abi)) jint Env_CallStaticIntMethodA(JNIEnv *env, jclass clazz,
+                                                               jmethodID methodID, const void *)
 {
-    return 0;
+    return Env_CallStaticIntMethod(env, clazz, methodID);
 }
 
 static __attribute__((sysv_abi)) jlong Env_CallStaticLongMethod(JNIEnv *, jclass, jmethodID, ...)

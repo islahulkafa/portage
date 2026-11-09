@@ -13,7 +13,7 @@ static inline void sys_exit_group(int code)
 
 void _start()
 {
-    // 1. Query initial brk
+    // Query initial brk
     uint64_t initial_brk = 0;
     __asm__ volatile("movl $12, %%eax\n\t" // sys_brk
                      "xorl %%edi, %%edi\n\t"
@@ -27,7 +27,7 @@ void _start()
         sys_exit_group(1);
     }
 
-    // 2. Expand brk by 4096 bytes
+    // Expand brk by 4096 bytes
     uint64_t target_brk = initial_brk + 4096;
     uint64_t new_brk = 0;
     __asm__ volatile("movl $12, %%eax\n\t"
@@ -49,8 +49,7 @@ void _start()
         sys_exit_group(3);
     }
 
-    // 3. Test mmap anonymous (prot = PROT_READ|PROT_WRITE = 3, flags = MAP_PRIVATE|MAP_ANONYMOUS =
-    // 0x22)
+    // Test mmap anonymous
     uint64_t mmap_res = 0;
     __asm__ volatile("movl $9, %%eax\n\t"     // sys_mmap
                      "xorl %%edi, %%edi\n\t"  // addr = NULL
@@ -76,7 +75,7 @@ void _start()
         sys_exit_group(5);
     }
 
-    // 4. Test munmap
+    // Test munmap
     long munmap_res = 0;
     __asm__ volatile("movl $11, %%eax\n\t"
                      "movq %1, %%rdi\n\t"

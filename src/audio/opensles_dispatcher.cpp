@@ -35,6 +35,7 @@ bool MatchIID(SLInterfaceID a, SLInterfaceID b)
 struct EngineObjectImpl;
 struct OutputMixObjectImpl;
 struct AudioPlayerObjectImpl;
+struct AudioRecorderObjectImpl;
 
 // Engine Object VTables
 SLresult __attribute__((sysv_abi)) Engine_Realize(SLObjectItf self, SLboolean async)
@@ -128,11 +129,17 @@ EngineItf_CreateAudioPlayer(SLEngineItf self, SLObjectItf *pPlayer, SLDataSource
                             const SLInterfaceID *pInterfaceIds,
                             const SLboolean *pInterfaceRequired);
 
+SLresult __attribute__((sysv_abi))
+EngineItf_CreateAudioRecorder(SLEngineItf self, SLObjectItf *pRecorder, SLDataSource *pAudioSrc,
+                              SLDataSink *pAudioSnk, SLuint32 numInterfaces,
+                              const SLInterfaceID *pInterfaceIds,
+                              const SLboolean *pInterfaceRequired);
+
 const SLEngineItf_ g_EngineItfVTable = {
     nullptr, // CreateLEDDevice
     nullptr, // CreateVibraDevice
     EngineItf_CreateAudioPlayer,
-    nullptr, // CreateAudioRecorder
+    EngineItf_CreateAudioRecorder,
     nullptr, // CreateMidiPlayer
     nullptr, // CreateListener
     nullptr, // Create3DEnvironment
@@ -482,6 +489,294 @@ BufferQueue_RegisterCallback(SLAndroidSimpleBufferQueueItf self,
         reinterpret_cast<char *>(self) - offsetof(AudioPlayerObjectImpl, bq_vtbl));
     impl->bq_callback = callback;
     impl->bq_context = pContext;
+    return SL_RESULT_SUCCESS;
+}
+
+struct RecordBufferQueueEntry {
+    void *buffer{nullptr};
+    SLuint32 size{0};
+};
+
+struct AudioRecorderObjectImpl;
+
+SLresult __attribute__((sysv_abi)) Recorder_Realize(SLObjectItf self, SLboolean async)
+{
+    (void)self;
+    (void)async;
+    return SL_RESULT_SUCCESS;
+}
+
+SLresult __attribute__((sysv_abi)) Recorder_GetInterface(SLObjectItf self, const SLInterfaceID iid,
+                                                         void *pInterface);
+void __attribute__((sysv_abi)) Recorder_Destroy(SLObjectItf self);
+
+const SLObjectItf_ g_RecorderObjectVTable = {
+    Recorder_Realize,        Engine_Resume,
+    Engine_GetState,         Recorder_GetInterface,
+    Engine_RegisterCallback, Engine_AbortAsyncOperation,
+    Recorder_Destroy,        Engine_SetPriority,
+    Engine_GetPriority,      Engine_SetLossOfControlInterfaces,
+};
+
+SLresult __attribute__((sysv_abi)) Record_SetRecordState(SLRecordItf self, SLuint32 state);
+SLresult __attribute__((sysv_abi)) Record_GetRecordState(SLRecordItf self, SLuint32 *pState);
+
+const SLRecordItf_ g_RecordItfVTable = {
+    Record_SetRecordState, Record_GetRecordState,
+    nullptr, // SetDurationLimit
+    nullptr, // GetPosition
+    nullptr, // RegisterCallback
+    nullptr, // SetCallbackEventsMask
+    nullptr, // GetCallbackEventsMask
+    nullptr, // SetMarkerPosition
+    nullptr, // ClearMarkerPosition
+    nullptr, // GetMarkerPosition
+    nullptr, // SetPositionUpdatePeriod
+    nullptr, // GetPositionUpdatePeriod
+};
+
+SLresult __attribute__((sysv_abi)) RecordBufferQueue_Enqueue(SLAndroidSimpleBufferQueueItf self,
+                                                             const void *pBuffer, SLuint32 size);
+SLresult __attribute__((sysv_abi)) RecordBufferQueue_Clear(SLAndroidSimpleBufferQueueItf self);
+SLresult __attribute__((sysv_abi)) RecordBufferQueue_GetState(SLAndroidSimpleBufferQueueItf self,
+                                                              SLAndroidSimpleBufferQueueState *pState);
+SLresult __attribute__((sysv_abi))
+RecordBufferQueue_RegisterCallback(SLAndroidSimpleBufferQueueItf self,
+                                   slAndroidSimpleBufferQueueCallback callback, void *pContext);
+
+const SLAndroidSimpleBufferQueueItf_ g_RecordBufferQueueItfVTable = {
+    RecordBufferQueue_Enqueue,
+    RecordBufferQueue_Clear,
+    RecordBufferQueue_GetState,
+    RecordBufferQueue_RegisterCallback,
+};
+
+struct AudioRecorderObjectImpl {
+    const SLObjectItf_ *obj_vtbl{&g_RecorderObjectVTable};
+    const SLRecordItf_ *rec_vtbl{&g_RecordItfVTable};
+    const SLAndroidSimpleBufferQueueItf_ *bq_vtbl{&g_RecordBufferQueueItfVTable};
+
+    uint32_t sample_rate{48000};
+    uint32_t channels{1};
+    int32_t format{SNDRV_PCM_FORMAT_S16_LE};
+
+    std::atomic<SLuint32> record_state{SL_RECORDSTATE_STOPPED};
+
+    std::mutex queue_mutex{};
+    std::condition_variable queue_cv{};
+    std::deque<RecordBufferQueueEntry> queue{};
+    slAndroidSimpleBufferQueueCallback bq_callback{nullptr};
+    void *bq_context{nullptr};
+
+    std::thread worker_thread{};
+    std::atomic<bool> worker_running{true};
+
+    AudioRecorderObjectImpl()
+    {
+        worker_thread = std::thread([this]() { WorkerLoop(); });
+    }
+
+    ~AudioRecorderObjectImpl()
+    {
+        worker_running = false;
+        queue_cv.notify_all();
+        if (worker_thread.joinable()) {
+            if (worker_thread.get_id() != std::this_thread::get_id()) {
+                worker_thread.join();
+            }
+        }
+    }
+
+    void WorkerLoop()
+    {
+        while (worker_running.load()) {
+            RecordBufferQueueEntry entry;
+            {
+                std::unique_lock<std::mutex> lock(queue_mutex);
+                queue_cv.wait(lock, [this] {
+                    return !worker_running.load() ||
+                           (!queue.empty() && record_state.load() == SL_RECORDSTATE_RECORDING);
+                });
+                if (!worker_running.load()) {
+                    break;
+                }
+                entry = queue.front();
+                queue.pop_front();
+            }
+
+            if (entry.buffer && entry.size > 0) {
+                int64_t bytes_read = 0;
+                while (bytes_read < static_cast<int64_t>(entry.size) &&
+                       record_state.load() == SL_RECORDSTATE_RECORDING &&
+                       worker_running.load()) {
+                    int64_t r = AudioManager::Instance().ReadPcmBytes(
+                        static_cast<uint8_t *>(entry.buffer) + bytes_read,
+                        entry.size - bytes_read);
+                    if (r > 0) {
+                        bytes_read += r;
+                    } else {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    }
+                }
+            }
+
+            slAndroidSimpleBufferQueueCallback cb = bq_callback;
+            void *ctx = bq_context;
+            if (cb && record_state.load() == SL_RECORDSTATE_RECORDING) {
+                cb(reinterpret_cast<SLAndroidSimpleBufferQueueItf>(&bq_vtbl), ctx);
+            }
+        }
+    }
+};
+
+SLresult __attribute__((sysv_abi)) Recorder_GetInterface(SLObjectItf self, const SLInterfaceID iid,
+                                                         void *pInterface)
+{
+    if (!self || !pInterface) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    auto *impl = reinterpret_cast<AudioRecorderObjectImpl *>(self);
+    if (MatchIID(iid, SL_IID_RECORD)) {
+        *reinterpret_cast<const SLRecordItf_ ***>(pInterface) = &impl->rec_vtbl;
+        return SL_RESULT_SUCCESS;
+    }
+    if (MatchIID(iid, SL_IID_ANDROIDSIMPLEBUFFERQUEUE) || MatchIID(iid, SL_IID_BUFFERQUEUE)) {
+        *reinterpret_cast<const SLAndroidSimpleBufferQueueItf_ ***>(pInterface) = &impl->bq_vtbl;
+        return SL_RESULT_SUCCESS;
+    }
+    return SL_RESULT_FEATURE_UNSUPPORTED;
+}
+
+void __attribute__((sysv_abi)) Recorder_Destroy(SLObjectItf self)
+{
+    if (self) {
+        auto *impl = reinterpret_cast<AudioRecorderObjectImpl *>(self);
+        delete impl;
+    }
+}
+
+SLresult __attribute__((sysv_abi)) Record_SetRecordState(SLRecordItf self, SLuint32 state)
+{
+    if (!self) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    auto *impl = reinterpret_cast<AudioRecorderObjectImpl *>(
+        reinterpret_cast<char *>(self) - offsetof(AudioRecorderObjectImpl, rec_vtbl));
+    impl->record_state.store(state);
+    if (state == SL_RECORDSTATE_RECORDING) {
+        AudioManager::Instance().ConfigureCaptureStream(impl->sample_rate, impl->channels,
+                                                        impl->format);
+        AudioManager::Instance().StartCapture();
+        impl->queue_cv.notify_one();
+    } else {
+        AudioManager::Instance().StopCapture();
+    }
+    return SL_RESULT_SUCCESS;
+}
+
+SLresult __attribute__((sysv_abi)) Record_GetRecordState(SLRecordItf self, SLuint32 *pState)
+{
+    if (!self || !pState) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    auto *impl = reinterpret_cast<AudioRecorderObjectImpl *>(
+        reinterpret_cast<char *>(self) - offsetof(AudioRecorderObjectImpl, rec_vtbl));
+    *pState = impl->record_state.load();
+    return SL_RESULT_SUCCESS;
+}
+
+SLresult __attribute__((sysv_abi)) RecordBufferQueue_Enqueue(SLAndroidSimpleBufferQueueItf self,
+                                                             const void *pBuffer, SLuint32 size)
+{
+    if (!self || !pBuffer || size == 0) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    auto *impl = reinterpret_cast<AudioRecorderObjectImpl *>(
+        reinterpret_cast<char *>(self) - offsetof(AudioRecorderObjectImpl, bq_vtbl));
+    {
+        std::lock_guard<std::mutex> lock(impl->queue_mutex);
+        impl->queue.push_back(RecordBufferQueueEntry{
+            .buffer = const_cast<void *>(pBuffer),
+            .size = size,
+        });
+    }
+    impl->queue_cv.notify_one();
+    return SL_RESULT_SUCCESS;
+}
+
+SLresult __attribute__((sysv_abi)) RecordBufferQueue_Clear(SLAndroidSimpleBufferQueueItf self)
+{
+    if (!self) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    auto *impl = reinterpret_cast<AudioRecorderObjectImpl *>(
+        reinterpret_cast<char *>(self) - offsetof(AudioRecorderObjectImpl, bq_vtbl));
+    std::lock_guard<std::mutex> lock(impl->queue_mutex);
+    impl->queue.clear();
+    return SL_RESULT_SUCCESS;
+}
+
+SLresult __attribute__((sysv_abi)) RecordBufferQueue_GetState(SLAndroidSimpleBufferQueueItf self,
+                                                              SLAndroidSimpleBufferQueueState *pState)
+{
+    if (!self || !pState) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    auto *impl = reinterpret_cast<AudioRecorderObjectImpl *>(
+        reinterpret_cast<char *>(self) - offsetof(AudioRecorderObjectImpl, bq_vtbl));
+    std::lock_guard<std::mutex> lock(impl->queue_mutex);
+    pState->count = static_cast<SLuint32>(impl->queue.size());
+    pState->index = 0;
+    return SL_RESULT_SUCCESS;
+}
+
+SLresult __attribute__((sysv_abi))
+RecordBufferQueue_RegisterCallback(SLAndroidSimpleBufferQueueItf self,
+                                   slAndroidSimpleBufferQueueCallback callback, void *pContext)
+{
+    if (!self) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    auto *impl = reinterpret_cast<AudioRecorderObjectImpl *>(
+        reinterpret_cast<char *>(self) - offsetof(AudioRecorderObjectImpl, bq_vtbl));
+    impl->bq_callback = callback;
+    impl->bq_context = pContext;
+    return SL_RESULT_SUCCESS;
+}
+
+SLresult __attribute__((sysv_abi))
+EngineItf_CreateAudioRecorder(SLEngineItf self, SLObjectItf *pRecorder, SLDataSource *pAudioSrc,
+                              SLDataSink *pAudioSnk, SLuint32 numInterfaces,
+                              const SLInterfaceID *pInterfaceIds,
+                              const SLboolean *pInterfaceRequired)
+{
+    (void)self;
+    (void)pAudioSrc;
+    (void)numInterfaces;
+    (void)pInterfaceIds;
+    (void)pInterfaceRequired;
+    if (!pRecorder || !pAudioSnk) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+
+    auto *recorder = new AudioRecorderObjectImpl();
+
+    if (pAudioSnk->pFormat) {
+        auto *pcm = static_cast<SLDataFormat_PCM *>(pAudioSnk->pFormat);
+        if (pcm->formatType == SL_DATAFORMAT_PCM) {
+            recorder->channels =
+                (pcm->numChannels >= 1 && pcm->numChannels <= 2) ? pcm->numChannels : 1;
+            uint32_t srate = pcm->samplesPerSec;
+            if (srate >= 1000000) {
+                srate /= 1000;
+            }
+            recorder->sample_rate = (srate > 0) ? srate : 48000;
+            recorder->format =
+                (pcm->bitsPerSample == 32) ? SNDRV_PCM_FORMAT_FLOAT_LE : SNDRV_PCM_FORMAT_S16_LE;
+        }
+    }
+
+    *pRecorder = reinterpret_cast<SLObjectItf>(&recorder->obj_vtbl);
     return SL_RESULT_SUCCESS;
 }
 
