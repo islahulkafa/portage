@@ -9,6 +9,7 @@
 #include "camera/camera_ndk.hpp"
 #include "clipboard/clipboard_ndk.hpp"
 #include "location/location_ndk.hpp"
+#include "notification/notification_ndk.hpp"
 #include "power/power_ndk.hpp"
 #include "security/keystore_ndk.hpp"
 #include "configuration.hpp"
@@ -664,6 +665,39 @@ void NdkSymbolRegistry::RegisterAll()
              reinterpret_cast<uintptr_t>(&ABatteryManager_getVoltage));
     Register("ABatteryManager_getTemperature",
              reinterpret_cast<uintptr_t>(&ABatteryManager_getTemperature));
+
+    // Notification & Toast NDK
+    Register("ANotificationManager_create",
+             reinterpret_cast<uintptr_t>(&ANotificationManager_create));
+    Register("ANotificationManager_destroy",
+             reinterpret_cast<uintptr_t>(&ANotificationManager_destroy));
+    Register("ANotificationChannel_create",
+             reinterpret_cast<uintptr_t>(&ANotificationChannel_create));
+    Register("ANotificationChannel_destroy",
+             reinterpret_cast<uintptr_t>(&ANotificationChannel_destroy));
+    Register("ANotificationChannel_setDescription",
+             reinterpret_cast<uintptr_t>(&ANotificationChannel_setDescription));
+    Register("ANotificationChannel_getImportance",
+             reinterpret_cast<uintptr_t>(&ANotificationChannel_getImportance));
+    Register("ANotificationManager_createNotificationChannel",
+             reinterpret_cast<uintptr_t>(&ANotificationManager_createNotificationChannel));
+    Register("ANotificationManager_getNotificationChannel",
+             reinterpret_cast<uintptr_t>(&ANotificationManager_getNotificationChannel));
+    Register("ANotificationManager_deleteNotificationChannel",
+             reinterpret_cast<uintptr_t>(&ANotificationManager_deleteNotificationChannel));
+    Register("ANotification_create", reinterpret_cast<uintptr_t>(&ANotification_create));
+    Register("ANotification_destroy", reinterpret_cast<uintptr_t>(&ANotification_destroy));
+    Register("ANotification_setTitle", reinterpret_cast<uintptr_t>(&ANotification_setTitle));
+    Register("ANotification_setText", reinterpret_cast<uintptr_t>(&ANotification_setText));
+    Register("ANotification_setProgress", reinterpret_cast<uintptr_t>(&ANotification_setProgress));
+    Register("ANotification_setOngoing", reinterpret_cast<uintptr_t>(&ANotification_setOngoing));
+    Register("ANotificationManager_notify",
+             reinterpret_cast<uintptr_t>(&ANotificationManager_notify));
+    Register("ANotificationManager_cancel",
+             reinterpret_cast<uintptr_t>(&ANotificationManager_cancel));
+    Register("ANotificationManager_cancelAll",
+             reinterpret_cast<uintptr_t>(&ANotificationManager_cancelAll));
+    Register("AToast_show", reinterpret_cast<uintptr_t>(&AToast_show));
 
     // libdl
     Register("dlopen", reinterpret_cast<uintptr_t>(&dlopen));

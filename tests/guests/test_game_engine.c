@@ -1109,6 +1109,20 @@ extern void *ABatteryManager_create(void) __attribute__((sysv_abi));
 extern void ABatteryManager_destroy(void *mgr) __attribute__((sysv_abi));
 extern int32_t ABatteryManager_getCapacity(void *mgr) __attribute__((sysv_abi));
 
+// Notification & Toast NDK functions
+extern void *ANotificationManager_create(void) __attribute__((sysv_abi));
+extern void ANotificationManager_destroy(void *mgr) __attribute__((sysv_abi));
+extern void *ANotificationChannel_create(const char *id, const char *name, int32_t importance) __attribute__((sysv_abi));
+extern void ANotificationChannel_destroy(void *channel) __attribute__((sysv_abi));
+extern int32_t ANotificationManager_createNotificationChannel(void *mgr, void *channel) __attribute__((sysv_abi));
+extern void *ANotification_create(const char *channel_id) __attribute__((sysv_abi));
+extern void ANotification_destroy(void *notification) __attribute__((sysv_abi));
+extern void ANotification_setTitle(void *notification, const char *title) __attribute__((sysv_abi));
+extern void ANotification_setText(void *notification, const char *text) __attribute__((sysv_abi));
+extern int32_t ANotificationManager_notify(void *mgr, const char *tag, int32_t id, void *notification) __attribute__((sysv_abi));
+extern int32_t ANotificationManager_cancel(void *mgr, const char *tag, int32_t id) __attribute__((sysv_abi));
+extern void AToast_show(const char *text, int32_t duration) __attribute__((sysv_abi));
+
 // Math functions (from DT_NEEDED libgame_math.so)
 extern int math_add(int a, int b) __attribute__((sysv_abi));
 extern int math_get_init_status(void) __attribute__((sysv_abi));
@@ -2093,6 +2107,29 @@ static void __attribute__((noinline)) engine_worker_func(void)
             }
         }
         APowerManager_destroy(power_mgr);
+    }
+
+    void *notif_mgr = ANotificationManager_create();
+    if (notif_mgr) {
+        void *ch = ANotificationChannel_create("engine_channel", "Engine Alerts", 3);
+        if (ch) {
+            if (ANotificationManager_createNotificationChannel(notif_mgr, ch) == 0) {
+                void *n = ANotification_create("engine_channel");
+                if (n) {
+                    ANotification_setTitle(n, "Engine Notification");
+                    ANotification_setText(n, "Engine Subsystems Initialized");
+                    if (ANotificationManager_notify(notif_mgr, "engine", 77, n) == 0) {
+                        ANotificationManager_cancel(notif_mgr, "engine", 77);
+                        AToast_show("Engine Ready", 0);
+                        write_marker(g_engine.internalDataPath, "engine_notification_ready.txt",
+                                     "NOTIFICATION_OK");
+                    }
+                    ANotification_destroy(n);
+                }
+            }
+            ANotificationChannel_destroy(ch);
+        }
+        ANotificationManager_destroy(notif_mgr);
     }
 
     void *dpy = NULL;

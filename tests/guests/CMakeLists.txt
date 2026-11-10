@@ -417,6 +417,23 @@ add_custom_command(
     COMMENT "Cross-compiling Android x86_64 libpowerndk shared library: libpowerndk.so"
 )
 
+# Shared library libnotificationndk.so
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libnotificationndk.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/libnotificationndk.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libnotificationndk.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libnotificationndk.c"
+    COMMENT "Cross-compiling Android x86_64 libnotificationndk shared library: libnotificationndk.so"
+)
+
 # Shared library libtest_gles_quad.so
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/libtest_gles_quad.so"
@@ -554,6 +571,7 @@ add_custom_target(build_guest_binaries
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/liblocationndk.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libclipboardndk.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libpowerndk.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libnotificationndk.so"
         "${CMAKE_CURRENT_BINARY_DIR}/test_vulkan_device.elf"
         "${CMAKE_CURRENT_BINARY_DIR}/test_vulkan_presentation.elf"
         "${CMAKE_CURRENT_BINARY_DIR}/test_audio_pcm.elf"

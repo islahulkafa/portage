@@ -1054,6 +1054,18 @@ TEST_F(GameEngineExecutionFixture, RunsAndroidNativeAppGlueLoop)
         EXPECT_EQ(content, "POWER_OK");
     }
 
+    stdfs::path notif_marker = pkg.data_dir / "engine_notification_ready.txt";
+    for (int i = 0; i < 60 && !stdfs::exists(notif_marker); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(stdfs::exists(notif_marker));
+    {
+        std::ifstream ifs(notif_marker);
+        std::string content;
+        std::getline(ifs, content);
+        EXPECT_EQ(content, "NOTIFICATION_OK");
+    }
+
     // Verify logs in LogcatBuffer
     auto log_entries = portage::ndk::LogcatBuffer::Instance().GetEntries();
     bool found_engine_log = false;

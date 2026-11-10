@@ -3,6 +3,7 @@
 #include "camera/camera_manager.hpp"
 #include "clipboard/clipboard_manager.hpp"
 #include "location/location_manager.hpp"
+#include "notification/notification_manager.hpp"
 #include "power/power_manager.hpp"
 #include "security/keystore_manager.hpp"
 #include "ndk/multinetwork.hpp"
@@ -173,9 +174,35 @@ static __attribute__((sysv_abi)) jobject Env_AllocObject(JNIEnv *, jclass clazz)
 
 static __attribute__((sysv_abi)) jobject Env_NewObject(JNIEnv *, jclass clazz, jmethodID, ...)
 {
+    uintptr_t arg0 = 0;
+    uintptr_t arg1 = 0;
+    uintptr_t arg2 = 0;
+#if defined(__x86_64__) || defined(_M_X64)
+    __asm__ volatile("movq %%rcx, %0" : "=r"(arg0));
+    __asm__ volatile("movq %%r8, %0" : "=r"(arg1));
+    __asm__ volatile("movq %%r9, %0" : "=r"(arg2));
+#endif
     auto obj = std::make_shared<JniSyntheticObject>();
     obj->class_name = clazz ? reinterpret_cast<const char *>(clazz) : "java/lang/Object";
     InitSyntheticObjectState(obj);
+
+    if (obj->class_name == "android/app/NotificationChannel") {
+        auto &env = JniEnvironment::Instance();
+        jstring id_str = reinterpret_cast<jstring>(arg0);
+        jstring name_str = reinterpret_cast<jstring>(arg1);
+        const char *id = env.GetStringChars(id_str);
+        const char *name = env.GetStringChars(name_str);
+        obj->string_fields["id"] = id ? id : "default";
+        obj->string_fields["name"] = name ? name : "Default";
+        obj->int_fields["importance"] = static_cast<int32_t>(arg2);
+    } else if (obj->class_name == "android/app/Notification$Builder" ||
+               obj->class_name == "android/app/Notification.Builder") {
+        auto &env = JniEnvironment::Instance();
+        jstring ch_str = reinterpret_cast<jstring>(arg1);
+        const char *ch = env.GetStringChars(ch_str);
+        obj->string_fields["channel_id"] = ch ? ch : "default";
+    }
+
     return JniEnvironment::Instance().RegisterObject(obj);
 }
 
@@ -424,6 +451,11 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
             auto bm = std::make_shared<JniSyntheticObject>();
             bm->class_name = "android/os/BatteryManager";
             return env.RegisterObject(bm);
+        }
+        if (svc && std::strcmp(svc, "notification") == 0) {
+            auto nm = std::make_shared<JniSyntheticObject>();
+            nm->class_name = "android/app/NotificationManager";
+            return env.RegisterObject(nm);
         }
     }
     if (std::strcmp(mname, "getPrimaryClip") == 0) {
@@ -831,6 +863,107 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
         intent->int_fields["present"] = state.is_present ? 1 : 0;
         return env.RegisterObject(intent);
     }
+    if (std::strcmp(mname, "getNotificationChannel") == 0) {
+        jstring id_str = reinterpret_cast<jstring>(arg0);
+        const char *id = env.GetStringChars(id_str);
+        auto opt = notification::NotificationManager::Instance().GetNotificationChannel(id ? id : "");
+        if (!opt) {
+            return nullptr;
+        }
+        auto ch_obj = std::make_shared<JniSyntheticObject>();
+        ch_obj->class_name = "android/app/NotificationChannel";
+        ch_obj->string_fields["id"] = opt->id;
+        ch_obj->string_fields["name"] = opt->name;
+        ch_obj->string_fields["description"] = opt->description;
+        ch_obj->int_fields["importance"] = opt->importance;
+        return env.RegisterObject(ch_obj);
+    }
+    if (std::strcmp(mname, "build") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn) {
+            auto notif = std::make_shared<JniSyntheticObject>();
+            notif->class_name = "android/app/Notification";
+            notif->string_fields["title"] = syn->string_fields["title"];
+            notif->string_fields["text"] = syn->string_fields["text"];
+            notif->string_fields["channel_id"] =
+                syn->string_fields.count("channel_id") ? syn->string_fields["channel_id"] : "default";
+            notif->int_fields["small_icon"] = syn->int_fields["small_icon"];
+            notif->int_fields["flags"] = syn->int_fields["flags"];
+            notif->int_fields["progress_max"] = syn->int_fields["progress_max"];
+            notif->int_fields["progress_current"] = syn->int_fields["progress_current"];
+            notif->bool_fields["progress_indeterminate"] =
+                syn->bool_fields["progress_indeterminate"];
+            return env.RegisterObject(notif);
+        }
+    }
+    if (std::strcmp(mname, "setContentTitle") == 0 && obj) {
+        jstring str = reinterpret_cast<jstring>(arg0);
+        const char *c = env.GetStringChars(str);
+        auto syn = env.LookupObject(obj);
+        if (syn && c) syn->string_fields["title"] = c;
+        return obj;
+    }
+    if (std::strcmp(mname, "setContentText") == 0 && obj) {
+        jstring str = reinterpret_cast<jstring>(arg0);
+        const char *c = env.GetStringChars(str);
+        auto syn = env.LookupObject(obj);
+        if (syn && c) syn->string_fields["text"] = c;
+        return obj;
+    }
+    if (std::strcmp(mname, "setSmallIcon") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn) syn->int_fields["small_icon"] = static_cast<int32_t>(arg0);
+        return obj;
+    }
+    if (std::strcmp(mname, "setProgress") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn) {
+            syn->int_fields["progress_max"] = static_cast<int32_t>(arg0);
+            syn->int_fields["progress_current"] = static_cast<int32_t>(arg1);
+            uintptr_t arg2 = 0;
+#if defined(__x86_64__) || defined(_M_X64)
+            __asm__ volatile("movq %%r9, %0" : "=r"(arg2));
+#endif
+            syn->bool_fields["progress_indeterminate"] = (arg2 != 0);
+        }
+        return obj;
+    }
+    if (std::strcmp(mname, "setOngoing") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn) {
+            if (arg0) syn->int_fields["flags"] |= notification::FLAG_ONGOING_EVENT;
+            else syn->int_fields["flags"] &= ~notification::FLAG_ONGOING_EVENT;
+        }
+        return obj;
+    }
+    if (std::strcmp(mname, "setAutoCancel") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn) {
+            if (arg0) syn->int_fields["flags"] |= notification::FLAG_AUTO_CANCEL;
+            else syn->int_fields["flags"] &= ~notification::FLAG_AUTO_CANCEL;
+        }
+        return obj;
+    }
+    if (std::strcmp(mname, "getId") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn && syn->string_fields.count("id")) {
+            return env.CreateString(syn->string_fields["id"]);
+        }
+        return env.CreateString("default");
+    }
+    if (std::strcmp(mname, "getName") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn && syn->string_fields.count("name")) {
+            return env.CreateString(syn->string_fields["name"]);
+        }
+        return env.CreateString("Default");
+    }
+    if (std::strcmp(mname, "getDescription") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn && syn->string_fields.count("description")) {
+            return env.CreateString(syn->string_fields["description"]);
+        }
+    }
 
     return nullptr;
 }
@@ -878,6 +1011,9 @@ static __attribute__((sysv_abi)) jboolean Env_CallBooleanMethod(JNIEnv *, jobjec
             }
         }
         return JNI_FALSE;
+    }
+    if (std::strcmp(mname, "areNotificationsEnabled") == 0) {
+        return notification::NotificationManager::Instance().AreNotificationsEnabled() ? JNI_TRUE : JNI_FALSE;
     }
     if (std::strcmp(mname, "isCharging") == 0) {
         return power::PowerManager::Instance().IsCharging() ? JNI_TRUE : JNI_FALSE;
@@ -1118,6 +1254,20 @@ static __attribute__((sysv_abi)) jint Env_CallIntMethod(JNIEnv *, jobject obj, j
     if (std::strcmp(mname, "getIntProperty") == 0) {
         int32_t prop_id = static_cast<int32_t>(arg0);
         return power::PowerManager::Instance().GetBatteryProperty(prop_id);
+    }
+    if (std::strcmp(mname, "getImportance") == 0 && obj) {
+        auto syn = JniEnvironment::Instance().LookupObject(obj);
+        if (syn && syn->int_fields.count("importance")) {
+            return syn->int_fields["importance"];
+        }
+        return notification::IMPORTANCE_DEFAULT;
+    }
+    if (std::strcmp(mname, "getDuration") == 0 && obj) {
+        auto syn = JniEnvironment::Instance().LookupObject(obj);
+        if (syn && syn->int_fields.count("duration")) {
+            return syn->int_fields["duration"];
+        }
+        return 0;
     }
     if (std::strcmp(mname, "getIntExtra") == 0) {
         jstring name_str = reinterpret_cast<jstring>(arg0);
@@ -1454,9 +1604,11 @@ static __attribute__((sysv_abi)) void Env_CallVoidMethod(JNIEnv *, jobject obj, 
 {
     uintptr_t arg0 = 0;
     uintptr_t arg1 = 0;
+    uintptr_t arg2 = 0;
 #if defined(__x86_64__) || defined(_M_X64)
     __asm__ volatile("movq %%rcx, %0" : "=r"(arg0));
     __asm__ volatile("movq %%r8, %0" : "=r"(arg1));
+    __asm__ volatile("movq %%r9, %0" : "=r"(arg2));
 #endif
     if (!methodID) return;
     const char *mname = reinterpret_cast<const char *>(methodID);
@@ -1622,6 +1774,97 @@ static __attribute__((sysv_abi)) void Env_CallVoidMethod(JNIEnv *, jobject obj, 
             }
         }
         return;
+    }
+    if (std::strcmp(mname, "createNotificationChannel") == 0) {
+        jobject ch_arg = reinterpret_cast<jobject>(arg0);
+        if (ch_arg) {
+            auto syn = JniEnvironment::Instance().LookupObject(ch_arg);
+            if (syn) {
+                notification::NotificationChannel ch;
+                ch.id = syn->string_fields.count("id") ? syn->string_fields["id"] : "default";
+                ch.name = syn->string_fields.count("name") ? syn->string_fields["name"] : "Default";
+                ch.description = syn->string_fields.count("description") ? syn->string_fields["description"] : "";
+                ch.importance = syn->int_fields.count("importance") ? syn->int_fields["importance"]
+                                                                   : notification::IMPORTANCE_DEFAULT;
+                notification::NotificationManager::Instance().CreateNotificationChannel(ch);
+            }
+        }
+        return;
+    }
+    if (std::strcmp(mname, "deleteNotificationChannel") == 0) {
+        jstring id_str = reinterpret_cast<jstring>(arg0);
+        const char *id = JniEnvironment::Instance().GetStringChars(id_str);
+        if (id) {
+            notification::NotificationManager::Instance().DeleteNotificationChannel(id);
+        }
+        return;
+    }
+    if (std::strcmp(mname, "notify") == 0) {
+        std::string tag{};
+        int32_t id = 0;
+        jobject notif_obj = nullptr;
+
+        auto syn1 = JniEnvironment::Instance().LookupObject(reinterpret_cast<jobject>(arg1));
+        if (syn1 && syn1->class_name == "android/app/Notification") {
+            id = static_cast<int32_t>(arg0);
+            notif_obj = reinterpret_cast<jobject>(arg1);
+        } else {
+            auto syn2 = JniEnvironment::Instance().LookupObject(reinterpret_cast<jobject>(arg2));
+            if (syn2 && syn2->class_name == "android/app/Notification") {
+                jstring tag_str = reinterpret_cast<jstring>(arg0);
+                const char *t = JniEnvironment::Instance().GetStringChars(tag_str);
+                if (t) tag = t;
+                id = static_cast<int32_t>(arg1);
+                notif_obj = reinterpret_cast<jobject>(arg2);
+            }
+        }
+
+        if (notif_obj) {
+            auto syn = JniEnvironment::Instance().LookupObject(notif_obj);
+            if (syn) {
+                notification::NotificationRecord rec;
+                rec.id = id;
+                rec.tag = tag;
+                rec.title = syn->string_fields["title"];
+                rec.text = syn->string_fields["text"];
+                rec.channel_id =
+                    syn->string_fields.count("channel_id") ? syn->string_fields["channel_id"] : "default";
+                rec.small_icon = syn->int_fields["small_icon"];
+                rec.flags = syn->int_fields["flags"];
+                rec.progress_max = syn->int_fields["progress_max"];
+                rec.progress_current = syn->int_fields["progress_current"];
+                rec.progress_indeterminate = syn->bool_fields["progress_indeterminate"];
+                notification::NotificationManager::Instance().PostNotification(tag, id, rec);
+            }
+        }
+        return;
+    }
+    if (std::strcmp(mname, "cancel") == 0) {
+        if (arg0 > 0x10000 && arg1 != 0) {
+            jstring tag_str = reinterpret_cast<jstring>(arg0);
+            const char *t = JniEnvironment::Instance().GetStringChars(tag_str);
+            if (t) {
+                int32_t id = static_cast<int32_t>(arg1);
+                notification::NotificationManager::Instance().CancelNotification(t, id);
+                return;
+            }
+        }
+        int32_t id = static_cast<int32_t>(arg0);
+        notification::NotificationManager::Instance().CancelNotification("", id);
+        return;
+    }
+    if (std::strcmp(mname, "cancelAll") == 0) {
+        notification::NotificationManager::Instance().CancelAllNotifications();
+        return;
+    }
+    if (std::strcmp(mname, "show") == 0 && obj) {
+        auto syn = JniEnvironment::Instance().LookupObject(obj);
+        if (syn && syn->class_name == "android/widget/Toast") {
+            std::string txt = syn->string_fields["text"];
+            int32_t dur = syn->int_fields["duration"];
+            notification::NotificationManager::Instance().ShowToast(txt, dur);
+            return;
+        }
     }
     DispatchVoidMethod(obj, methodID);
 }
@@ -1817,6 +2060,16 @@ static __attribute__((sysv_abi)) jobject Env_CallStaticObjectMethod(JNIEnv *, jc
         auto obj_ret = std::make_shared<JniSyntheticObject>();
         obj_ret->class_name = "com/google/android/play/core/review/ReviewManager";
         return JniEnvironment::Instance().RegisterObject(obj_ret);
+    }
+    if (std::strcmp(mname, "makeText") == 0) {
+        auto &env = JniEnvironment::Instance();
+        jstring text_str = reinterpret_cast<jstring>(arg1);
+        const char *txt = text_str ? env.GetStringChars(text_str) : "";
+        auto toast = std::make_shared<JniSyntheticObject>();
+        toast->class_name = "android/widget/Toast";
+        toast->string_fields["text"] = txt ? txt : "";
+        toast->int_fields["duration"] = static_cast<int32_t>(arg2);
+        return env.RegisterObject(toast);
     }
     return nullptr;
 }

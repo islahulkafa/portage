@@ -59,6 +59,7 @@ set(UNIT_TEST_SOURCES
     unit/test_location.cpp
     unit/test_clipboard.cpp
     unit/test_power.cpp
+    unit/test_notification.cpp
 )
 
 set(INTEGRATION_TEST_SOURCES

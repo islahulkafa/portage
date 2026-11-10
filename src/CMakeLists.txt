@@ -35,6 +35,8 @@ add_library(portage_core STATIC
     clipboard/clipboard_ndk.cpp
     location/location_manager.cpp
     location/location_ndk.cpp
+    notification/notification_manager.cpp
+    notification/notification_ndk.cpp
     power/power_manager.cpp
     power/power_ndk.cpp
     security/crypto_engine.cpp
