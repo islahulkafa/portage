@@ -47,14 +47,7 @@ int main(int argc, char *argv[])
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "--help" || arg == "-h") {
-            std::cout
-                << "Usage: portage [--verbose] [--headless] [--check-apk] [--location <lat>,<lon>] "
-                   "[--battery <level>,<charging>] [--rootfs <path>] <elf_binary | app.apk> [args...]\n"
-                << "       portage run <app.apk>\n"
-                << "       portage logcat\n";
-            return 0;
-        } else if (arg == "run") {
+        if (arg == "run") {
             continue;
         } else if (arg == "--verbose") {
             verbose = true;
