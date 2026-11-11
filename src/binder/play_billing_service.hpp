@@ -43,8 +43,9 @@ class PlayBillingService {
     bool ConsumePurchase(const std::string &token);
     [[nodiscard]] bool HasPurchase(const std::string &sku) const;
 
-    static __attribute__((sysv_abi)) binder_status_t
-    OnTransact(AIBinder *binder, transaction_code_t code, const AParcel *in, AParcel *out);
+    static __attribute__((sysv_abi)) binder_status_t OnTransact(AIBinder *binder,
+                                                                transaction_code_t code,
+                                                                const AParcel *in, AParcel *out);
 
   private:
     PlayBillingService();

@@ -198,14 +198,21 @@ extern "C" void portage_guest_exit_trampoline(int code)
     ExitThread(static_cast<DWORD>(code));
 }
 
+static PVOID g_global_veh_handle = nullptr;
+static std::mutex g_veh_mutex;
+
+void EnsureVectoredHandlerInstalled() noexcept
+{
+    std::lock_guard lock(g_veh_mutex);
+    if (!g_global_veh_handle) {
+        g_global_veh_handle = AddVectoredExceptionHandler(1, VectoredHandler);
+    }
+}
+
 GuestContext::GuestContext() noexcept = default;
 
 GuestContext::~GuestContext() noexcept
 {
-    if (veh_handle_) {
-        RemoveVectoredExceptionHandler(veh_handle_);
-        veh_handle_ = nullptr;
-    }
     if (stack_base_) {
         VirtualFree(stack_base_, 0, MEM_RELEASE);
         stack_base_ = nullptr;
@@ -223,9 +230,6 @@ GuestContext::GuestContext(GuestContext &&other) noexcept
 GuestContext &GuestContext::operator=(GuestContext &&other) noexcept
 {
     if (this != &other) {
-        if (veh_handle_) {
-            RemoveVectoredExceptionHandler(veh_handle_);
-        }
         if (stack_base_) {
             VirtualFree(stack_base_, 0, MEM_RELEASE);
         }
@@ -247,7 +251,8 @@ bool GuestContext::InitializeStack(size_t stack_size) noexcept
     if (!stack_base_) {
         return false;
     }
-    veh_handle_ = AddVectoredExceptionHandler(1, VectoredHandler);
+    EnsureVectoredHandlerInstalled();
+    veh_handle_ = g_global_veh_handle;
     return veh_handle_ != nullptr;
 }
 

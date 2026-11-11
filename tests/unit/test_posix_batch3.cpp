@@ -56,7 +56,7 @@ TEST_F(PosixBatch3Test, StatfsAndFstatfsReportCapacityAndExt4Magic)
 
     LinuxStatfs sfs{};
     int64_t r1 = SyscallDispatcher::Dispatch(137, reinterpret_cast<uint64_t>(rel_path.c_str()),
-                                            reinterpret_cast<uint64_t>(&sfs), 0, 0, 0, 0);
+                                             reinterpret_cast<uint64_t>(&sfs), 0, 0, 0, 0);
     EXPECT_EQ(r1, 0);
     EXPECT_EQ(sfs.f_type, LINUX_EXT4_SUPER_MAGIC);
     EXPECT_EQ(sfs.f_bsize, 4096);
@@ -66,13 +66,14 @@ TEST_F(PosixBatch3Test, StatfsAndFstatfsReportCapacityAndExt4Magic)
     EXPECT_EQ(sfs.f_namelen, 255);
 
     // Open file to test sys_fstatfs
-    int64_t fd = SyscallDispatcher::Dispatch(257, static_cast<uint64_t>(LINUX_AT_FDCWD),
-                                             reinterpret_cast<uint64_t>(rel_path.c_str()), 0, 0, 0, 0);
+    int64_t fd =
+        SyscallDispatcher::Dispatch(257, static_cast<uint64_t>(LINUX_AT_FDCWD),
+                                    reinterpret_cast<uint64_t>(rel_path.c_str()), 0, 0, 0, 0);
     ASSERT_GE(fd, 3);
 
     LinuxStatfs fsfs{};
     int64_t r2 = SyscallDispatcher::Dispatch(138, static_cast<uint64_t>(fd),
-                                            reinterpret_cast<uint64_t>(&fsfs), 0, 0, 0, 0);
+                                             reinterpret_cast<uint64_t>(&fsfs), 0, 0, 0, 0);
     EXPECT_EQ(r2, 0);
     EXPECT_EQ(fsfs.f_type, LINUX_EXT4_SUPER_MAGIC);
     EXPECT_EQ(fsfs.f_bsize, 4096);
@@ -87,21 +88,21 @@ TEST_F(PosixBatch3Test, SocketpairCreatesBidirectionalConnectedPair)
 {
     int sv[2] = {-1, -1};
     int64_t r = SyscallDispatcher::Dispatch(53, 1 /* AF_UNIX */, 1 /* SOCK_STREAM */, 0,
-                                           reinterpret_cast<uint64_t>(sv), 0, 0);
+                                            reinterpret_cast<uint64_t>(sv), 0, 0);
     ASSERT_EQ(r, 0);
     ASSERT_GE(sv[0], 3);
     ASSERT_GE(sv[1], 3);
     EXPECT_NE(sv[0], sv[1]);
 
     const char msg1[] = "Hello from sv0";
-    int64_t sent = SyscallDispatcher::Dispatch(44, static_cast<uint64_t>(sv[0]),
-                                               reinterpret_cast<uint64_t>(msg1), sizeof(msg1), 0, 0, 0);
+    int64_t sent = SyscallDispatcher::Dispatch(
+        44, static_cast<uint64_t>(sv[0]), reinterpret_cast<uint64_t>(msg1), sizeof(msg1), 0, 0, 0);
     EXPECT_EQ(sent, static_cast<int64_t>(sizeof(msg1)));
 
     char recv_buf[64]{};
     int64_t recvd = SyscallDispatcher::Dispatch(45, static_cast<uint64_t>(sv[1]),
-                                                reinterpret_cast<uint64_t>(recv_buf), sizeof(recv_buf),
-                                                0, 0, 0);
+                                                reinterpret_cast<uint64_t>(recv_buf),
+                                                sizeof(recv_buf), 0, 0, 0);
     EXPECT_EQ(recvd, static_cast<int64_t>(sizeof(msg1)));
     EXPECT_STREQ(recv_buf, msg1);
 
@@ -112,8 +113,8 @@ TEST_F(PosixBatch3Test, SocketpairCreatesBidirectionalConnectedPair)
 
     std::memset(recv_buf, 0, sizeof(recv_buf));
     recvd = SyscallDispatcher::Dispatch(45, static_cast<uint64_t>(sv[0]),
-                                        reinterpret_cast<uint64_t>(recv_buf), sizeof(recv_buf),
-                                        0, 0, 0);
+                                        reinterpret_cast<uint64_t>(recv_buf), sizeof(recv_buf), 0,
+                                        0, 0);
     EXPECT_EQ(recvd, static_cast<int64_t>(sizeof(msg2)));
     EXPECT_STREQ(recv_buf, msg2);
 
@@ -130,8 +131,9 @@ TEST_F(PosixBatch3Test, PipeDelegatesToPipe2)
     ASSERT_GE(pipefds[1], 3);
 
     const char data[] = "Pipe IPC test";
-    int64_t w = SyscallDispatcher::Dispatch(1, static_cast<uint64_t>(pipefds[1]),
-                                            reinterpret_cast<uint64_t>(data), sizeof(data), 0, 0, 0);
+    int64_t w =
+        SyscallDispatcher::Dispatch(1, static_cast<uint64_t>(pipefds[1]),
+                                    reinterpret_cast<uint64_t>(data), sizeof(data), 0, 0, 0);
     EXPECT_EQ(w, static_cast<int64_t>(sizeof(data)));
 
     char read_buf[32]{};
@@ -155,15 +157,17 @@ TEST_F(PosixBatch3Test, FchmodAndFchmodatToggleReadonlyAttribute)
     }
 
     // sys_fchmodat with 0444 (read-only)
-    int64_t r1 = SyscallDispatcher::Dispatch(268, static_cast<uint64_t>(LINUX_AT_FDCWD),
-                                             reinterpret_cast<uint64_t>(rel_path.c_str()), 0444, 0, 0, 0);
+    int64_t r1 =
+        SyscallDispatcher::Dispatch(268, static_cast<uint64_t>(LINUX_AT_FDCWD),
+                                    reinterpret_cast<uint64_t>(rel_path.c_str()), 0444, 0, 0, 0);
     EXPECT_EQ(r1, 0);
     DWORD attrs = GetFileAttributesW(host_file.wstring().c_str());
     EXPECT_TRUE((attrs & FILE_ATTRIBUTE_READONLY) != 0);
 
     // Open read-only to test sys_fchmod
-    int64_t fd = SyscallDispatcher::Dispatch(257, static_cast<uint64_t>(LINUX_AT_FDCWD),
-                                             reinterpret_cast<uint64_t>(rel_path.c_str()), 0, 0, 0, 0);
+    int64_t fd =
+        SyscallDispatcher::Dispatch(257, static_cast<uint64_t>(LINUX_AT_FDCWD),
+                                    reinterpret_cast<uint64_t>(rel_path.c_str()), 0, 0, 0, 0);
     ASSERT_GE(fd, 3);
 
     // Restore write permissions via sys_fchmod (0644)
@@ -185,20 +189,21 @@ TEST_F(PosixBatch3Test, FchownAndFchownatValidateExistenceAndReturnZero)
     }
 
     // Existing file -> success
-    int64_t r1 = SyscallDispatcher::Dispatch(260, static_cast<uint64_t>(LINUX_AT_FDCWD),
-                                             reinterpret_cast<uint64_t>(rel_path.c_str()), 1000, 1000,
-                                             0, 0);
+    int64_t r1 =
+        SyscallDispatcher::Dispatch(260, static_cast<uint64_t>(LINUX_AT_FDCWD),
+                                    reinterpret_cast<uint64_t>(rel_path.c_str()), 1000, 1000, 0, 0);
     EXPECT_EQ(r1, 0);
 
     // Non-existent file -> LINUX_ENOENT
     int64_t r2 = SyscallDispatcher::Dispatch(260, static_cast<uint64_t>(LINUX_AT_FDCWD),
-                                             reinterpret_cast<uint64_t>("no_such_file.txt"), 1000, 1000,
-                                             0, 0);
+                                             reinterpret_cast<uint64_t>("no_such_file.txt"), 1000,
+                                             1000, 0, 0);
     EXPECT_EQ(r2, LINUX_ENOENT);
 
     // Open file for sys_fchown
-    int64_t fd = SyscallDispatcher::Dispatch(257, static_cast<uint64_t>(LINUX_AT_FDCWD),
-                                             reinterpret_cast<uint64_t>(rel_path.c_str()), 0, 0, 0, 0);
+    int64_t fd =
+        SyscallDispatcher::Dispatch(257, static_cast<uint64_t>(LINUX_AT_FDCWD),
+                                    reinterpret_cast<uint64_t>(rel_path.c_str()), 0, 0, 0, 0);
     ASSERT_GE(fd, 3);
 
     int64_t r3 = SyscallDispatcher::Dispatch(93, static_cast<uint64_t>(fd), 1000, 1000, 0, 0, 0);
@@ -221,10 +226,9 @@ TEST_F(PosixBatch3Test, LinkatCreatesHardLink)
         ofs << "original hard link file";
     }
 
-    int64_t r = SyscallDispatcher::Dispatch(265, static_cast<uint64_t>(LINUX_AT_FDCWD),
-                                            reinterpret_cast<uint64_t>(orig_path.c_str()),
-                                            static_cast<uint64_t>(LINUX_AT_FDCWD),
-                                            reinterpret_cast<uint64_t>(link_path.c_str()), 0, 0);
+    int64_t r = SyscallDispatcher::Dispatch(
+        265, static_cast<uint64_t>(LINUX_AT_FDCWD), reinterpret_cast<uint64_t>(orig_path.c_str()),
+        static_cast<uint64_t>(LINUX_AT_FDCWD), reinterpret_cast<uint64_t>(link_path.c_str()), 0, 0);
     EXPECT_EQ(r, 0);
     EXPECT_TRUE(std::filesystem::exists(host_link));
 
@@ -249,8 +253,8 @@ TEST_F(PosixBatch3Test, CloseRangeClosesAndSetsCloexec)
 
     // Set CLOSE_RANGE_CLOEXEC on pipe2 fds
     int64_t r_cloexec = SyscallDispatcher::Dispatch(436, static_cast<uint64_t>(pipe2[0]),
-                                                   static_cast<uint64_t>(pipe2[1]),
-                                                   LINUX_CLOSE_RANGE_CLOEXEC, 0, 0, 0);
+                                                    static_cast<uint64_t>(pipe2[1]),
+                                                    LINUX_CLOSE_RANGE_CLOEXEC, 0, 0, 0);
     EXPECT_EQ(r_cloexec, 0);
     auto desc2_0 = fd_table_.Get(pipe2[0]);
     auto desc2_1 = fd_table_.Get(pipe2[1]);

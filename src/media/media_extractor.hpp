@@ -24,17 +24,17 @@ __attribute__((sysv_abi)) AMediaExtractor *AMediaExtractor_new();
 
 __attribute__((sysv_abi)) media_status_t AMediaExtractor_delete(AMediaExtractor *extractor);
 
-__attribute__((sysv_abi)) media_status_t
-AMediaExtractor_setDataSourceFd(AMediaExtractor *extractor, int fd, int64_t offset,
-                               int64_t length);
+__attribute__((sysv_abi)) media_status_t AMediaExtractor_setDataSourceFd(AMediaExtractor *extractor,
+                                                                         int fd, int64_t offset,
+                                                                         int64_t length);
 
-__attribute__((sysv_abi)) media_status_t
-AMediaExtractor_setDataSource(AMediaExtractor *extractor, const char *location);
+__attribute__((sysv_abi)) media_status_t AMediaExtractor_setDataSource(AMediaExtractor *extractor,
+                                                                       const char *location);
 
 __attribute__((sysv_abi)) size_t AMediaExtractor_getTrackCount(AMediaExtractor *extractor);
 
 __attribute__((sysv_abi)) AMediaFormat *AMediaExtractor_getTrackFormat(AMediaExtractor *extractor,
-                                                                      size_t idx);
+                                                                       size_t idx);
 
 __attribute__((sysv_abi)) media_status_t AMediaExtractor_selectTrack(AMediaExtractor *extractor,
                                                                      size_t idx);
@@ -43,8 +43,7 @@ __attribute__((sysv_abi)) media_status_t AMediaExtractor_unselectTrack(AMediaExt
                                                                        size_t idx);
 
 __attribute__((sysv_abi)) int64_t AMediaExtractor_readSampleData(AMediaExtractor *extractor,
-                                                                uint8_t *buffer,
-                                                                size_t capacity);
+                                                                 uint8_t *buffer, size_t capacity);
 
 __attribute__((sysv_abi)) int64_t AMediaExtractor_getSampleSize(AMediaExtractor *extractor);
 
@@ -57,6 +56,6 @@ __attribute__((sysv_abi)) uint32_t AMediaExtractor_getSampleFlags(AMediaExtracto
 __attribute__((sysv_abi)) bool AMediaExtractor_advance(AMediaExtractor *extractor);
 
 __attribute__((sysv_abi)) media_status_t AMediaExtractor_seekTo(AMediaExtractor *extractor,
-                                                               int64_t timeUs, int mode);
+                                                                int64_t timeUs, int mode);
 
 } // extern "C"

@@ -99,8 +99,8 @@ using PFN_glIsSync = GLboolean(APIENTRY *)(GLsync sync);
 using PFN_glDeleteSync = void(APIENTRY *)(GLsync sync);
 using PFN_glClientWaitSync = GLenum(APIENTRY *)(GLsync sync, GLbitfield flags, GLuint64 timeout);
 using PFN_glWaitSync = void(APIENTRY *)(GLsync sync, GLbitfield flags, GLuint64 timeout);
-using PFN_glGetSynciv = void(APIENTRY *)(GLsync sync, GLenum pname, GLsizei bufSize, GLsizei *length,
-                                         GLint *values);
+using PFN_glGetSynciv = void(APIENTRY *)(GLsync sync, GLenum pname, GLsizei bufSize,
+                                         GLsizei *length, GLint *values);
 
 // Uniform Buffer Objects (GL 3.1 / ARB_uniform_buffer_object)
 using PFN_glBindBufferBase = void(APIENTRY *)(GLenum target, GLuint index, GLuint buffer);
@@ -147,8 +147,9 @@ using PFN_glTexStorage2D = void(APIENTRY *)(GLenum target, GLsizei levels, GLenu
 using PFN_glTexStorage3D = void(APIENTRY *)(GLenum target, GLsizei levels, GLenum internalformat,
                                             GLsizei width, GLsizei height, GLsizei depth);
 using PFN_glTexImage3D = void(APIENTRY *)(GLenum target, GLint level, GLint internalformat,
-                                          GLsizei width, GLsizei height, GLsizei depth, GLint border,
-                                          GLenum format, GLenum type, const void *pixels);
+                                          GLsizei width, GLsizei height, GLsizei depth,
+                                          GLint border, GLenum format, GLenum type,
+                                          const void *pixels);
 using PFN_glTexSubImage3D = void(APIENTRY *)(GLenum target, GLint level, GLint xoffset,
                                              GLint yoffset, GLint zoffset, GLsizei width,
                                              GLsizei height, GLsizei depth, GLenum format,

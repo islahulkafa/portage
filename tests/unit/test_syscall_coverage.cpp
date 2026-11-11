@@ -151,9 +151,9 @@ TEST_F(SyscallCoverageTest, RenameMovesFile)
     }
     ASSERT_TRUE(std::filesystem::exists(src));
 
-    int64_t ret = SyscallDispatcher::Dispatch(82, reinterpret_cast<uint64_t>("/original.txt"),
-                                              reinterpret_cast<uint64_t>("/renamed.txt"), 0, 0, 0,
-                                              0);
+    int64_t ret =
+        SyscallDispatcher::Dispatch(82, reinterpret_cast<uint64_t>("/original.txt"),
+                                    reinterpret_cast<uint64_t>("/renamed.txt"), 0, 0, 0, 0);
     EXPECT_EQ(ret, 0);
     EXPECT_FALSE(std::filesystem::exists(src));
     EXPECT_TRUE(std::filesystem::exists(dst));
@@ -215,9 +215,8 @@ TEST_F(SyscallCoverageTest, SendmsgRecvmsgLoopback)
     sin.sin_addr.addr = 0x0100007f; // 127.0.0.1 in network byte order
     sin.sin_port = 0;
 
-    int64_t r_bind = SyscallDispatcher::Dispatch(49, static_cast<uint64_t>(sock),
-                                                 reinterpret_cast<uint64_t>(&sin), sizeof(sin), 0,
-                                                 0, 0);
+    int64_t r_bind = SyscallDispatcher::Dispatch(
+        49, static_cast<uint64_t>(sock), reinterpret_cast<uint64_t>(&sin), sizeof(sin), 0, 0, 0);
     ASSERT_EQ(r_bind, 0);
 
     socklen_t slen = sizeof(sin);

@@ -250,10 +250,14 @@ struct android_dlextinfo {
 };
 
 constexpr uint16_t SHN_UNDEF = 0;
+constexpr unsigned char STB_LOCAL = 0;
+constexpr unsigned char STB_GLOBAL = 1;
+constexpr unsigned char STB_WEAK = 2;
 constexpr unsigned char STT_NOTYPE = 0;
 constexpr unsigned char STT_OBJECT = 1;
 constexpr unsigned char STT_FUNC = 2;
 constexpr unsigned char STT_TLS = 6;
+inline unsigned char ELF64_ST_BIND(unsigned char i) { return static_cast<unsigned char>(i >> 4); }
 inline unsigned char ELF64_ST_TYPE(unsigned char i) { return static_cast<unsigned char>(i & 0xf); }
 
 constexpr uint32_t R_X86_64_NONE = 0;

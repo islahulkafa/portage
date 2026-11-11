@@ -30,8 +30,7 @@ class ClipboardManager {
     bool SetUri(const std::string &uri, const std::string &label = "");
     std::string GetUri();
 
-    bool SetImage(const std::vector<uint8_t> &data,
-                  const std::string &mime = MIMETYPE_IMAGE_PNG,
+    bool SetImage(const std::vector<uint8_t> &data, const std::string &mime = MIMETYPE_IMAGE_PNG,
                   const std::string &label = "");
 
     void AddPrimaryClipChangedListener(AClipboard_OnPrimaryClipChangedListener callback,

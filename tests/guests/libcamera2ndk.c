@@ -34,6 +34,12 @@ typedef struct ACameraIdList {
     const char **cameraIds;
 } ACameraIdList;
 
+typedef struct ACameraManager_AvailabilityCallbacks {
+    void *context;
+    void (*onCameraAvailable)(void *context, const char *cameraId);
+    void (*onCameraUnavailable)(void *context, const char *cameraId);
+} ACameraManager_AvailabilityCallbacks;
+
 typedef struct ACameraDevice_StateCallbacks {
     void *context;
     void (*onDisconnected)(void *context, ACameraDevice *device);
@@ -52,16 +58,16 @@ typedef struct ACameraCaptureSession_captureCallbacks {
     void (*onCaptureStarted)(void *context, ACameraCaptureSession *session,
                              const ACaptureRequest *request, int64_t timestamp);
     void (*onCaptureProgressed)(void *context, ACameraCaptureSession *session,
-                               ACaptureRequest *request, const ACameraMetadata *result);
+                                ACaptureRequest *request, const ACameraMetadata *result);
     void (*onCaptureCompleted)(void *context, ACameraCaptureSession *session,
-                              ACaptureRequest *request, const ACameraMetadata *result);
-    void (*onCaptureFailed)(void *context, ACameraCaptureSession *session,
-                            ACaptureRequest *request, void *failure);
+                               ACaptureRequest *request, const ACameraMetadata *result);
+    void (*onCaptureFailed)(void *context, ACameraCaptureSession *session, ACaptureRequest *request,
+                            void *failure);
     void (*onCaptureSequenceCompleted)(void *context, ACameraCaptureSession *session,
                                        int sequenceId, int64_t frameNumber);
     void (*onCaptureSequenceAborted)(void *context, ACameraCaptureSession *session, int sequenceId);
     void (*onCaptureBufferLost)(void *context, ACameraCaptureSession *session,
-                               ACaptureRequest *request, void *window, int64_t frameNumber);
+                                ACaptureRequest *request, void *window, int64_t frameNumber);
 } ACameraCaptureSession_captureCallbacks;
 
 typedef struct ACameraMetadata_const_entry {
@@ -102,9 +108,8 @@ ACameraManager_deleteCameraIdList(ACameraIdList *cameraIdList)
     (void)cameraIdList;
 }
 
-__attribute__((visibility("default"))) int32_t
-ACameraManager_getCameraCharacteristics(ACameraManager *manager, const char *cameraId,
-                                        ACameraMetadata **characteristics)
+__attribute__((visibility("default"))) int32_t ACameraManager_getCameraCharacteristics(
+    ACameraManager *manager, const char *cameraId, ACameraMetadata **characteristics)
 {
     (void)manager;
     (void)cameraId;
@@ -123,16 +128,16 @@ ACameraManager_openCamera(ACameraManager *manager, const char *cameraId,
     return 0;
 }
 
-__attribute__((visibility("default"))) int32_t
-ACameraManager_registerAvailabilityCallback(ACameraManager *manager, const void *callback)
+__attribute__((visibility("default"))) int32_t ACameraManager_registerAvailabilityCallback(
+    ACameraManager *manager, const ACameraManager_AvailabilityCallbacks *callback)
 {
     (void)manager;
     (void)callback;
     return 0;
 }
 
-__attribute__((visibility("default"))) int32_t
-ACameraManager_unregisterAvailabilityCallback(ACameraManager *manager, const void *callback)
+__attribute__((visibility("default"))) int32_t ACameraManager_unregisterAvailabilityCallback(
+    ACameraManager *manager, const ACameraManager_AvailabilityCallbacks *callback)
 {
     (void)manager;
     (void)callback;
@@ -151,9 +156,8 @@ __attribute__((visibility("default"))) const char *ACameraDevice_getId(const ACa
     return "";
 }
 
-__attribute__((visibility("default"))) int32_t
-ACameraDevice_createCaptureRequest(const ACameraDevice *device, int templateId,
-                                   ACaptureRequest **request)
+__attribute__((visibility("default"))) int32_t ACameraDevice_createCaptureRequest(
+    const ACameraDevice *device, int templateId, ACaptureRequest **request)
 {
     (void)device;
     (void)templateId;
@@ -161,11 +165,9 @@ ACameraDevice_createCaptureRequest(const ACameraDevice *device, int templateId,
     return 0;
 }
 
-__attribute__((visibility("default"))) int32_t
-ACameraDevice_createCaptureSession(ACameraDevice *device,
-                                   const ACaptureSessionOutputContainer *outputs,
-                                   const ACameraCaptureSession_stateCallbacks *callbacks,
-                                   ACameraCaptureSession **session)
+__attribute__((visibility("default"))) int32_t ACameraDevice_createCaptureSession(
+    ACameraDevice *device, const ACaptureSessionOutputContainer *outputs,
+    const ACameraCaptureSession_stateCallbacks *callbacks, ACameraCaptureSession **session)
 {
     (void)device;
     (void)outputs;
@@ -177,8 +179,8 @@ ACameraDevice_createCaptureSession(ACameraDevice *device,
 __attribute__((visibility("default"))) int32_t
 ACameraDevice_createCaptureSessionWithSessionParameters(
     ACameraDevice *device, const ACaptureSessionOutputContainer *outputs,
-    const ACameraMetadata *sessionParameters,
-    const ACameraCaptureSession_stateCallbacks *callbacks, ACameraCaptureSession **session)
+    const ACameraMetadata *sessionParameters, const ACameraCaptureSession_stateCallbacks *callbacks,
+    ACameraCaptureSession **session)
 {
     (void)device;
     (void)outputs;
@@ -217,9 +219,10 @@ ACaptureRequest_getAllOptions(const ACaptureRequest *request, ACameraMetadata **
     return 0;
 }
 
-__attribute__((visibility("default"))) int32_t
-ACaptureRequest_setEntry_u8(ACaptureRequest *request, uint32_t tag, uint32_t count,
-                            const uint8_t *data)
+__attribute__((visibility("default"))) int32_t ACaptureRequest_setEntry_u8(ACaptureRequest *request,
+                                                                           uint32_t tag,
+                                                                           uint32_t count,
+                                                                           const uint8_t *data)
 {
     (void)request;
     (void)tag;
@@ -228,9 +231,8 @@ ACaptureRequest_setEntry_u8(ACaptureRequest *request, uint32_t tag, uint32_t cou
     return 0;
 }
 
-__attribute__((visibility("default"))) int32_t
-ACaptureRequest_setEntry_i32(ACaptureRequest *request, uint32_t tag, uint32_t count,
-                             const int32_t *data)
+__attribute__((visibility("default"))) int32_t ACaptureRequest_setEntry_i32(
+    ACaptureRequest *request, uint32_t tag, uint32_t count, const int32_t *data)
 {
     (void)request;
     (void)tag;
@@ -239,9 +241,8 @@ ACaptureRequest_setEntry_i32(ACaptureRequest *request, uint32_t tag, uint32_t co
     return 0;
 }
 
-__attribute__((visibility("default"))) int32_t
-ACaptureRequest_setEntry_float(ACaptureRequest *request, uint32_t tag, uint32_t count,
-                               const float *data)
+__attribute__((visibility("default"))) int32_t ACaptureRequest_setEntry_float(
+    ACaptureRequest *request, uint32_t tag, uint32_t count, const float *data)
 {
     (void)request;
     (void)tag;
@@ -277,10 +278,9 @@ __attribute__((visibility("default"))) int32_t ACameraCaptureSession_setRepeatin
     return 0;
 }
 
-__attribute__((visibility("default"))) int32_t
-ACameraCaptureSession_capture(ACameraCaptureSession *session,
-                              ACameraCaptureSession_captureCallbacks *callbacks, int numRequests,
-                              ACaptureRequest **requests, int *captureSequenceId)
+__attribute__((visibility("default"))) int32_t ACameraCaptureSession_capture(
+    ACameraCaptureSession *session, ACameraCaptureSession_captureCallbacks *callbacks,
+    int numRequests, ACaptureRequest **requests, int *captureSequenceId)
 {
     (void)session;
     (void)callbacks;
@@ -344,18 +344,16 @@ ACaptureSessionOutputContainer_free(ACaptureSessionOutputContainer *container)
     (void)container;
 }
 
-__attribute__((visibility("default"))) int32_t
-ACaptureSessionOutputContainer_add(ACaptureSessionOutputContainer *container,
-                                   const ACaptureSessionOutput *output)
+__attribute__((visibility("default"))) int32_t ACaptureSessionOutputContainer_add(
+    ACaptureSessionOutputContainer *container, const ACaptureSessionOutput *output)
 {
     (void)container;
     (void)output;
     return 0;
 }
 
-__attribute__((visibility("default"))) int32_t
-ACaptureSessionOutputContainer_remove(ACaptureSessionOutputContainer *container,
-                                      const ACaptureSessionOutput *output)
+__attribute__((visibility("default"))) int32_t ACaptureSessionOutputContainer_remove(
+    ACaptureSessionOutputContainer *container, const ACaptureSessionOutput *output)
 {
     (void)container;
     (void)output;
@@ -367,9 +365,8 @@ __attribute__((visibility("default"))) void ACameraMetadata_free(ACameraMetadata
     (void)metadata;
 }
 
-__attribute__((visibility("default"))) int32_t
-ACameraMetadata_getConstEntry(const ACameraMetadata *metadata, uint32_t tag,
-                              ACameraMetadata_const_entry *entry)
+__attribute__((visibility("default"))) int32_t ACameraMetadata_getConstEntry(
+    const ACameraMetadata *metadata, uint32_t tag, ACameraMetadata_const_entry *entry)
 {
     (void)metadata;
     (void)tag;

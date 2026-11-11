@@ -71,9 +71,8 @@ void SyscallDispatcher::Shutdown() noexcept
     fd_table_ = nullptr;
 }
 
-static int64_t DoSelect(int nfds, LinuxFdSet *readfds, LinuxFdSet *writefds,
-                        LinuxFdSet *exceptfds, int timeout_ms,
-                        fs::FileDescriptorTable *fd_table)
+static int64_t DoSelect(int nfds, LinuxFdSet *readfds, LinuxFdSet *writefds, LinuxFdSet *exceptfds,
+                        int timeout_ms, fs::FileDescriptorTable *fd_table)
 {
     if (nfds < 0 || nfds > static_cast<int>(LINUX_FD_SETSIZE)) {
         return LINUX_EINVAL;
@@ -131,8 +130,8 @@ static int64_t DoSelect(int nfds, LinuxFdSet *readfds, LinuxFdSet *writefds,
         return 0;
     }
 
-    int poll_res = poll::EpollManager::Instance().Poll(poll_fds.data(), poll_fds.size(),
-                                                       timeout_ms, fd_table);
+    int poll_res =
+        poll::EpollManager::Instance().Poll(poll_fds.data(), poll_fds.size(), timeout_ms, fd_table);
     if (poll_res < 0) {
         return poll_res;
     }
@@ -149,8 +148,9 @@ static int64_t DoSelect(int nfds, LinuxFdSet *readfds, LinuxFdSet *writefds,
     for (size_t i = 0; i < poll_fds.size(); ++i) {
         const auto &pfd = poll_fds[i];
         const auto &w = watched[i];
-        bool ready_r = w.in_read &&
-                       (pfd.revents & (poll::LINUX_POLLIN | poll::LINUX_POLLHUP | poll::LINUX_POLLERR));
+        bool ready_r =
+            w.in_read &&
+            (pfd.revents & (poll::LINUX_POLLIN | poll::LINUX_POLLHUP | poll::LINUX_POLLERR));
         bool ready_w = w.in_write && (pfd.revents & (poll::LINUX_POLLOUT | poll::LINUX_POLLERR));
         bool ready_e = w.in_except && (pfd.revents & (poll::LINUX_POLLPRI | poll::LINUX_POLLERR));
 
@@ -521,6 +521,11 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         break;
     }
 
+    case 4: { // sys_stat(filename, statbuf)
+        ret = Dispatch(262, static_cast<uint64_t>(-100), a1, a2, 0, 0, 0);
+        break;
+    }
+
     case 5: { // sys_fstat(fd, statbuf)
         int fd = static_cast<int>(a1);
         auto *sb = reinterpret_cast<LinuxStat64 *>(a2);
@@ -660,6 +665,11 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         } else {
             ret = LINUX_EBADF;
         }
+        break;
+    }
+
+    case 6: { // sys_lstat(filename, statbuf)
+        ret = Dispatch(262, static_cast<uint64_t>(-100), a1, a2, 0x100, 0, 0);
         break;
     }
 
@@ -1296,8 +1306,7 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             }
         }
 
-        if (new_size <= old_size &&
-            (flags & (LINUX_MREMAP_FIXED | LINUX_MREMAP_DONTUNMAP)) == 0) {
+        if (new_size <= old_size && (flags & (LINUX_MREMAP_FIXED | LINUX_MREMAP_DONTUNMAP)) == 0) {
             size_t old_aligned = (old_size + mem::PAGE_SIZE_4KB - 1) & ~(mem::PAGE_SIZE_4KB - 1);
             size_t new_aligned = (new_size + mem::PAGE_SIZE_4KB - 1) & ~(mem::PAGE_SIZE_4KB - 1);
             if (old_aligned > new_aligned) {
@@ -1331,8 +1340,8 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
 
         DWORD prev_prot = 0;
         bool restore_src = false;
-        if ((old_prot & (PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ |
-                         PAGE_EXECUTE_READWRITE)) == 0) {
+        if ((old_prot &
+             (PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE)) == 0) {
             VirtualProtect(old_address, old_size, PAGE_READONLY, &prev_prot);
             restore_src = true;
         }
@@ -1377,7 +1386,7 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         bool valid = true;
         for (size_t i = 0; i < num_pages; ++i) {
             void *p = reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(start) +
-                                                i * mem::PAGE_SIZE_4KB);
+                                               i * mem::PAGE_SIZE_4KB);
             MEMORY_BASIC_INFORMATION mbi{};
             if (VirtualQuery(p, &mbi, sizeof(mbi)) == 0 || mbi.State == MEM_FREE) {
                 valid = false;
@@ -1509,8 +1518,8 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                     }
                 }
             } else {
-                nread = Dispatch(0, in_fd, reinterpret_cast<uint64_t>(buffer.data()), to_read, 0,
-                                 0, 0);
+                nread =
+                    Dispatch(0, in_fd, reinterpret_cast<uint64_t>(buffer.data()), to_read, 0, 0, 0);
             }
 
             if (nread <= 0) {
@@ -2293,8 +2302,9 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         }
         if (desc->dev == fs::DeviceType::Regular) {
             std::vector<wchar_t> path_buf(MAX_PATH);
-            DWORD len = GetFinalPathNameByHandleW(
-                desc->handle, path_buf.data(), static_cast<DWORD>(path_buf.size()), FILE_NAME_NORMALIZED);
+            DWORD len = GetFinalPathNameByHandleW(desc->handle, path_buf.data(),
+                                                  static_cast<DWORD>(path_buf.size()),
+                                                  FILE_NAME_NORMALIZED);
             if (len > 0 && len < path_buf.size()) {
                 const wchar_t *actual_path = path_buf.data();
                 if (wcsncmp(actual_path, L"\\\\?\\", 4) == 0) {
@@ -2311,7 +2321,8 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 }
             } else {
                 FILE_BASIC_INFO info{};
-                if (GetFileInformationByHandleEx(desc->handle, FileBasicInfo, &info, sizeof(info))) {
+                if (GetFileInformationByHandleEx(desc->handle, FileBasicInfo, &info,
+                                                 sizeof(info))) {
                     if ((mode & 0222) == 0) {
                         info.FileAttributes |= FILE_ATTRIBUTE_READONLY;
                     } else {
@@ -2369,9 +2380,10 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
 
         FILETIME creation_time{}, exit_time{}, kernel_time{}, user_time{};
         HANDLE target = (who == LINUX_RUSAGE_THREAD) ? GetCurrentThread() : GetCurrentProcess();
-        BOOL ok = (who == LINUX_RUSAGE_THREAD)
-                      ? GetThreadTimes(target, &creation_time, &exit_time, &kernel_time, &user_time)
-                      : GetProcessTimes(target, &creation_time, &exit_time, &kernel_time, &user_time);
+        BOOL ok =
+            (who == LINUX_RUSAGE_THREAD)
+                ? GetThreadTimes(target, &creation_time, &exit_time, &kernel_time, &user_time)
+                : GetProcessTimes(target, &creation_time, &exit_time, &kernel_time, &user_time);
 
         if (ok) {
             ULARGE_INTEGER u_user, u_kern;
@@ -2507,8 +2519,9 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         bool queried = false;
         if (desc->handle != INVALID_HANDLE_VALUE) {
             std::vector<wchar_t> path_buf(MAX_PATH);
-            DWORD len = GetFinalPathNameByHandleW(
-                desc->handle, path_buf.data(), static_cast<DWORD>(path_buf.size()), FILE_NAME_NORMALIZED);
+            DWORD len = GetFinalPathNameByHandleW(desc->handle, path_buf.data(),
+                                                  static_cast<DWORD>(path_buf.size()),
+                                                  FILE_NAME_NORMALIZED);
             if (len > 0 && len < path_buf.size()) {
                 queried = GetDiskFreeSpaceExW(path_buf.data(), &free_bytes_avail, &total_bytes,
                                               &total_free_bytes);
@@ -3019,7 +3032,7 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         if (resolved.dev_type == fs::DeviceType::Directory || (flags & LINUX_O_DIRECTORY)) {
             std::string proc_target = fs::ProcFs::CanonicalizePath(
                 fs::ProcFs::IsProcPath(resolved.host_path.string()) ? resolved.host_path.string()
-                                                                   : pathname);
+                                                                    : pathname);
             if (fs::ProcFs::IsProcPath(proc_target)) {
                 auto entries = fs::ProcFs::ListDir(proc_target, fd_table_);
                 ret = fd_table_->AllocateDirectory(flags, pathname, std::move(entries));
@@ -4127,8 +4140,7 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         uint64_t initval = a1;
         int flags = static_cast<int>(a2);
 
-        constexpr int valid_flags =
-            LINUX_EFD_SEMAPHORE | LINUX_EFD_NONBLOCK | LINUX_EFD_CLOEXEC;
+        constexpr int valid_flags = LINUX_EFD_SEMAPHORE | LINUX_EFD_NONBLOCK | LINUX_EFD_CLOEXEC;
         if ((flags & ~valid_flags) != 0) {
             ret = LINUX_EINVAL;
             break;
@@ -4337,9 +4349,9 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             break;
         }
 
-        NTSTATUS status = BCryptGenRandom(nullptr, static_cast<PUCHAR>(buf),
-                                          static_cast<ULONG>(buflen),
-                                          BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+        NTSTATUS status =
+            BCryptGenRandom(nullptr, static_cast<PUCHAR>(buf), static_cast<ULONG>(buflen),
+                            BCRYPT_USE_SYSTEM_PREFERRED_RNG);
         if (BCRYPT_SUCCESS(status)) {
             ret = static_cast<int64_t>(buflen);
         } else {

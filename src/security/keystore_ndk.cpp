@@ -22,10 +22,7 @@ __attribute__((sysv_abi)) AKeyStore *AKeyStore_create()
     return store;
 }
 
-__attribute__((sysv_abi)) void AKeyStore_delete(AKeyStore *store)
-{
-    delete store;
-}
+__attribute__((sysv_abi)) void AKeyStore_delete(AKeyStore *store) { delete store; }
 
 __attribute__((sysv_abi)) int32_t AKeyStore_containsAlias(AKeyStore *store, const char *alias)
 {
@@ -44,7 +41,7 @@ __attribute__((sysv_abi)) int32_t AKeyStore_deleteKey(AKeyStore *store, const ch
 }
 
 __attribute__((sysv_abi)) int32_t AKeyStore_listAliases(AKeyStore *store,
-                                                         AKeyStore_AliasList **outList)
+                                                        AKeyStore_AliasList **outList)
 {
     if (!store || !store->mgr || !outList) {
         return -1;
@@ -92,8 +89,8 @@ __attribute__((sysv_abi)) void AKeyStore_deleteAliasList(AKeyStore_AliasList *li
 }
 
 __attribute__((sysv_abi)) int32_t AKeyStore_generateAesKey(AKeyStore *store, const char *alias,
-                                                            int32_t keyBits, int32_t blockMode,
-                                                            int32_t padding)
+                                                           int32_t keyBits, int32_t blockMode,
+                                                           int32_t padding)
 {
     if (!store || !store->mgr || !alias) {
         return -1;
@@ -118,9 +115,8 @@ __attribute__((sysv_abi)) int32_t AKeyStore_generateRsaKeyPair(AKeyStore *store,
     Padding pad = (padding == 2) ? Padding::Oaep : Padding::Pkcs1;
     uint32_t purposes = PurposeEncrypt | PurposeDecrypt | PurposeSign | PurposeVerify;
 
-    auto status = store->mgr->GenerateKeyPair(alias, KeyAlgorithm::Rsa,
-                                              static_cast<size_t>(keyBits), purposes,
-                                              Digest::Sha256, pad);
+    auto status = store->mgr->GenerateKeyPair(
+        alias, KeyAlgorithm::Rsa, static_cast<size_t>(keyBits), purposes, Digest::Sha256, pad);
     return (status == KeyStoreStatus::Success) ? 0 : -1;
 }
 
@@ -241,9 +237,6 @@ __attribute__((sysv_abi)) int32_t AKeyStore_verify(AKeyStore *store, const char 
     return (status == KeyStoreStatus::Success) ? 0 : -1;
 }
 
-__attribute__((sysv_abi)) void AKeyStore_freeBuffer(void *buf)
-{
-    std::free(buf);
-}
+__attribute__((sysv_abi)) void AKeyStore_freeBuffer(void *buf) { std::free(buf); }
 
 } // extern "C"

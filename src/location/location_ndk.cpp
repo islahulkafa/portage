@@ -16,9 +16,7 @@ __attribute__((sysv_abi)) ALocationManager *ALocationManager_create()
     return &g_default_location_manager;
 }
 
-__attribute__((sysv_abi)) void ALocationManager_destroy(ALocationManager *)
-{
-}
+__attribute__((sysv_abi)) void ALocationManager_destroy(ALocationManager *) {}
 
 __attribute__((sysv_abi)) int ALocationManager_isProviderEnabled(ALocationManager *,
                                                                  const char *provider)
@@ -37,21 +35,22 @@ __attribute__((sysv_abi)) ALocation *ALocationManager_getLastKnownLocation(ALoca
     return new ALocation(fix);
 }
 
-__attribute__((sysv_abi)) int ALocationManager_requestLocationUpdates(
-    ALocationManager *, const char *provider, int64_t min_time_ms, float min_distance_m,
-    ALocationListener_onLocationChanged callback, void *context)
+__attribute__((sysv_abi)) int
+ALocationManager_requestLocationUpdates(ALocationManager *, const char *provider,
+                                        int64_t min_time_ms, float min_distance_m,
+                                        ALocationListener_onLocationChanged callback, void *context)
 {
     if (!callback) {
         return -1;
     }
     std::string prov = provider ? provider : "gps";
     LocationManager::Instance().RequestLocationUpdates(prov, min_time_ms, min_distance_m, callback,
-                                                      context);
+                                                       context);
     return 0;
 }
 
-__attribute__((sysv_abi)) int ALocationManager_removeUpdates(
-    ALocationManager *, ALocationListener_onLocationChanged callback)
+__attribute__((sysv_abi)) int
+ALocationManager_removeUpdates(ALocationManager *, ALocationListener_onLocationChanged callback)
 {
     if (!callback) {
         return -1;
@@ -120,22 +119,20 @@ __attribute__((sysv_abi)) int ALocation_hasAccuracy(const ALocation *loc)
     return (loc && loc->has_accuracy) ? 1 : 0;
 }
 
-__attribute__((sysv_abi)) void ALocation_destroy(ALocation *loc)
-{
-    delete loc;
-}
+__attribute__((sysv_abi)) void ALocation_destroy(ALocation *loc) { delete loc; }
 
-__attribute__((sysv_abi)) int AGeofenceManager_addCircularGeofence(
-    ALocationManager *, int fence_id, double lat, double lon, float radius_m,
-    int64_t expiration_ms, int64_t dwell_duration_ms, uint32_t transition_mask,
-    AGeofenceListener_onTransition callback, void *context)
+__attribute__((sysv_abi)) int
+AGeofenceManager_addCircularGeofence(ALocationManager *, int fence_id, double lat, double lon,
+                                     float radius_m, int64_t expiration_ms,
+                                     int64_t dwell_duration_ms, uint32_t transition_mask,
+                                     AGeofenceListener_onTransition callback, void *context)
 {
     if (!callback) {
         return -1;
     }
-    bool ok = LocationManager::Instance().AddCircularGeofence(
-        fence_id, lat, lon, radius_m, expiration_ms, dwell_duration_ms, transition_mask, callback,
-        context);
+    bool ok = LocationManager::Instance().AddCircularGeofence(fence_id, lat, lon, radius_m,
+                                                              expiration_ms, dwell_duration_ms,
+                                                              transition_mask, callback, context);
     return ok ? 0 : -1;
 }
 

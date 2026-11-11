@@ -1,5 +1,6 @@
 #include "libandroid_thunks.hpp"
 #include "android_log.hpp"
+#include "bionic_thunks.hpp"
 #include "audio/aaudio_dispatcher.hpp"
 #include "audio/opensles_dispatcher.hpp"
 #include "binder/binder_ndk.hpp"
@@ -17,11 +18,13 @@
 #include "gles/egl_dispatcher.hpp"
 #include "gles/gles_dispatcher.hpp"
 #include "input_queue.hpp"
+#include "image_decoder.hpp"
 #include "jnigraphics.hpp"
 #include "looper.hpp"
 #include "media/media_codec.hpp"
 #include "media/media_extractor.hpp"
 #include "media/media_format.hpp"
+#include "media/media_muxer.hpp"
 #include "mem/shared_memory.hpp"
 #include "ndk/hardware_buffer.hpp"
 #include "ndk/multinetwork.hpp"
@@ -65,6 +68,19 @@ uintptr_t NdkSymbolRegistry::Lookup(std::string_view name) const
 }
 
 size_t NdkSymbolRegistry::Count() const noexcept { return symbols_.size(); }
+
+void NdkSymbolRegistry::RegisterFallback(std::string_view name, uintptr_t address)
+{
+    fallback_symbols_[std::string(name)] = address;
+}
+
+uintptr_t NdkSymbolRegistry::LookupFallback(std::string_view name) const
+{
+    auto it = fallback_symbols_.find(std::string(name));
+    return (it != fallback_symbols_.end()) ? it->second : 0;
+}
+
+size_t NdkSymbolRegistry::FallbackCount() const noexcept { return fallback_symbols_.size(); }
 
 void NdkSymbolRegistry::RegisterAll()
 {
@@ -483,6 +499,12 @@ void NdkSymbolRegistry::RegisterAll()
              reinterpret_cast<uintptr_t>(&audio::AAudioStreamBuilder_setPerformanceMode));
     Register("AAudioStreamBuilder_setSharingMode",
              reinterpret_cast<uintptr_t>(&audio::AAudioStreamBuilder_setSharingMode));
+    Register("AAudioStreamBuilder_setUsage",
+             reinterpret_cast<uintptr_t>(&audio::AAudioStreamBuilder_setUsage));
+    Register("AAudioStreamBuilder_setContentType",
+             reinterpret_cast<uintptr_t>(&audio::AAudioStreamBuilder_setContentType));
+    Register("AAudioStreamBuilder_setInputPreset",
+             reinterpret_cast<uintptr_t>(&audio::AAudioStreamBuilder_setInputPreset));
     Register("AAudioStreamBuilder_openStream",
              reinterpret_cast<uintptr_t>(&audio::AAudioStreamBuilder_openStream));
     Register("AAudioStreamBuilder_delete",
@@ -491,9 +513,13 @@ void NdkSymbolRegistry::RegisterAll()
              reinterpret_cast<uintptr_t>(&audio::AAudioStream_requestStart));
     Register("AAudioStream_requestPause",
              reinterpret_cast<uintptr_t>(&audio::AAudioStream_requestPause));
+    Register("AAudioStream_requestFlush",
+             reinterpret_cast<uintptr_t>(&audio::AAudioStream_requestFlush));
     Register("AAudioStream_requestStop",
              reinterpret_cast<uintptr_t>(&audio::AAudioStream_requestStop));
     Register("AAudioStream_close", reinterpret_cast<uintptr_t>(&audio::AAudioStream_close));
+    Register("AAudioStream_waitForStateChange",
+             reinterpret_cast<uintptr_t>(&audio::AAudioStream_waitForStateChange));
     Register("AAudioStream_write", reinterpret_cast<uintptr_t>(&audio::AAudioStream_write));
     Register("AAudioStream_read", reinterpret_cast<uintptr_t>(&audio::AAudioStream_read));
     Register("AAudioStream_getSampleRate",
@@ -506,6 +532,20 @@ void NdkSymbolRegistry::RegisterAll()
              reinterpret_cast<uintptr_t>(&audio::AAudioStream_getFramesPerDataCallback));
     Register("AAudioStream_getBufferSizeInFrames",
              reinterpret_cast<uintptr_t>(&audio::AAudioStream_getBufferSizeInFrames));
+    Register("AAudioStream_getFramesWritten",
+             reinterpret_cast<uintptr_t>(&audio::AAudioStream_getFramesWritten));
+    Register("AAudioStream_getFramesRead",
+             reinterpret_cast<uintptr_t>(&audio::AAudioStream_getFramesRead));
+    Register("AAudioStream_getTimestamp",
+             reinterpret_cast<uintptr_t>(&audio::AAudioStream_getTimestamp));
+    Register("AAudioStream_getXRunCount",
+             reinterpret_cast<uintptr_t>(&audio::AAudioStream_getXRunCount));
+    Register("AAudioStream_getPerformanceMode",
+             reinterpret_cast<uintptr_t>(&audio::AAudioStream_getPerformanceMode));
+    Register("AAudioStream_getSharingMode",
+             reinterpret_cast<uintptr_t>(&audio::AAudioStream_getSharingMode));
+    Register("AAudioStream_getDeviceId",
+             reinterpret_cast<uintptr_t>(&audio::AAudioStream_getDeviceId));
 
     // OpenSL ES
     Register("slCreateEngine", reinterpret_cast<uintptr_t>(&audio::slCreateEngine));
@@ -516,6 +556,9 @@ void NdkSymbolRegistry::RegisterAll()
     Register("SL_IID_VOLUME", reinterpret_cast<uintptr_t>(&audio::SL_IID_VOLUME));
     Register("SL_IID_BUFFERQUEUE", reinterpret_cast<uintptr_t>(&audio::SL_IID_BUFFERQUEUE));
     Register("SL_IID_RECORD", reinterpret_cast<uintptr_t>(&audio::SL_IID_RECORD));
+    Register("SL_IID_MUTESOLO", reinterpret_cast<uintptr_t>(&audio::SL_IID_MUTESOLO));
+    Register("SL_IID_ANDROIDCONFIGURATION",
+             reinterpret_cast<uintptr_t>(&audio::SL_IID_ANDROIDCONFIGURATION));
 
     // Swappy Frame Pacing (SwappyVk & SwappyGL)
     Register("SwappyVk_initAndGetRefreshCycleDuration",
@@ -526,7 +569,8 @@ void NdkSymbolRegistry::RegisterAll()
     Register("SwappyVk_destroyDevice", reinterpret_cast<uintptr_t>(&SwappyVk_destroyDevice));
     Register("SwappyVk_setTargetFrameRateHz",
              reinterpret_cast<uintptr_t>(&SwappyVk_setTargetFrameRateHz));
-    Register("SwappyVk_getSwapIntervalNS", reinterpret_cast<uintptr_t>(&SwappyVk_getSwapIntervalNS));
+    Register("SwappyVk_getSwapIntervalNS",
+             reinterpret_cast<uintptr_t>(&SwappyVk_getSwapIntervalNS));
     Register("SwappyVk_setAutoSwapInterval",
              reinterpret_cast<uintptr_t>(&SwappyVk_setAutoSwapInterval));
 
@@ -536,7 +580,8 @@ void NdkSymbolRegistry::RegisterAll()
     Register("SwappyGL_destroy", reinterpret_cast<uintptr_t>(&SwappyGL_destroy));
     Register("SwappyGL_setTargetFrameRateHz",
              reinterpret_cast<uintptr_t>(&SwappyGL_setTargetFrameRateHz));
-    Register("SwappyGL_getSwapIntervalNS", reinterpret_cast<uintptr_t>(&SwappyGL_getSwapIntervalNS));
+    Register("SwappyGL_getSwapIntervalNS",
+             reinterpret_cast<uintptr_t>(&SwappyGL_getSwapIntervalNS));
     Register("SwappyGL_setAutoSwapInterval",
              reinterpret_cast<uintptr_t>(&SwappyGL_setAutoSwapInterval));
     Register("SwappyGL_isEnabled", reinterpret_cast<uintptr_t>(&SwappyGL_isEnabled));
@@ -562,8 +607,7 @@ void NdkSymbolRegistry::RegisterAll()
     Register("ACameraDevice_createCaptureSession",
              reinterpret_cast<uintptr_t>(&ACameraDevice_createCaptureSession));
     Register("ACameraDevice_createCaptureSessionWithSessionParameters",
-             reinterpret_cast<uintptr_t>(
-                 &ACameraDevice_createCaptureSessionWithSessionParameters));
+             reinterpret_cast<uintptr_t>(&ACameraDevice_createCaptureSessionWithSessionParameters));
     Register("ACaptureRequest_free", reinterpret_cast<uintptr_t>(&ACaptureRequest_free));
     Register("ACaptureRequest_addTarget", reinterpret_cast<uintptr_t>(&ACaptureRequest_addTarget));
     Register("ACaptureRequest_removeTarget",
@@ -635,10 +679,8 @@ void NdkSymbolRegistry::RegisterAll()
     Register("AKeyStore_containsAlias", reinterpret_cast<uintptr_t>(&AKeyStore_containsAlias));
     Register("AKeyStore_deleteKey", reinterpret_cast<uintptr_t>(&AKeyStore_deleteKey));
     Register("AKeyStore_listAliases", reinterpret_cast<uintptr_t>(&AKeyStore_listAliases));
-    Register("AKeyStore_deleteAliasList",
-             reinterpret_cast<uintptr_t>(&AKeyStore_deleteAliasList));
-    Register("AKeyStore_generateAesKey",
-             reinterpret_cast<uintptr_t>(&AKeyStore_generateAesKey));
+    Register("AKeyStore_deleteAliasList", reinterpret_cast<uintptr_t>(&AKeyStore_deleteAliasList));
+    Register("AKeyStore_generateAesKey", reinterpret_cast<uintptr_t>(&AKeyStore_generateAesKey));
     Register("AKeyStore_generateRsaKeyPair",
              reinterpret_cast<uintptr_t>(&AKeyStore_generateRsaKeyPair));
     Register("AKeyStore_generateEcKeyPair",
@@ -806,6 +848,7 @@ void NdkSymbolRegistry::RegisterAll()
              reinterpret_cast<uintptr_t>(&portage_pthread_attr_getdetachstate));
     Register("pthread_attr_setdetachstate",
              reinterpret_cast<uintptr_t>(&portage_pthread_attr_setdetachstate));
+    RegisterBionicAndRuntimeThunks(*this);
 
     // ATrace
     Register("ATrace_isEnabled", reinterpret_cast<uintptr_t>(&ATrace_isEnabled));
@@ -821,6 +864,63 @@ void NdkSymbolRegistry::RegisterAll()
     Register("AndroidBitmap_unlockPixels",
              reinterpret_cast<uintptr_t>(&AndroidBitmap_unlockPixels));
     Register("AndroidBitmap_getData", reinterpret_cast<uintptr_t>(&AndroidBitmap_getData));
+
+    // AImageDecoder (libjnigraphics API 30+)
+    Register("AImageDecoder_createFromAAsset",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_createFromAAsset));
+    Register("AImageDecoder_createFromBuffer",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_createFromBuffer));
+    Register("AImageDecoder_createFromFd",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_createFromFd));
+    Register("AImageDecoder_delete", reinterpret_cast<uintptr_t>(&AImageDecoder_delete));
+    Register("AImageDecoder_getHeaderInfo",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_getHeaderInfo));
+    Register("AImageDecoderHeaderInfo_getWidth",
+             reinterpret_cast<uintptr_t>(&AImageDecoderHeaderInfo_getWidth));
+    Register("AImageDecoderHeaderInfo_getHeight",
+             reinterpret_cast<uintptr_t>(&AImageDecoderHeaderInfo_getHeight));
+    Register("AImageDecoderHeaderInfo_getMimeType",
+             reinterpret_cast<uintptr_t>(&AImageDecoderHeaderInfo_getMimeType));
+    Register("AImageDecoderHeaderInfo_getDataSpace",
+             reinterpret_cast<uintptr_t>(&AImageDecoderHeaderInfo_getDataSpace));
+    Register("AImageDecoderHeaderInfo_getAndroidBitmapFormat",
+             reinterpret_cast<uintptr_t>(&AImageDecoderHeaderInfo_getAndroidBitmapFormat));
+    Register("AImageDecoderHeaderInfo_getAlphaFlags",
+             reinterpret_cast<uintptr_t>(&AImageDecoderHeaderInfo_getAlphaFlags));
+    Register("AImageDecoder_setAndroidBitmapFormat",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_setAndroidBitmapFormat));
+    Register("AImageDecoder_setUnpremultipliedRequired",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_setUnpremultipliedRequired));
+    Register("AImageDecoder_setDataSpace",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_setDataSpace));
+    Register("AImageDecoder_setTargetSize",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_setTargetSize));
+    Register("AImageDecoder_setCrop", reinterpret_cast<uintptr_t>(&AImageDecoder_setCrop));
+    Register("AImageDecoder_computeSampledSize",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_computeSampledSize));
+    Register("AImageDecoder_getMinimumStride",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_getMinimumStride));
+    Register("AImageDecoder_decodeImage", reinterpret_cast<uintptr_t>(&AImageDecoder_decodeImage));
+    Register("AImageDecoder_resultToString",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_resultToString));
+    Register("AImageDecoder_isAnimated", reinterpret_cast<uintptr_t>(&AImageDecoder_isAnimated));
+    Register("AImageDecoder_setRepeatCount",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_setRepeatCount));
+    Register("AImageDecoder_getRepeatCount",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_getRepeatCount));
+    Register("AImageDecoderFrameInfo_create",
+             reinterpret_cast<uintptr_t>(&AImageDecoderFrameInfo_create));
+    Register("AImageDecoderFrameInfo_delete",
+             reinterpret_cast<uintptr_t>(&AImageDecoderFrameInfo_delete));
+    Register("AImageDecoder_getFrameInfo",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_getFrameInfo));
+    Register("AImageDecoderFrameInfo_getDuration",
+             reinterpret_cast<uintptr_t>(&AImageDecoderFrameInfo_getDuration));
+    Register("AImageDecoderFrameInfo_getFrameRect",
+             reinterpret_cast<uintptr_t>(&AImageDecoderFrameInfo_getFrameRect));
+    Register("AImageDecoder_advanceFrame",
+             reinterpret_cast<uintptr_t>(&AImageDecoder_advanceFrame));
+    Register("AImageDecoder_rewind", reinterpret_cast<uintptr_t>(&AImageDecoder_rewind));
 
     // ASharedMemory
     Register("ASharedMemory_create", reinterpret_cast<uintptr_t>(&ASharedMemory_create));
@@ -922,6 +1022,35 @@ void NdkSymbolRegistry::RegisterAll()
              reinterpret_cast<uintptr_t>(&AMediaCodec_releaseOutputBuffer));
     Register("AMediaCodec_releaseOutputBufferAtTime",
              reinterpret_cast<uintptr_t>(&AMediaCodec_releaseOutputBufferAtTime));
+    Register("AMediaCodec_getName", reinterpret_cast<uintptr_t>(&AMediaCodec_getName));
+    Register("AMediaCodec_releaseName", reinterpret_cast<uintptr_t>(&AMediaCodec_releaseName));
+    Register("AMediaCodec_getInputFormat",
+             reinterpret_cast<uintptr_t>(&AMediaCodec_getInputFormat));
+    Register("AMediaCodec_getBufferFormat",
+             reinterpret_cast<uintptr_t>(&AMediaCodec_getBufferFormat));
+    Register("AMediaCodec_setParameters", reinterpret_cast<uintptr_t>(&AMediaCodec_setParameters));
+    Register("AMediaCodec_signalEndOfInputStream",
+             reinterpret_cast<uintptr_t>(&AMediaCodec_signalEndOfInputStream));
+    Register("AMediaCodec_createInputSurface",
+             reinterpret_cast<uintptr_t>(&AMediaCodec_createInputSurface));
+    Register("AMediaCodec_createPersistentInputSurface",
+             reinterpret_cast<uintptr_t>(&AMediaCodec_createPersistentInputSurface));
+    Register("AMediaCodec_setInputSurface",
+             reinterpret_cast<uintptr_t>(&AMediaCodec_setInputSurface));
+    Register("AMediaCodec_setAsyncNotifyCallback",
+             reinterpret_cast<uintptr_t>(&AMediaCodec_setAsyncNotifyCallback));
+
+    // AMediaMuxer
+    Register("AMediaMuxer_new", reinterpret_cast<uintptr_t>(&AMediaMuxer_new));
+    Register("AMediaMuxer_delete", reinterpret_cast<uintptr_t>(&AMediaMuxer_delete));
+    Register("AMediaMuxer_setLocation", reinterpret_cast<uintptr_t>(&AMediaMuxer_setLocation));
+    Register("AMediaMuxer_setOrientationHint",
+             reinterpret_cast<uintptr_t>(&AMediaMuxer_setOrientationHint));
+    Register("AMediaMuxer_addTrack", reinterpret_cast<uintptr_t>(&AMediaMuxer_addTrack));
+    Register("AMediaMuxer_start", reinterpret_cast<uintptr_t>(&AMediaMuxer_start));
+    Register("AMediaMuxer_writeSampleData",
+             reinterpret_cast<uintptr_t>(&AMediaMuxer_writeSampleData));
+    Register("AMediaMuxer_stop", reinterpret_cast<uintptr_t>(&AMediaMuxer_stop));
 
     // AStatus
     Register("AStatus_newOk", reinterpret_cast<uintptr_t>(&AStatus_newOk));
@@ -974,10 +1103,8 @@ void NdkSymbolRegistry::RegisterAll()
     Register("AParcel_readByteArray", reinterpret_cast<uintptr_t>(&AParcel_readByteArray));
     Register("AParcel_readParcelFileDescriptor",
              reinterpret_cast<uintptr_t>(&AParcel_readParcelFileDescriptor));
-    Register("AParcel_writeStrongBinder",
-             reinterpret_cast<uintptr_t>(&AParcel_writeStrongBinder));
-    Register("AParcel_readStrongBinder",
-             reinterpret_cast<uintptr_t>(&AParcel_readStrongBinder));
+    Register("AParcel_writeStrongBinder", reinterpret_cast<uintptr_t>(&AParcel_writeStrongBinder));
+    Register("AParcel_readStrongBinder", reinterpret_cast<uintptr_t>(&AParcel_readStrongBinder));
 
     // AIBinder
     Register("AIBinder_Class_define", reinterpret_cast<uintptr_t>(&AIBinder_Class_define));
@@ -1110,6 +1237,9 @@ __attribute__((sysv_abi)) void ANativeWindow_release(ANativeWindow *window)
 {
     if (window && window->ref_count > 0) {
         window->ref_count--;
+        if (window->ref_count == 0 && window->owned_heap) {
+            delete window;
+        }
     }
 }
 
@@ -1208,6 +1338,10 @@ __attribute__((sysv_abi)) int32_t ANativeWindow_unlockAndPost(ANativeWindow *win
     window->last_present_time_nanos = now_nanos;
     window->frame_index++;
     window->is_locked = false;
+    auto post_hook = window->on_post;
+    if (post_hook) {
+        post_hook(window);
+    }
     return 0;
 }
 
@@ -1221,9 +1355,11 @@ __attribute__((sysv_abi)) int32_t ANativeWindow_getLastQueueDuration(ANativeWind
     return 0;
 }
 
-__attribute__((sysv_abi)) int32_t
-ANativeWindow_getFrameTimestamps(ANativeWindow *window, uint64_t frameId, int64_t *outQueueTime,
-                                 int64_t *outLatchTime, int64_t *outPresentTime)
+__attribute__((sysv_abi)) int32_t ANativeWindow_getFrameTimestamps(ANativeWindow *window,
+                                                                   uint64_t frameId,
+                                                                   int64_t *outQueueTime,
+                                                                   int64_t *outLatchTime,
+                                                                   int64_t *outPresentTime)
 {
     if (!window) {
         return -1;
@@ -1446,7 +1582,7 @@ __attribute__((sysv_abi)) int portage_pthread_equal(uintptr_t t1, uintptr_t t2) 
 }
 
 __attribute__((sysv_abi)) int portage_pthread_setname_np(uintptr_t thread,
-                                                        const char *name) noexcept
+                                                         const char *name) noexcept
 {
     if (name == nullptr) {
         return 22; // EINVAL
@@ -1455,7 +1591,7 @@ __attribute__((sysv_abi)) int portage_pthread_setname_np(uintptr_t thread,
 }
 
 __attribute__((sysv_abi)) int portage_pthread_getname_np(uintptr_t thread, char *buf,
-                                                        size_t len) noexcept
+                                                         size_t len) noexcept
 {
     return portage::thread::ThreadManager::Instance().GetThreadName(thread, buf, len);
 }
@@ -1485,7 +1621,7 @@ __attribute__((sysv_abi)) int portage_pthread_attr_destroy(BionicPthreadAttr *at
 }
 
 __attribute__((sysv_abi)) int portage_pthread_getattr_np(uintptr_t thread,
-                                                        BionicPthreadAttr *attr) noexcept
+                                                         BionicPthreadAttr *attr) noexcept
 {
     if (attr == nullptr) {
         return 22; // EINVAL
@@ -1519,9 +1655,8 @@ __attribute__((sysv_abi)) int portage_pthread_attr_getstack(const BionicPthreadA
     return 0;
 }
 
-__attribute__((sysv_abi)) int portage_pthread_attr_setstack(BionicPthreadAttr *attr,
-                                                            void *stackaddr,
-                                                            size_t stacksize) noexcept
+__attribute__((sysv_abi)) int
+portage_pthread_attr_setstack(BionicPthreadAttr *attr, void *stackaddr, size_t stacksize) noexcept
 {
     if (attr == nullptr || stacksize < 16384) {
         return 22;

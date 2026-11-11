@@ -5,6 +5,7 @@
 #include "fs/vfs.hpp"
 #include "mem/address_space.hpp"
 #include <atomic>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -37,6 +38,7 @@ struct LinkMapEntry {
     LoadedElf elf;
     int ref_count{1};
     int flags{RTLD_LOCAL};
+    bool is_virtual{false};
     bool init_called{false};
     bool fini_called{false};
     link_map_raw raw_link_map{};
@@ -80,7 +82,13 @@ class LinkMap {
     [[nodiscard]] uintptr_t GetTlsdescDynamicThunk();
     [[nodiscard]] uintptr_t AllocateLazyPltTrampoline(uintptr_t got_slot, const char *sym_name);
     [[nodiscard]] uintptr_t ResolveLazySymbol(uintptr_t got_slot, const char *sym_name);
-    [[nodiscard]] uint64_t GetLazyResolveCount() const noexcept { return lazy_resolve_count_.load(); }
+    [[nodiscard]] uintptr_t AllocateUnresolvedTrap(std::string_view sym_name);
+    [[nodiscard]] std::vector<std::string> CollectUnresolvedSymbols() const;
+    [[nodiscard]] static bool IsBuiltinSystemLibrary(std::string_view name);
+    [[nodiscard]] uint64_t GetLazyResolveCount() const noexcept
+    {
+        return lazy_resolve_count_.load();
+    }
 
     size_t RegisterTlsModule(uintptr_t image_addr, size_t filesz, size_t memsz, size_t align);
     bool ResolveTlsSymbol(std::string_view name, size_t &out_modid, uintptr_t &out_offset) const;
@@ -133,6 +141,8 @@ class LinkMap {
     size_t current_pool_cap_{0};
     uintptr_t tlsdesc_return_thunk_{0};
     uintptr_t tlsdesc_dynamic_thunk_{0};
+    std::deque<std::string> unresolved_trap_names_;
+    std::unordered_map<std::string, uintptr_t> unresolved_traps_;
     std::atomic<uint64_t> lazy_resolve_count_{0};
     uintptr_t next_handle_{1};
     size_t next_tls_modid_{1};
@@ -160,8 +170,10 @@ __attribute__((sysv_abi)) void *__tls_get_addr(const portage::elf::TlsIndex *ti)
 __attribute__((sysv_abi)) int portage_cxa_atexit(portage::elf::LinkMap::CxaAtExitFn func, void *arg,
                                                  void *dso_handle) noexcept;
 __attribute__((sysv_abi)) void portage_cxa_finalize(void *dso_handle) noexcept;
-__attribute__((sysv_abi)) int portage_cxa_thread_atexit_impl(portage::elf::LinkMap::CxaAtExitFn dtor,
-                                                             void *obj, void *dso_handle) noexcept;
-__attribute__((sysv_abi)) int portage_guest_atexit(__attribute__((sysv_abi)) void (*func)()) noexcept;
+__attribute__((sysv_abi)) int
+portage_cxa_thread_atexit_impl(portage::elf::LinkMap::CxaAtExitFn dtor, void *obj,
+                               void *dso_handle) noexcept;
+__attribute__((sysv_abi)) int
+portage_guest_atexit(__attribute__((sysv_abi)) void (*func)()) noexcept;
 
 } // extern "C"

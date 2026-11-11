@@ -13,10 +13,7 @@ __attribute__((visibility("default"))) AClipboard *AClipboard_create(void)
     return (AClipboard *)0;
 }
 
-__attribute__((visibility("default"))) void AClipboard_destroy(AClipboard *clip)
-{
-    (void)clip;
-}
+__attribute__((visibility("default"))) void AClipboard_destroy(AClipboard *clip) { (void)clip; }
 
 __attribute__((visibility("default"))) int AClipboard_hasText(AClipboard *clip)
 {
@@ -46,10 +43,7 @@ __attribute__((visibility("default"))) int AClipboard_hasPrimaryClip(AClipboard 
     return 0;
 }
 
-__attribute__((visibility("default"))) void AClipboard_clear(AClipboard *clip)
-{
-    (void)clip;
-}
+__attribute__((visibility("default"))) void AClipboard_clear(AClipboard *clip) { (void)clip; }
 
 __attribute__((visibility("default"))) int AClipboard_addPrimaryClipChangedListener(
     AClipboard *clip, AClipboard_OnPrimaryClipChangedListener callback, void *context)
@@ -60,24 +54,25 @@ __attribute__((visibility("default"))) int AClipboard_addPrimaryClipChangedListe
     return 0;
 }
 
-__attribute__((visibility("default"))) int AClipboard_removePrimaryClipChangedListener(
-    AClipboard *clip, AClipboard_OnPrimaryClipChangedListener callback)
+__attribute__((visibility("default"))) int
+AClipboard_removePrimaryClipChangedListener(AClipboard *clip,
+                                            AClipboard_OnPrimaryClipChangedListener callback)
 {
     (void)clip;
     (void)callback;
     return 0;
 }
 
-__attribute__((visibility("default"))) int ADragDrop_registerDropListener(
-    ADragDrop_OnDropListener callback, void *context)
+__attribute__((visibility("default"))) int
+ADragDrop_registerDropListener(ADragDrop_OnDropListener callback, void *context)
 {
     (void)callback;
     (void)context;
     return 0;
 }
 
-__attribute__((visibility("default"))) int ADragDrop_unregisterDropListener(
-    ADragDrop_OnDropListener callback)
+__attribute__((visibility("default"))) int
+ADragDrop_unregisterDropListener(ADragDrop_OnDropListener callback)
 {
     (void)callback;
     return 0;

@@ -25,10 +25,7 @@ __attribute__((sysv_abi)) APowerManager *APowerManager_create(void)
     return wrapper;
 }
 
-__attribute__((sysv_abi)) void APowerManager_destroy(APowerManager *mgr)
-{
-    delete mgr;
-}
+__attribute__((sysv_abi)) void APowerManager_destroy(APowerManager *mgr) { delete mgr; }
 
 __attribute__((sysv_abi)) int32_t APowerManager_isInteractive(APowerManager *mgr)
 {
@@ -97,10 +94,7 @@ __attribute__((sysv_abi)) ABatteryManager *ABatteryManager_create(void)
     return wrapper;
 }
 
-__attribute__((sysv_abi)) void ABatteryManager_destroy(ABatteryManager *mgr)
-{
-    delete mgr;
-}
+__attribute__((sysv_abi)) void ABatteryManager_destroy(ABatteryManager *mgr) { delete mgr; }
 
 __attribute__((sysv_abi)) int32_t ABatteryManager_getCapacity(ABatteryManager *mgr)
 {

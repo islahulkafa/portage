@@ -33,8 +33,8 @@ void KeyStoreManager::Reset()
 }
 
 KeyStoreStatus KeyStoreManager::GenerateKey(const std::string &alias, KeyAlgorithm algorithm,
-                                           size_t key_size_bits, uint32_t purposes,
-                                           BlockMode block_mode, Padding padding)
+                                            size_t key_size_bits, uint32_t purposes,
+                                            BlockMode block_mode, Padding padding)
 {
     if (alias.empty()) {
         return KeyStoreStatus::ErrorInvalidArgument;
@@ -50,10 +50,9 @@ KeyStoreStatus KeyStoreManager::GenerateKey(const std::string &alias, KeyAlgorit
     entry.metadata.purposes = purposes;
     entry.metadata.block_mode = block_mode;
     entry.metadata.padding = padding;
-    entry.metadata.created_timestamp_ns =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count();
+    entry.metadata.created_timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                              std::chrono::system_clock::now().time_since_epoch())
+                                              .count();
 
     if (!CryptoEngine::Instance().GenerateAesKey(key_size_bits, entry.secret_key)) {
         return KeyStoreStatus::ErrorCryptoFailed;
@@ -68,8 +67,8 @@ KeyStoreStatus KeyStoreManager::GenerateKey(const std::string &alias, KeyAlgorit
 }
 
 KeyStoreStatus KeyStoreManager::GenerateKeyPair(const std::string &alias, KeyAlgorithm algorithm,
-                                              size_t key_size_bits, uint32_t purposes,
-                                              Digest digest, Padding padding)
+                                                size_t key_size_bits, uint32_t purposes,
+                                                Digest digest, Padding padding)
 {
     if (alias.empty()) {
         return KeyStoreStatus::ErrorInvalidArgument;
@@ -85,10 +84,9 @@ KeyStoreStatus KeyStoreManager::GenerateKeyPair(const std::string &alias, KeyAlg
     entry.metadata.purposes = purposes;
     entry.metadata.digest = digest;
     entry.metadata.padding = padding;
-    entry.metadata.created_timestamp_ns =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count();
+    entry.metadata.created_timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                              std::chrono::system_clock::now().time_since_epoch())
+                                              .count();
 
     if (algorithm == KeyAlgorithm::Rsa) {
         if (!CryptoEngine::Instance().GenerateRsaKeyPair(key_size_bits, entry.public_key,
@@ -177,8 +175,8 @@ CipherResult KeyStoreManager::Encrypt(const std::string &alias,
             actual_iv = CryptoEngine::Instance().GenerateRandomBytes(12);
         }
         res.iv = actual_iv;
-        if (!CryptoEngine::Instance().EncryptAesGcm(entry.secret_key, actual_iv, plaintext,
-                                                    res.tag, res.data)) {
+        if (!CryptoEngine::Instance().EncryptAesGcm(entry.secret_key, actual_iv, plaintext, res.tag,
+                                                    res.data)) {
             res.status = KeyStoreStatus::ErrorCryptoFailed;
             return res;
         }
@@ -238,7 +236,7 @@ CipherResult KeyStoreManager::Decrypt(const std::string &alias,
 }
 
 KeyStoreStatus KeyStoreManager::Sign(const std::string &alias, const std::vector<uint8_t> &data,
-                                    std::vector<uint8_t> &out_signature)
+                                     std::vector<uint8_t> &out_signature)
 {
     KeyEntry entry;
     {
@@ -268,7 +266,7 @@ KeyStoreStatus KeyStoreManager::Sign(const std::string &alias, const std::vector
 }
 
 KeyStoreStatus KeyStoreManager::Verify(const std::string &alias, const std::vector<uint8_t> &data,
-                                      const std::vector<uint8_t> &signature)
+                                       const std::vector<uint8_t> &signature)
 {
     KeyEntry entry;
     {

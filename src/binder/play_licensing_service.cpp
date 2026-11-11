@@ -51,8 +51,7 @@ std::string GenerateSignature(const std::string &signed_data)
     return Base64Encode(block);
 }
 
-static bool __attribute__((sysv_abi)) StringAllocator(void *data, int32_t len,
-                                                       char **out_buf)
+static bool __attribute__((sysv_abi)) StringAllocator(void *data, int32_t len, char **out_buf)
 {
     if (len < 0) {
         return true;
@@ -71,10 +70,7 @@ PlayLicensingService &PlayLicensingService::Instance() noexcept
     return instance;
 }
 
-PlayLicensingService::PlayLicensingService()
-{
-    Initialize();
-}
+PlayLicensingService::PlayLicensingService() { Initialize(); }
 
 PlayLicensingService::~PlayLicensingService()
 {
@@ -92,9 +88,8 @@ void PlayLicensingService::Initialize()
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!binder_class_) {
-        binder_class_ =
-            AIBinder_Class_define("com.android.vending.licensing.ILicensingService", nullptr,
-                                  nullptr, &PlayLicensingService::OnTransact);
+        binder_class_ = AIBinder_Class_define("com.android.vending.licensing.ILicensingService",
+                                              nullptr, nullptr, &PlayLicensingService::OnTransact);
     }
     if (!binder_instance_) {
         binder_instance_ = AIBinder_new(binder_class_, this);
@@ -116,9 +111,10 @@ AIBinder *PlayLicensingService::GetBinder()
     return binder_instance_;
 }
 
-__attribute__((sysv_abi)) binder_status_t
-PlayLicensingService::OnTransact(AIBinder *, transaction_code_t code, const AParcel *in,
-                                 AParcel *out)
+__attribute__((sysv_abi)) binder_status_t PlayLicensingService::OnTransact(AIBinder *,
+                                                                           transaction_code_t code,
+                                                                           const AParcel *in,
+                                                                           AParcel *out)
 {
     if (code == 1) {
         if (!in) {

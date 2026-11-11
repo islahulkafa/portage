@@ -74,15 +74,15 @@ extern "C" {
 __attribute__((sysv_abi)) APerformanceHintManager *APerformanceHintManager_create(void);
 __attribute__((sysv_abi)) APerformanceHintSession *
 APerformanceHintManager_createSession(APerformanceHintManager *manager, const int32_t *threadIds,
-                                     size_t size, int64_t initialTargetWorkDurationNanos);
+                                      size_t size, int64_t initialTargetWorkDurationNanos);
 __attribute__((sysv_abi)) int64_t
 APerformanceHintManager_getPreferredUpdateRateNanos(APerformanceHintManager *manager);
 __attribute__((sysv_abi)) int
 APerformanceHintSession_updateTargetWorkDuration(APerformanceHintSession *session,
-                                                int64_t targetDurationNanos);
+                                                 int64_t targetDurationNanos);
 __attribute__((sysv_abi)) int
 APerformanceHintSession_reportActualWorkDuration(APerformanceHintSession *session,
-                                                int64_t actualDurationNanos);
+                                                 int64_t actualDurationNanos);
 __attribute__((sysv_abi)) void APerformanceHintSession_close(APerformanceHintSession *session);
 __attribute__((sysv_abi)) int APerformanceHintSession_setThreads(APerformanceHintSession *session,
                                                                  const int32_t *threadIds,

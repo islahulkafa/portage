@@ -12,11 +12,15 @@
 #include "media/media_types.hpp"
 
 #include <atomic>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace portage::media {
@@ -41,6 +45,8 @@ class WmfManager {
     bool Initialize() noexcept;
     void Shutdown() noexcept;
 
+    void DispatchSync(std::function<void()> task);
+
   private:
     WmfManager() = default;
     ~WmfManager();
@@ -48,8 +54,16 @@ class WmfManager {
     WmfManager(const WmfManager &) = delete;
     WmfManager &operator=(const WmfManager &) = delete;
 
+    void WorkerLoop();
+
     std::atomic<bool> initialized_{false};
     std::mutex mutex_{};
+    std::mutex queue_mutex_{};
+    std::condition_variable queue_cv_{};
+    std::condition_variable done_cv_{};
+    std::deque<std::function<void()>> queue_{};
+    bool stop_worker_{false};
+    std::thread worker_{};
 };
 
 class WmfSourceReaderWrapper {
@@ -59,6 +73,7 @@ class WmfSourceReaderWrapper {
 
     bool OpenUrl(const std::wstring &url);
     bool OpenFile(const std::string &path);
+    bool OpenFd(int fd, int64_t offset, int64_t length);
     bool OpenSynthetic(std::string_view mime, int32_t width = 128, int32_t height = 128,
                        int64_t duration_us = 5000000);
     void Close();

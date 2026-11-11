@@ -1,4 +1,5 @@
 #include "media/wmf_decoder.hpp"
+#include "media/mf_byte_stream.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -8,15 +9,52 @@ namespace portage::media {
 
 namespace stdfs = std::filesystem;
 
+namespace {
+thread_local bool t_on_wmf_worker = false;
+}
+
 WmfManager &WmfManager::Instance() noexcept
 {
     static WmfManager instance;
     return instance;
 }
 
-WmfManager::~WmfManager()
+WmfManager::~WmfManager() { Shutdown(); }
+
+void WmfManager::WorkerLoop()
 {
-    Shutdown();
+    t_on_wmf_worker = true;
+    HRESULT com_hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    bool mf_ok = SUCCEEDED(MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET));
+    {
+        std::lock_guard<std::mutex> lk(queue_mutex_);
+        initialized_.store(mf_ok);
+    }
+    done_cv_.notify_all();
+
+    while (true) {
+        std::function<void()> task;
+        {
+            std::unique_lock<std::mutex> lk(queue_mutex_);
+            queue_cv_.wait(lk, [this]() { return stop_worker_ || !queue_.empty(); });
+            if (stop_worker_ && queue_.empty()) {
+                break;
+            }
+            task = std::move(queue_.front());
+            queue_.pop_front();
+        }
+        if (task) {
+            task();
+        }
+    }
+
+    if (mf_ok) {
+        MFShutdown();
+    }
+    if (SUCCEEDED(com_hr)) {
+        CoUninitialize();
+    }
+    t_on_wmf_worker = false;
 }
 
 bool WmfManager::Initialize() noexcept
@@ -26,33 +64,69 @@ bool WmfManager::Initialize() noexcept
         return true;
     }
 
-    HRESULT hr = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
-    if (SUCCEEDED(hr)) {
-        initialized_.store(true);
-        return true;
+    if (!worker_.joinable()) {
+        stop_worker_ = false;
+        worker_ = std::thread(&WmfManager::WorkerLoop, this);
+        std::unique_lock<std::mutex> lk(queue_mutex_);
+        done_cv_.wait(lk, [this]() { return initialized_.load() || !worker_.joinable(); });
     }
-    return false;
+    return initialized_.load();
 }
 
 void WmfManager::Shutdown() noexcept
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (initialized_.load()) {
-        MFShutdown();
-        initialized_.store(false);
+    if (worker_.joinable()) {
+        {
+            std::lock_guard<std::mutex> lk(queue_mutex_);
+            stop_worker_ = true;
+        }
+        queue_cv_.notify_all();
+        if (std::this_thread::get_id() == worker_.get_id()) {
+            worker_.detach();
+        } else {
+            worker_.join();
+        }
     }
+    initialized_.store(false);
 }
 
-WmfSourceReaderWrapper::~WmfSourceReaderWrapper()
+void WmfManager::DispatchSync(std::function<void()> task)
 {
-    Close();
+    if (!task) {
+        return;
+    }
+    if (t_on_wmf_worker || !Initialize()) {
+        task();
+        return;
+    }
+    std::mutex done_mu;
+    std::condition_variable done_cv;
+    bool finished = false;
+    {
+        std::lock_guard<std::mutex> lk(queue_mutex_);
+        queue_.push_back([&]() {
+            task();
+            {
+                std::lock_guard<std::mutex> dlk(done_mu);
+                finished = true;
+            }
+            done_cv.notify_one();
+        });
+    }
+    queue_cv_.notify_one();
+    std::unique_lock<std::mutex> dlk(done_mu);
+    done_cv.wait(dlk, [&finished]() { return finished; });
 }
+
+WmfSourceReaderWrapper::~WmfSourceReaderWrapper() { Close(); }
 
 void WmfSourceReaderWrapper::Close()
 {
     if (reader_) {
-        reader_->Release();
+        IMFSourceReader *r = reader_;
         reader_ = nullptr;
+        WmfManager::Instance().DispatchSync([r]() { r->Release(); });
     }
     tracks_.clear();
     selected_tracks_.clear();
@@ -69,13 +143,16 @@ bool WmfSourceReaderWrapper::OpenUrl(const std::wstring &url)
         return false;
     }
 
-    HRESULT hr = MFCreateSourceReaderFromURL(url.c_str(), nullptr, &reader_);
-    if (FAILED(hr) || !reader_) {
-        return false;
-    }
-
-    ProbeTracks();
-    return !tracks_.empty();
+    bool ok = false;
+    WmfManager::Instance().DispatchSync([&]() {
+        HRESULT hr = MFCreateSourceReaderFromURL(url.c_str(), nullptr, &reader_);
+        if (FAILED(hr) || !reader_) {
+            return;
+        }
+        ProbeTracks();
+        ok = !tracks_.empty();
+    });
+    return ok;
 }
 
 bool WmfSourceReaderWrapper::OpenFile(const std::string &path)
@@ -87,6 +164,34 @@ bool WmfSourceReaderWrapper::OpenFile(const std::string &path)
 
     std::wstring wide_path(path.begin(), path.end());
     return OpenUrl(wide_path);
+}
+
+bool WmfSourceReaderWrapper::OpenFd(int fd, int64_t offset, int64_t length)
+{
+    Close();
+    if (!WmfManager::Instance().Initialize()) {
+        return false;
+    }
+
+    auto *stream = PortageMfByteStream::CreateFromFd(fd, offset, length, false);
+    if (!stream) {
+        return false;
+    }
+
+    bool ok = false;
+    WmfManager::Instance().DispatchSync([&]() {
+        HRESULT hr = MFCreateSourceReaderFromByteStream(stream, nullptr, &reader_);
+        stream->Release();
+        if (FAILED(hr) || !reader_) {
+            return;
+        }
+        ProbeTracks();
+        ok = !tracks_.empty();
+    });
+    if (!ok) {
+        Close();
+    }
+    return ok;
 }
 
 bool WmfSourceReaderWrapper::OpenSynthetic(std::string_view mime, int32_t width, int32_t height,
@@ -138,10 +243,16 @@ void WmfSourceReaderWrapper::ProbeTracks()
         track.index = stream_index;
 
         GUID major_type = GUID_NULL;
+        GUID sub_type = GUID_NULL;
         media_type->GetMajorType(&major_type);
+        media_type->GetGUID(MF_MT_SUBTYPE, &sub_type);
 
         if (major_type == MFMediaType_Video) {
-            track.mime = "video/avc";
+            if (sub_type == MFVideoFormat_HEVC) {
+                track.mime = "video/hevc";
+            } else {
+                track.mime = "video/avc";
+            }
             UINT32 w = 0, h = 0;
             MFGetAttributeSize(media_type, MF_MT_FRAME_SIZE, &w, &h);
             track.width = static_cast<int32_t>(w);
@@ -153,13 +264,31 @@ void WmfSourceReaderWrapper::ProbeTracks()
             if (den != 0) {
                 track.frame_rate = static_cast<float>(num) / static_cast<float>(den);
             }
+            UINT32 csd_len = 0;
+            if (SUCCEEDED(media_type->GetBlobSize(MF_MT_MPEG_SEQUENCE_HEADER, &csd_len)) &&
+                csd_len > 0) {
+                track.csd0.resize(csd_len);
+                media_type->GetBlob(MF_MT_MPEG_SEQUENCE_HEADER, track.csd0.data(), csd_len,
+                                    nullptr);
+            }
         } else if (major_type == MFMediaType_Audio) {
-            track.mime = "audio/mp4a-latm";
+            track.mime = (sub_type == MFAudioFormat_MP3) ? "audio/mpeg" : "audio/mp4a-latm";
             UINT32 sr = 0, ch = 0;
             media_type->GetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, &sr);
             media_type->GetUINT32(MF_MT_AUDIO_NUM_CHANNELS, &ch);
             track.sample_rate = static_cast<int32_t>(sr);
             track.channel_count = static_cast<int32_t>(ch);
+            UINT32 ud_len = 0;
+            if (SUCCEEDED(media_type->GetBlobSize(MF_MT_USER_DATA, &ud_len)) && ud_len > 0) {
+                std::vector<uint8_t> raw(ud_len);
+                if (SUCCEEDED(media_type->GetBlob(MF_MT_USER_DATA, raw.data(), ud_len, nullptr))) {
+                    if (sub_type == MFAudioFormat_AAC && ud_len > 12) {
+                        track.csd0.assign(raw.begin() + 12, raw.end());
+                    } else {
+                        track.csd0 = std::move(raw);
+                    }
+                }
+            }
         }
 
         media_type->Release();
@@ -167,7 +296,7 @@ void WmfSourceReaderWrapper::ProbeTracks()
         PROPVARIANT var;
         PropVariantInit(&var);
         if (SUCCEEDED(reader_->GetPresentationAttribute(MF_SOURCE_READER_MEDIASOURCE,
-                                                       MF_PD_DURATION, &var))) {
+                                                        MF_PD_DURATION, &var))) {
             if (var.vt == VT_UI8) {
                 track.duration_us = static_cast<int64_t>(var.uhVal.QuadPart) / 10;
             }
@@ -181,10 +310,7 @@ void WmfSourceReaderWrapper::ProbeTracks()
     selected_tracks_.resize(tracks_.size(), false);
 }
 
-size_t WmfSourceReaderWrapper::GetTrackCount() const noexcept
-{
-    return tracks_.size();
-}
+size_t WmfSourceReaderWrapper::GetTrackCount() const noexcept { return tracks_.size(); }
 
 const MediaTrackInfo *WmfSourceReaderWrapper::GetTrack(size_t index) const noexcept
 {
@@ -203,7 +329,8 @@ bool WmfSourceReaderWrapper::SelectTrack(size_t index)
     current_selected_track_ = index;
 
     if (reader_) {
-        reader_->SetStreamSelection(static_cast<DWORD>(index), TRUE);
+        WmfManager::Instance().DispatchSync(
+            [&]() { reader_->SetStreamSelection(static_cast<DWORD>(index), TRUE); });
     }
     return true;
 }
@@ -215,7 +342,8 @@ bool WmfSourceReaderWrapper::UnselectTrack(size_t index)
     }
     selected_tracks_[index] = false;
     if (reader_) {
-        reader_->SetStreamSelection(static_cast<DWORD>(index), FALSE);
+        WmfManager::Instance().DispatchSync(
+            [&]() { reader_->SetStreamSelection(static_cast<DWORD>(index), FALSE); });
     }
     return true;
 }
@@ -282,63 +410,80 @@ int64_t WmfSourceReaderWrapper::ReadSample(uint8_t *buffer, size_t capacity, siz
         return -1;
     }
 
-    DWORD actual_stream_index = 0;
-    DWORD stream_flags = 0;
-    LONGLONG timestamp = 0;
-    IMFSample *sample = nullptr;
+    int64_t ret = -1;
+    WmfManager::Instance().DispatchSync([&]() {
+        DWORD actual_stream_index = 0;
+        DWORD stream_flags = 0;
+        LONGLONG timestamp = 0;
+        IMFSample *sample = nullptr;
 
-    HRESULT hr = reader_->ReadSample(static_cast<DWORD>(current_selected_track_), 0,
-                                     &actual_stream_index, &stream_flags, &timestamp, &sample);
-    if (FAILED(hr)) {
-        return -1;
-    }
-
-    if (stream_flags & MF_SOURCE_READERF_ENDOFSTREAM) {
-        if (out_flags) {
-            *out_flags = AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM;
+        HRESULT hr = reader_->ReadSample(static_cast<DWORD>(current_selected_track_), 0,
+                                         &actual_stream_index, &stream_flags, &timestamp, &sample);
+        if (FAILED(hr)) {
+            ret = -1;
+            return;
         }
-        if (sample) {
+
+        if (stream_flags & MF_SOURCE_READERF_ENDOFSTREAM) {
+            if (out_flags) {
+                *out_flags = AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM;
+            }
+            if (sample) {
+                sample->Release();
+            }
+            ret = 0;
+            return;
+        }
+
+        if (!sample) {
+            ret = 0;
+            return;
+        }
+
+        IMFMediaBuffer *media_buffer = nullptr;
+        hr = sample->ConvertToContiguousBuffer(&media_buffer);
+        if (FAILED(hr) || !media_buffer) {
             sample->Release();
+            ret = -1;
+            return;
         }
-        return 0;
-    }
 
-    if (!sample) {
-        return 0;
-    }
+        BYTE *data = nullptr;
+        DWORD current_length = 0;
+        hr = media_buffer->Lock(&data, nullptr, &current_length);
+        if (FAILED(hr) || !data) {
+            media_buffer->Release();
+            sample->Release();
+            ret = -1;
+            return;
+        }
 
-    IMFMediaBuffer *media_buffer = nullptr;
-    hr = sample->ConvertToContiguousBuffer(&media_buffer);
-    if (FAILED(hr) || !media_buffer) {
-        sample->Release();
-        return -1;
-    }
+        size_t copy_bytes = std::min(capacity, static_cast<size_t>(current_length));
+        std::memcpy(buffer, data, copy_bytes);
 
-    BYTE *data = nullptr;
-    DWORD current_length = 0;
-    hr = media_buffer->Lock(&data, nullptr, &current_length);
-    if (FAILED(hr) || !data) {
+        UINT32 clean_point = 0;
+        bool has_clean_attr =
+            SUCCEEDED(sample->GetUINT32(MFSampleExtension_CleanPoint, &clean_point));
+
+        media_buffer->Unlock();
         media_buffer->Release();
         sample->Release();
-        return -1;
-    }
 
-    size_t copy_bytes = std::min(capacity, static_cast<size_t>(current_length));
-    std::memcpy(buffer, data, copy_bytes);
-
-    media_buffer->Unlock();
-    media_buffer->Release();
-    sample->Release();
-
-    if (out_pts_us) {
-        *out_pts_us = timestamp / 10;
-    }
-    if (out_flags) {
-        *out_flags = (stream_flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED)
-                         ? static_cast<uint32_t>(AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG)
-                         : static_cast<uint32_t>(AMEDIAEXTRACTOR_SAMPLE_FLAG_SYNC);
-    }
-    return static_cast<int64_t>(copy_bytes);
+        if (out_pts_us) {
+            *out_pts_us = timestamp / 10;
+        }
+        if (out_flags) {
+            if (stream_flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) {
+                *out_flags = static_cast<uint32_t>(AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG);
+            } else if (!has_clean_attr || clean_point != 0) {
+                *out_flags = static_cast<uint32_t>(AMEDIAEXTRACTOR_SAMPLE_FLAG_SYNC);
+            } else {
+                *out_flags = 0;
+            }
+        }
+        ret = static_cast<int64_t>(copy_bytes);
+    });
+    return ret;
 }
 
 bool WmfSourceReaderWrapper::SeekTo(int64_t time_us)
@@ -352,14 +497,18 @@ bool WmfSourceReaderWrapper::SeekTo(int64_t time_us)
         return false;
     }
 
-    PROPVARIANT var;
-    PropVariantInit(&var);
-    var.vt = VT_I8;
-    var.hVal.QuadPart = time_us * 10; // convert us to 100ns units
+    bool ok = false;
+    WmfManager::Instance().DispatchSync([&]() {
+        PROPVARIANT var;
+        PropVariantInit(&var);
+        var.vt = VT_I8;
+        var.hVal.QuadPart = time_us * 10; // convert us to 100ns units
 
-    HRESULT hr = reader_->SetCurrentPosition(GUID_NULL, var);
-    PropVariantClear(&var);
-    return SUCCEEDED(hr);
+        HRESULT hr = reader_->SetCurrentPosition(GUID_NULL, var);
+        PropVariantClear(&var);
+        ok = SUCCEEDED(hr);
+    });
+    return ok;
 }
 
 } // namespace portage::media

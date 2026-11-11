@@ -27,8 +27,7 @@ using namespace portage;
 
 namespace {
 
-struct SyntheticElfBuilder
-{
+struct SyntheticElfBuilder {
     std::vector<uint8_t> data;
 
     explicit SyntheticElfBuilder(size_t size = 0x3000) : data(size, 0) {}
@@ -150,7 +149,10 @@ TEST_F(LinkerExtensionsTest, TlsdescStaticResolverReturnsDirectOffsetAndPreserve
     constexpr size_t got_off = 0x700;
 
     elf::Elf64_Ehdr ehdr{};
-    std::memcpy(ehdr.e_ident, "\x7F" "ELF", 4);
+    std::memcpy(ehdr.e_ident,
+                "\x7F"
+                "ELF",
+                4);
     ehdr.e_ident[elf::EI_CLASS] = elf::ELFCLASS64;
     ehdr.e_ident[elf::EI_DATA] = elf::ELFDATA2LSB;
     ehdr.e_ident[elf::EI_VERSION] = 1;
@@ -186,8 +188,8 @@ TEST_F(LinkerExtensionsTest, TlsdescStaticResolverReturnsDirectOffsetAndPreserve
     dyns[4] = {elf::DT_NULL, {0}};
     bin.WriteBytes(dyn_off, dyns, sizeof(dyns));
 
-    elf::Elf64_Phdr ph_dyn{elf::PT_DYNAMIC, elf::PF_R | elf::PF_W, dyn_off, dyn_off, dyn_off,
-                           sizeof(dyns),    sizeof(dyns),           8};
+    elf::Elf64_Phdr ph_dyn{elf::PT_DYNAMIC, elf::PF_R | elf::PF_W, dyn_off,      dyn_off,
+                           dyn_off,         sizeof(dyns),          sizeof(dyns), 8};
     bin.WriteAt(phdr_off + sizeof(elf::Elf64_Phdr), ph_dyn);
 
     elf::ElfLoader loader(address_space_.get());
@@ -225,7 +227,10 @@ TEST_F(LinkerExtensionsTest, TlsdescDynamicResolverIsolatesPerThreadAndPreserves
     constexpr size_t tls_off = 0x800;
 
     elf::Elf64_Ehdr ehdr{};
-    std::memcpy(ehdr.e_ident, "\x7F" "ELF", 4);
+    std::memcpy(ehdr.e_ident,
+                "\x7F"
+                "ELF",
+                4);
     ehdr.e_ident[elf::EI_CLASS] = elf::ELFCLASS64;
     ehdr.e_ident[elf::EI_DATA] = elf::ELFDATA2LSB;
     ehdr.e_ident[elf::EI_VERSION] = 1;
@@ -269,8 +274,8 @@ TEST_F(LinkerExtensionsTest, TlsdescDynamicResolverIsolatesPerThreadAndPreserves
     dyns[4] = {elf::DT_NULL, {0}};
     mod.WriteBytes(dyn_off, dyns, sizeof(dyns));
 
-    elf::Elf64_Phdr ph_dyn{elf::PT_DYNAMIC, elf::PF_R | elf::PF_W, dyn_off, dyn_off, dyn_off,
-                           sizeof(dyns),    sizeof(dyns),           8};
+    elf::Elf64_Phdr ph_dyn{elf::PT_DYNAMIC, elf::PF_R | elf::PF_W, dyn_off,      dyn_off,
+                           dyn_off,         sizeof(dyns),          sizeof(dyns), 8};
     mod.WriteAt(phdr_off + sizeof(elf::Elf64_Phdr), ph_dyn);
 
     elf::Elf64_Phdr ph_tls{elf::PT_TLS, elf::PF_R, tls_off, tls_off, tls_off, 32, 64, 16};
@@ -330,7 +335,10 @@ TEST_F(LinkerExtensionsTest, LazyPltTrampolineResolvesOnceAndPatchesGotSlot)
         constexpr size_t hash_off = 0x600;
 
         elf::Elf64_Ehdr ehdr{};
-        std::memcpy(ehdr.e_ident, "\x7F" "ELF", 4);
+        std::memcpy(ehdr.e_ident,
+                    "\x7F"
+                    "ELF",
+                    4);
         ehdr.e_ident[elf::EI_CLASS] = elf::ELFCLASS64;
         ehdr.e_ident[elf::EI_DATA] = elf::ELFDATA2LSB;
         ehdr.e_ident[elf::EI_VERSION] = 1;
@@ -343,8 +351,8 @@ TEST_F(LinkerExtensionsTest, LazyPltTrampolineResolvesOnceAndPatchesGotSlot)
         ehdr.e_phnum = 2;
         provider.WriteAt(0, ehdr);
 
-        elf::Elf64_Phdr ph_load{elf::PT_LOAD, elf::PF_R | elf::PF_W | elf::PF_X, 0,      0,
-                                0,             0x2000,                             0x2000, 0x1000};
+        elf::Elf64_Phdr ph_load{
+            elf::PT_LOAD, elf::PF_R | elf::PF_W | elf::PF_X, 0, 0, 0, 0x2000, 0x2000, 0x1000};
         provider.WriteAt(phdr_off, ph_load);
 
         const char strtab[] = "\0lazy_target_fn\0";
@@ -368,8 +376,8 @@ TEST_F(LinkerExtensionsTest, LazyPltTrampolineResolvesOnceAndPatchesGotSlot)
         dyns[3] = {elf::DT_NULL, {0}};
         provider.WriteBytes(dyn_off, dyns, sizeof(dyns));
 
-        elf::Elf64_Phdr ph_dyn{elf::PT_DYNAMIC, elf::PF_R | elf::PF_W, dyn_off, dyn_off, dyn_off,
-                               sizeof(dyns),    sizeof(dyns),           8};
+        elf::Elf64_Phdr ph_dyn{elf::PT_DYNAMIC, elf::PF_R | elf::PF_W, dyn_off,      dyn_off,
+                               dyn_off,         sizeof(dyns),          sizeof(dyns), 8};
         provider.WriteAt(phdr_off + sizeof(elf::Elf64_Phdr), ph_dyn);
 
         const uint8_t fn_bytes[] = {
@@ -403,7 +411,10 @@ TEST_F(LinkerExtensionsTest, LazyPltTrampolineResolvesOnceAndPatchesGotSlot)
         constexpr size_t symtab_off = 0x500;
 
         elf::Elf64_Ehdr ehdr{};
-        std::memcpy(ehdr.e_ident, "\x7F" "ELF", 4);
+        std::memcpy(ehdr.e_ident,
+                    "\x7F"
+                    "ELF",
+                    4);
         ehdr.e_ident[elf::EI_CLASS] = elf::ELFCLASS64;
         ehdr.e_ident[elf::EI_DATA] = elf::ELFDATA2LSB;
         ehdr.e_ident[elf::EI_VERSION] = 1;
@@ -416,8 +427,8 @@ TEST_F(LinkerExtensionsTest, LazyPltTrampolineResolvesOnceAndPatchesGotSlot)
         ehdr.e_phnum = 2;
         consumer.WriteAt(0, ehdr);
 
-        elf::Elf64_Phdr ph_load{elf::PT_LOAD, elf::PF_R | elf::PF_W, 0,      0,
-                                0,             0x2000,                 0x2000, 0x1000};
+        elf::Elf64_Phdr ph_load{elf::PT_LOAD, elf::PF_R | elf::PF_W, 0, 0, 0, 0x2000, 0x2000,
+                                0x1000};
         consumer.WriteAt(phdr_off, ph_load);
 
         const char strtab[] = "\0lazy_target_fn\0";
@@ -443,8 +454,8 @@ TEST_F(LinkerExtensionsTest, LazyPltTrampolineResolvesOnceAndPatchesGotSlot)
         dyns[5] = {elf::DT_NULL, {0}};
         consumer.WriteBytes(dyn_off, dyns, sizeof(dyns));
 
-        elf::Elf64_Phdr ph_dyn{elf::PT_DYNAMIC, elf::PF_R | elf::PF_W, dyn_off, dyn_off, dyn_off,
-                               sizeof(dyns),    sizeof(dyns),           8};
+        elf::Elf64_Phdr ph_dyn{elf::PT_DYNAMIC, elf::PF_R | elf::PF_W, dyn_off,      dyn_off,
+                               dyn_off,         sizeof(dyns),          sizeof(dyns), 8};
         consumer.WriteAt(phdr_off + sizeof(elf::Elf64_Phdr), ph_dyn);
     }
 
@@ -462,8 +473,8 @@ TEST_F(LinkerExtensionsTest, LazyPltTrampolineResolvesOnceAndPatchesGotSlot)
 
     uint64_t count_before = elf::LinkMap::Instance().GetLazyResolveCount();
 
-    using LazyFn = __attribute__((sysv_abi)) double (*)(int64_t, int64_t, int64_t, int64_t,
-                                                         int64_t, int64_t, double, double);
+    using LazyFn = __attribute__((sysv_abi)) double (*)(int64_t, int64_t, int64_t, int64_t, int64_t,
+                                                        int64_t, double, double);
     auto fn1 = reinterpret_cast<LazyFn>(*got_slot);
     double r1 = fn1(1, 2, 3, 4, 5, 6, 1.5, 2.5);
     EXPECT_DOUBLE_EQ(r1, 25.0);
@@ -492,7 +503,8 @@ TEST_F(LinkerExtensionsTest, AndroidDlOpenExtLoadsFromFdAndOffset)
     {
         std::ofstream ofs(packed_path, std::ios::binary | std::ios::trunc);
         std::vector<uint8_t> pad(kOffset, 0xAA);
-        ofs.write(reinterpret_cast<const char *>(pad.data()), static_cast<std::streamsize>(pad.size()));
+        ofs.write(reinterpret_cast<const char *>(pad.data()),
+                  static_cast<std::streamsize>(pad.size()));
         ofs.write(reinterpret_cast<const char *>(elf_bytes.data()),
                   static_cast<std::streamsize>(elf_bytes.size()));
     }
@@ -509,15 +521,13 @@ TEST_F(LinkerExtensionsTest, AndroidDlOpenExtLoadsFromFdAndOffset)
     ext.library_fd = guest_fd;
     ext.library_fd_offset = static_cast<int64_t>(kOffset);
 
-    void *handle =
-        elf::LinkMap::Instance().DlOpenExt("packed_math.so", elf::RTLD_NOW, &ext);
+    void *handle = elf::LinkMap::Instance().DlOpenExt("packed_math.so", elf::RTLD_NOW, &ext);
     fd_table_->Close(guest_fd);
 
     ASSERT_NE(handle, nullptr) << elf::LinkMap::Instance().DlError();
 
     using MathAddFn = __attribute__((sysv_abi)) int (*)(int, int);
-    auto math_add =
-        reinterpret_cast<MathAddFn>(elf::LinkMap::Instance().DlSym(handle, "math_add"));
+    auto math_add = reinterpret_cast<MathAddFn>(elf::LinkMap::Instance().DlSym(handle, "math_add"));
     ASSERT_NE(math_add, nullptr);
     EXPECT_EQ(math_add(19, 23), 42);
 

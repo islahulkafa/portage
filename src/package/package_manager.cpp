@@ -44,6 +44,7 @@ bool PackageManager::Initialize(const std::filesystem::path &sandbox_base) noexc
 
     std::error_code ec;
     std::filesystem::create_directories(sandbox_base_, ec);
+    std::filesystem::create_directories(sandbox_base_ / "data" / "local" / "tmp", ec);
     initialized_ = true;
     return true;
 }
@@ -69,6 +70,7 @@ std::optional<PackageInfo> PackageManager::InstallPackage(const std::filesystem:
         sandbox_base_ = DetermineDefaultSandbox();
         std::error_code ec;
         std::filesystem::create_directories(sandbox_base_, ec);
+        std::filesystem::create_directories(sandbox_base_ / "data" / "local" / "tmp", ec);
         initialized_ = true;
     }
 

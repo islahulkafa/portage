@@ -126,3 +126,151 @@ TEST_F(OpenSLESTest, PlaysAudioViaBufferQueueAndInvokesCallback)
     (*outputMixObject)->Destroy(outputMixObject);
     (*engineObject)->Destroy(engineObject);
 }
+
+TEST_F(OpenSLESTest, MuteSoloInterfaceReachable)
+{
+    SLObjectItf engineObject = nullptr;
+    ASSERT_EQ(slCreateEngine(&engineObject, 0, nullptr, 0, nullptr, nullptr), SL_RESULT_SUCCESS);
+    ASSERT_EQ((*engineObject)->Realize(engineObject, SL_BOOLEAN_FALSE), SL_RESULT_SUCCESS);
+
+    SLEngineItf engineEngine = nullptr;
+    ASSERT_EQ((*engineObject)->GetInterface(engineObject, SL_IID_ENGINE, &engineEngine),
+              SL_RESULT_SUCCESS);
+
+    SLObjectItf outputMixObject = nullptr;
+    ASSERT_EQ((*engineEngine)->CreateOutputMix(engineEngine, &outputMixObject, 0, nullptr, nullptr),
+              SL_RESULT_SUCCESS);
+    ASSERT_EQ((*outputMixObject)->Realize(outputMixObject, SL_BOOLEAN_FALSE), SL_RESULT_SUCCESS);
+
+    SLDataLocator_AndroidSimpleBufferQueue loc_bq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2};
+    SLDataFormat_PCM format_pcm = {
+        SL_DATAFORMAT_PCM,           2,
+        SL_SAMPLINGRATE_48,          SL_PCMSAMPLEFORMAT_FIXED_16,
+        SL_PCMSAMPLEFORMAT_FIXED_16, SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT,
+        SL_BYTEORDER_LITTLEENDIAN,
+    };
+    SLDataSource audioSrc = {&loc_bq, &format_pcm};
+    SLDataLocator_OutputMix loc_outmix = {SL_DATALOCATOR_OUTPUTMIX, outputMixObject};
+    SLDataSink audioSnk = {&loc_outmix, nullptr};
+
+    SLObjectItf playerObject = nullptr;
+    ASSERT_EQ((*engineEngine)
+                  ->CreateAudioPlayer(engineEngine, &playerObject, &audioSrc, &audioSnk, 0, nullptr,
+                                      nullptr),
+              SL_RESULT_SUCCESS);
+    ASSERT_EQ((*playerObject)->Realize(playerObject, SL_BOOLEAN_FALSE), SL_RESULT_SUCCESS);
+
+    SLMuteSoloItf muteSolo = nullptr;
+    EXPECT_EQ((*playerObject)->GetInterface(playerObject, SL_IID_MUTESOLO, &muteSolo),
+              SL_RESULT_SUCCESS);
+    ASSERT_NE(muteSolo, nullptr);
+
+    SLuint8 numChannels = 0;
+    EXPECT_EQ((*muteSolo)->GetNumChannels(muteSolo, &numChannels), SL_RESULT_SUCCESS);
+    EXPECT_EQ(numChannels, 2);
+
+    EXPECT_EQ((*muteSolo)->SetChannelMute(muteSolo, 0, SL_BOOLEAN_TRUE), SL_RESULT_SUCCESS);
+    SLboolean muted = SL_BOOLEAN_FALSE;
+    EXPECT_EQ((*muteSolo)->GetChannelMute(muteSolo, 0, &muted), SL_RESULT_SUCCESS);
+    EXPECT_EQ(muted, SL_BOOLEAN_TRUE);
+
+    EXPECT_EQ((*muteSolo)->SetChannelSolo(muteSolo, 1, SL_BOOLEAN_TRUE), SL_RESULT_SUCCESS);
+    SLboolean soloed = SL_BOOLEAN_FALSE;
+    EXPECT_EQ((*muteSolo)->GetChannelSolo(muteSolo, 1, &soloed), SL_RESULT_SUCCESS);
+    EXPECT_EQ(soloed, SL_BOOLEAN_TRUE);
+
+    EXPECT_EQ((*muteSolo)->SetChannelMute(muteSolo, 2, SL_BOOLEAN_TRUE),
+              SL_RESULT_PARAMETER_INVALID);
+
+    (*playerObject)->Destroy(playerObject);
+    (*outputMixObject)->Destroy(outputMixObject);
+    (*engineObject)->Destroy(engineObject);
+}
+
+TEST_F(OpenSLESTest, AndroidConfigurationInterfaceReachable)
+{
+    SLObjectItf engineObject = nullptr;
+    ASSERT_EQ(slCreateEngine(&engineObject, 0, nullptr, 0, nullptr, nullptr), SL_RESULT_SUCCESS);
+    ASSERT_EQ((*engineObject)->Realize(engineObject, SL_BOOLEAN_FALSE), SL_RESULT_SUCCESS);
+
+    SLEngineItf engineEngine = nullptr;
+    ASSERT_EQ((*engineObject)->GetInterface(engineObject, SL_IID_ENGINE, &engineEngine),
+              SL_RESULT_SUCCESS);
+
+    SLObjectItf outputMixObject = nullptr;
+    ASSERT_EQ((*engineEngine)->CreateOutputMix(engineEngine, &outputMixObject, 0, nullptr, nullptr),
+              SL_RESULT_SUCCESS);
+    ASSERT_EQ((*outputMixObject)->Realize(outputMixObject, SL_BOOLEAN_FALSE), SL_RESULT_SUCCESS);
+
+    SLDataLocator_AndroidSimpleBufferQueue loc_bq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2};
+    SLDataFormat_PCM format_pcm = {
+        SL_DATAFORMAT_PCM,           2,
+        SL_SAMPLINGRATE_48,          SL_PCMSAMPLEFORMAT_FIXED_16,
+        SL_PCMSAMPLEFORMAT_FIXED_16, SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT,
+        SL_BYTEORDER_LITTLEENDIAN,
+    };
+    SLDataSource audioSrc = {&loc_bq, &format_pcm};
+    SLDataLocator_OutputMix loc_outmix = {SL_DATALOCATOR_OUTPUTMIX, outputMixObject};
+    SLDataSink audioSnk = {&loc_outmix, nullptr};
+
+    SLObjectItf playerObject = nullptr;
+    ASSERT_EQ((*engineEngine)
+                  ->CreateAudioPlayer(engineEngine, &playerObject, &audioSrc, &audioSnk, 0, nullptr,
+                                      nullptr),
+              SL_RESULT_SUCCESS);
+    ASSERT_EQ((*playerObject)->Realize(playerObject, SL_BOOLEAN_FALSE), SL_RESULT_SUCCESS);
+
+    SLAndroidConfigurationItf playerConfig = nullptr;
+    EXPECT_EQ(
+        (*playerObject)->GetInterface(playerObject, SL_IID_ANDROIDCONFIGURATION, &playerConfig),
+        SL_RESULT_SUCCESS);
+    ASSERT_NE(playerConfig, nullptr);
+
+    SLint32 streamType = 3;
+    EXPECT_EQ((*playerConfig)
+                  ->SetConfiguration(playerConfig, reinterpret_cast<const SLchar *>("unknown"),
+                                     &streamType, sizeof(streamType)),
+              SL_RESULT_SUCCESS);
+
+    SLuint32 valSize = sizeof(streamType);
+    EXPECT_EQ((*playerConfig)
+                  ->GetConfiguration(playerConfig, reinterpret_cast<const SLchar *>("unknown"),
+                                     &valSize, &streamType),
+              SL_RESULT_SUCCESS);
+
+    SLDataLocator_AndroidSimpleBufferQueue rec_loc_bq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE,
+                                                         2};
+    SLDataFormat_PCM rec_format = {
+        SL_DATAFORMAT_PCM,           1,
+        SL_SAMPLINGRATE_48,          SL_PCMSAMPLEFORMAT_FIXED_16,
+        SL_PCMSAMPLEFORMAT_FIXED_16, SL_SPEAKER_FRONT_LEFT,
+        SL_BYTEORDER_LITTLEENDIAN,
+    };
+    SLDataSink recSnk = {&rec_loc_bq, &rec_format};
+    SLDataSource recSrc = {nullptr, nullptr};
+    SLObjectItf recorderObject = nullptr;
+    ASSERT_EQ((*engineEngine)
+                  ->CreateAudioRecorder(engineEngine, &recorderObject, &recSrc, &recSnk, 0, nullptr,
+                                        nullptr),
+              SL_RESULT_SUCCESS);
+    ASSERT_EQ((*recorderObject)->Realize(recorderObject, SL_BOOLEAN_FALSE), SL_RESULT_SUCCESS);
+
+    SLMuteSoloItf recMuteSolo = nullptr;
+    EXPECT_EQ((*recorderObject)->GetInterface(recorderObject, SL_IID_MUTESOLO, &recMuteSolo),
+              SL_RESULT_SUCCESS);
+    ASSERT_NE(recMuteSolo, nullptr);
+    SLuint8 recChannels = 0;
+    EXPECT_EQ((*recMuteSolo)->GetNumChannels(recMuteSolo, &recChannels), SL_RESULT_SUCCESS);
+    EXPECT_EQ(recChannels, 1);
+
+    SLAndroidConfigurationItf recConfig = nullptr;
+    EXPECT_EQ(
+        (*recorderObject)->GetInterface(recorderObject, SL_IID_ANDROIDCONFIGURATION, &recConfig),
+        SL_RESULT_SUCCESS);
+    ASSERT_NE(recConfig, nullptr);
+
+    (*recorderObject)->Destroy(recorderObject);
+    (*playerObject)->Destroy(playerObject);
+    (*outputMixObject)->Destroy(outputMixObject);
+    (*engineObject)->Destroy(engineObject);
+}

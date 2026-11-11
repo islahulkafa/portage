@@ -672,8 +672,7 @@ __attribute__((sysv_abi)) GLsync glFenceSync(GLenum condition, GLbitfield flags)
             return s;
         }
     }
-    GLsync fallback =
-        reinterpret_cast<GLsync>(portage::gles::FallbackSyncCounter().fetch_add(1));
+    GLsync fallback = reinterpret_cast<GLsync>(portage::gles::FallbackSyncCounter().fetch_add(1));
     std::lock_guard<std::mutex> lock(portage::gles::FallbackSyncMutex());
     portage::gles::FallbackSyncSet().insert(fallback);
     return fallback;
@@ -788,7 +787,7 @@ __attribute__((sysv_abi)) void glBindBufferBase(GLenum target, GLuint index, GLu
 }
 
 __attribute__((sysv_abi)) void glBindBufferRange(GLenum target, GLuint index, GLuint buffer,
-                                                  GLintptr offset, GLsizeiptr size)
+                                                 GLintptr offset, GLsizeiptr size)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glBindBufferRange) {
@@ -797,7 +796,7 @@ __attribute__((sysv_abi)) void glBindBufferRange(GLenum target, GLuint index, GL
 }
 
 __attribute__((sysv_abi)) GLuint glGetUniformBlockIndex(GLuint program,
-                                                         const GLchar *uniformBlockName)
+                                                        const GLchar *uniformBlockName)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glGetUniformBlockIndex) {
@@ -807,7 +806,7 @@ __attribute__((sysv_abi)) GLuint glGetUniformBlockIndex(GLuint program,
 }
 
 __attribute__((sysv_abi)) void glUniformBlockBinding(GLuint program, GLuint uniformBlockIndex,
-                                                      GLuint uniformBlockBinding)
+                                                     GLuint uniformBlockBinding)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glUniformBlockBinding) {
@@ -816,7 +815,7 @@ __attribute__((sysv_abi)) void glUniformBlockBinding(GLuint program, GLuint unif
 }
 
 __attribute__((sysv_abi)) void glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count,
-                                                      GLsizei instancecount)
+                                                     GLsizei instancecount)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glDrawArraysInstanced) {
@@ -825,7 +824,7 @@ __attribute__((sysv_abi)) void glDrawArraysInstanced(GLenum mode, GLint first, G
 }
 
 __attribute__((sysv_abi)) void glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum type,
-                                                        const void *indices, GLsizei instancecount)
+                                                       const void *indices, GLsizei instancecount)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glDrawElementsInstanced) {
@@ -881,8 +880,8 @@ __attribute__((sysv_abi)) void glEndTransformFeedback(void)
 }
 
 __attribute__((sysv_abi)) void glTransformFeedbackVaryings(GLuint program, GLsizei count,
-                                                            const GLchar *const *varyings,
-                                                            GLenum bufferMode)
+                                                           const GLchar *const *varyings,
+                                                           GLenum bufferMode)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glTransformFeedbackVaryings) {
@@ -937,7 +936,7 @@ __attribute__((sysv_abi)) void glDeleteSamplers(GLsizei count, const GLuint *sam
 }
 
 __attribute__((sysv_abi)) void *glMapBufferRange(GLenum target, GLintptr offset, GLsizeiptr length,
-                                                   GLbitfield access)
+                                                 GLbitfield access)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glMapBufferRange) {
@@ -956,7 +955,7 @@ __attribute__((sysv_abi)) GLboolean glUnmapBuffer(GLenum target)
 }
 
 __attribute__((sysv_abi)) void glFlushMappedBufferRange(GLenum target, GLintptr offset,
-                                                         GLsizeiptr length)
+                                                        GLsizeiptr length)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glFlushMappedBufferRange) {
@@ -973,7 +972,7 @@ __attribute__((sysv_abi)) void glPixelStorei(GLenum pname, GLint param)
 }
 
 __attribute__((sysv_abi)) void glTexStorage2D(GLenum target, GLsizei levels, GLenum internalformat,
-                                               GLsizei width, GLsizei height)
+                                              GLsizei width, GLsizei height)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glTexStorage2D) {
@@ -982,7 +981,7 @@ __attribute__((sysv_abi)) void glTexStorage2D(GLenum target, GLsizei levels, GLe
 }
 
 __attribute__((sysv_abi)) void glTexStorage3D(GLenum target, GLsizei levels, GLenum internalformat,
-                                               GLsizei width, GLsizei height, GLsizei depth)
+                                              GLsizei width, GLsizei height, GLsizei depth)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glTexStorage3D) {
@@ -991,9 +990,9 @@ __attribute__((sysv_abi)) void glTexStorage3D(GLenum target, GLsizei levels, GLe
 }
 
 __attribute__((sysv_abi)) void glTexImage3D(GLenum target, GLint level, GLint internalformat,
-                                             GLsizei width, GLsizei height, GLsizei depth,
-                                             GLint border, GLenum format, GLenum type,
-                                             const void *pixels)
+                                            GLsizei width, GLsizei height, GLsizei depth,
+                                            GLint border, GLenum format, GLenum type,
+                                            const void *pixels)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glTexImage3D) {
@@ -1003,9 +1002,9 @@ __attribute__((sysv_abi)) void glTexImage3D(GLenum target, GLint level, GLint in
 }
 
 __attribute__((sysv_abi)) void glTexSubImage3D(GLenum target, GLint level, GLint xoffset,
-                                                GLint yoffset, GLint zoffset, GLsizei width,
-                                                GLsizei height, GLsizei depth, GLenum format,
-                                                GLenum type, const void *pixels)
+                                               GLint yoffset, GLint zoffset, GLsizei width,
+                                               GLsizei height, GLsizei depth, GLenum format,
+                                               GLenum type, const void *pixels)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glTexSubImage3D) {
@@ -1015,7 +1014,7 @@ __attribute__((sysv_abi)) void glTexSubImage3D(GLenum target, GLint level, GLint
 }
 
 __attribute__((sysv_abi)) void glDispatchCompute(GLuint num_groups_x, GLuint num_groups_y,
-                                                  GLuint num_groups_z)
+                                                 GLuint num_groups_z)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glDispatchCompute) {

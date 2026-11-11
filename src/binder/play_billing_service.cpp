@@ -57,8 +57,7 @@ void WriteBundle(AParcel *out, const std::unordered_map<std::string, int32_t> &i
     AParcel_delete(body);
 }
 
-static bool __attribute__((sysv_abi)) StringAllocator(void *data, int32_t len,
-                                                       char **out_buf)
+static bool __attribute__((sysv_abi)) StringAllocator(void *data, int32_t len, char **out_buf)
 {
     if (len < 0) {
         return true;
@@ -99,9 +98,8 @@ void PlayBillingService::Initialize()
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!binder_class_) {
-        binder_class_ =
-            AIBinder_Class_define("com.android.vending.billing.IInAppBillingService", nullptr,
-                                  nullptr, &PlayBillingService::OnTransact);
+        binder_class_ = AIBinder_Class_define("com.android.vending.billing.IInAppBillingService",
+                                              nullptr, nullptr, &PlayBillingService::OnTransact);
     }
     if (!binder_instance_) {
         binder_instance_ = AIBinder_new(binder_class_, this);
@@ -191,9 +189,10 @@ bool PlayBillingService::HasPurchase(const std::string &sku) const
     return false;
 }
 
-__attribute__((sysv_abi)) binder_status_t
-PlayBillingService::OnTransact(AIBinder *, transaction_code_t code, const AParcel *in,
-                               AParcel *out)
+__attribute__((sysv_abi)) binder_status_t PlayBillingService::OnTransact(AIBinder *,
+                                                                         transaction_code_t code,
+                                                                         const AParcel *in,
+                                                                         AParcel *out)
 {
     auto &svc = Instance();
     std::lock_guard<std::mutex> lock(svc.mutex_);
@@ -214,14 +213,12 @@ PlayBillingService::OnTransact(AIBinder *, transaction_code_t code, const AParce
     case 2: {
         std::vector<std::string> details_list;
         for (const auto &[_, info] : svc.skus_) {
-            std::string json = "{\"productId\":\"" + info.sku + "\"," +
-                               "\"type\":\"" + info.type + "\"," +
-                               "\"price\":\"" + info.price + "\"," +
-                               "\"price_amount_micros\":" +
-                               std::to_string(info.price_amount_micros) + "," +
-                               "\"price_currency_code\":\"" + info.currency + "\"," +
-                               "\"title\":\"" + info.title + "\"," +
-                               "\"description\":\"" + info.description + "\"}";
+            std::string json =
+                "{\"productId\":\"" + info.sku + "\"," + "\"type\":\"" + info.type + "\"," +
+                "\"price\":\"" + info.price + "\"," +
+                "\"price_amount_micros\":" + std::to_string(info.price_amount_micros) + "," +
+                "\"price_currency_code\":\"" + info.currency + "\"," + "\"title\":\"" + info.title +
+                "\"," + "\"description\":\"" + info.description + "\"}";
             details_list.push_back(json);
         }
 
@@ -259,9 +256,8 @@ PlayBillingService::OnTransact(AIBinder *, transaction_code_t code, const AParce
 
         for (const auto &[_, p] : svc.purchases_) {
             item_list.push_back(p.sku);
-            std::string json = "{\"orderId\":\"" + p.order_id + "\"," +
-                               "\"packageName\":\"" + p.package_name + "\"," +
-                               "\"productId\":\"" + p.sku + "\"," +
+            std::string json = "{\"orderId\":\"" + p.order_id + "\"," + "\"packageName\":\"" +
+                               p.package_name + "\"," + "\"productId\":\"" + p.sku + "\"," +
                                "\"purchaseTime\":" + std::to_string(p.purchase_time) + "," +
                                "\"purchaseState\":" + std::to_string(p.purchase_state) + "," +
                                "\"purchaseToken\":\"" + p.purchase_token + "\"," +

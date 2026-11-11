@@ -8,8 +8,9 @@ namespace portage::binder {
 
 namespace {
 
-__attribute__((sysv_abi)) binder_status_t
-VibratorTransact(AIBinder *binder, transaction_code_t code, const AParcel *in, AParcel *out)
+__attribute__((sysv_abi)) binder_status_t VibratorTransact(AIBinder *binder,
+                                                           transaction_code_t code,
+                                                           const AParcel *in, AParcel *out)
 {
     (void)binder;
     if (code == 1) {
@@ -31,8 +32,9 @@ VibratorTransact(AIBinder *binder, transaction_code_t code, const AParcel *in, A
     return STATUS_OK;
 }
 
-__attribute__((sysv_abi)) binder_status_t
-SurfaceFlingerTransact(AIBinder *binder, transaction_code_t code, const AParcel *in, AParcel *out)
+__attribute__((sysv_abi)) binder_status_t SurfaceFlingerTransact(AIBinder *binder,
+                                                                 transaction_code_t code,
+                                                                 const AParcel *in, AParcel *out)
 {
     (void)binder;
     (void)code;
@@ -46,8 +48,9 @@ SurfaceFlingerTransact(AIBinder *binder, transaction_code_t code, const AParcel 
     return STATUS_OK;
 }
 
-__attribute__((sysv_abi)) binder_status_t
-PowerManagerTransact(AIBinder *binder, transaction_code_t code, const AParcel *in, AParcel *out)
+__attribute__((sysv_abi)) binder_status_t PowerManagerTransact(AIBinder *binder,
+                                                               transaction_code_t code,
+                                                               const AParcel *in, AParcel *out)
 {
     (void)binder;
     if (code == 1) {
@@ -100,8 +103,9 @@ PowerManagerTransact(AIBinder *binder, transaction_code_t code, const AParcel *i
     return STATUS_OK;
 }
 
-__attribute__((sysv_abi)) binder_status_t
-PackageManagerTransact(AIBinder *binder, transaction_code_t code, const AParcel *in, AParcel *out)
+__attribute__((sysv_abi)) binder_status_t PackageManagerTransact(AIBinder *binder,
+                                                                 transaction_code_t code,
+                                                                 const AParcel *in, AParcel *out)
 {
     (void)binder;
     (void)code;
@@ -114,9 +118,9 @@ PackageManagerTransact(AIBinder *binder, transaction_code_t code, const AParcel 
     return STATUS_OK;
 }
 
-__attribute__((sysv_abi)) binder_status_t
-BatteryPropertiesTransact(AIBinder *binder, transaction_code_t code, const AParcel *in,
-                          AParcel *out)
+__attribute__((sysv_abi)) binder_status_t BatteryPropertiesTransact(AIBinder *binder,
+                                                                    transaction_code_t code,
+                                                                    const AParcel *in, AParcel *out)
 {
     (void)binder;
     (void)code;
@@ -139,15 +143,9 @@ ServiceManager &ServiceManager::Instance() noexcept
     return instance;
 }
 
-ServiceManager::ServiceManager()
-{
-    InitializeSyntheticServices();
-}
+ServiceManager::ServiceManager() { InitializeSyntheticServices(); }
 
-ServiceManager::~ServiceManager()
-{
-    Reset();
-}
+ServiceManager::~ServiceManager() { Reset(); }
 
 void ServiceManager::Reset()
 {
@@ -243,10 +241,7 @@ AIBinder *ServiceManager::GetService(std::string_view name)
     return nullptr;
 }
 
-AIBinder *ServiceManager::CheckService(std::string_view name)
-{
-    return GetService(name);
-}
+AIBinder *ServiceManager::CheckService(std::string_view name) { return GetService(name); }
 
 size_t ServiceManager::ServiceCount() const noexcept
 {
@@ -258,8 +253,8 @@ size_t ServiceManager::ServiceCount() const noexcept
 
 extern "C" {
 
-__attribute__((sysv_abi)) binder_status_t
-AServiceManager_addService(AIBinder *binder, const char *instance)
+__attribute__((sysv_abi)) binder_status_t AServiceManager_addService(AIBinder *binder,
+                                                                     const char *instance)
 {
     if (!binder || !instance) {
         return STATUS_BAD_VALUE;

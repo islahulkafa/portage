@@ -156,7 +156,8 @@ PFN_vkGetPhysicalDeviceFeatures2 g_host_vkGetPhysicalDeviceFeatures2{nullptr};
 PFN_vkGetPhysicalDeviceFormatProperties g_host_vkGetPhysicalDeviceFormatProperties{nullptr};
 PFN_vkGetPhysicalDeviceFormatProperties2 g_host_vkGetPhysicalDeviceFormatProperties2{nullptr};
 PFN_vkGetPhysicalDeviceMemoryProperties2 g_host_vkGetPhysicalDeviceMemoryProperties2{nullptr};
-PFN_vkGetPhysicalDeviceQueueFamilyProperties2 g_host_vkGetPhysicalDeviceQueueFamilyProperties2{nullptr};
+PFN_vkGetPhysicalDeviceQueueFamilyProperties2 g_host_vkGetPhysicalDeviceQueueFamilyProperties2{
+    nullptr};
 PFN_vkGetBufferMemoryRequirements2 g_host_vkGetBufferMemoryRequirements2{nullptr};
 PFN_vkGetDeviceQueue2 g_host_vkGetDeviceQueue2{nullptr};
 PFN_vkFlushMappedMemoryRanges g_host_vkFlushMappedMemoryRanges{nullptr};
@@ -245,12 +246,10 @@ fs::FileDescriptorTable *GetActiveFdTable()
 
 void ResolveInstanceFunctions(VkInstance instance)
 {
-    g_host_vkGetPhysicalDeviceProperties2 =
-        ResolveInstanceProc<PFN_vkGetPhysicalDeviceProperties2>(instance,
-                                                                "vkGetPhysicalDeviceProperties2");
-    g_host_vkGetPhysicalDeviceFeatures2 =
-        ResolveInstanceProc<PFN_vkGetPhysicalDeviceFeatures2>(instance,
-                                                              "vkGetPhysicalDeviceFeatures2");
+    g_host_vkGetPhysicalDeviceProperties2 = ResolveInstanceProc<PFN_vkGetPhysicalDeviceProperties2>(
+        instance, "vkGetPhysicalDeviceProperties2");
+    g_host_vkGetPhysicalDeviceFeatures2 = ResolveInstanceProc<PFN_vkGetPhysicalDeviceFeatures2>(
+        instance, "vkGetPhysicalDeviceFeatures2");
     g_host_vkGetPhysicalDeviceFormatProperties =
         ResolveInstanceProc<PFN_vkGetPhysicalDeviceFormatProperties>(
             instance, "vkGetPhysicalDeviceFormatProperties");
@@ -304,8 +303,7 @@ void ResolveDeviceFunctions(VkDevice device)
         ResolveDeviceProc<PFN_vkCmdBeginRenderPass>(device, "vkCmdBeginRenderPass");
     g_host_vkCmdEndRenderPass =
         ResolveDeviceProc<PFN_vkCmdEndRenderPass>(device, "vkCmdEndRenderPass");
-    g_host_vkCmdNextSubpass =
-        ResolveDeviceProc<PFN_vkCmdNextSubpass>(device, "vkCmdNextSubpass");
+    g_host_vkCmdNextSubpass = ResolveDeviceProc<PFN_vkCmdNextSubpass>(device, "vkCmdNextSubpass");
     g_host_vkCmdBeginRendering =
         ResolveDeviceProc<PFN_vkCmdBeginRendering>(device, "vkCmdBeginRendering");
     if (!g_host_vkCmdBeginRendering) {
@@ -323,11 +321,9 @@ void ResolveDeviceFunctions(VkDevice device)
     g_host_vkCreateImage = ResolveDeviceProc<PFN_vkCreateImage>(device, "vkCreateImage");
     g_host_vkDestroyImage = ResolveDeviceProc<PFN_vkDestroyImage>(device, "vkDestroyImage");
     g_host_vkGetImageMemoryRequirements =
-        ResolveDeviceProc<PFN_vkGetImageMemoryRequirements>(device,
-                                                            "vkGetImageMemoryRequirements");
-    g_host_vkGetImageMemoryRequirements2 =
-        ResolveDeviceProc<PFN_vkGetImageMemoryRequirements2>(device,
-                                                             "vkGetImageMemoryRequirements2");
+        ResolveDeviceProc<PFN_vkGetImageMemoryRequirements>(device, "vkGetImageMemoryRequirements");
+    g_host_vkGetImageMemoryRequirements2 = ResolveDeviceProc<PFN_vkGetImageMemoryRequirements2>(
+        device, "vkGetImageMemoryRequirements2");
     g_host_vkBindImageMemory =
         ResolveDeviceProc<PFN_vkBindImageMemory>(device, "vkBindImageMemory");
     g_host_vkBindImageMemory2 =
@@ -343,11 +339,9 @@ void ResolveDeviceFunctions(VkDevice device)
 
     // Descriptors & Push Constants
     g_host_vkCreateDescriptorSetLayout =
-        ResolveDeviceProc<PFN_vkCreateDescriptorSetLayout>(device,
-                                                           "vkCreateDescriptorSetLayout");
+        ResolveDeviceProc<PFN_vkCreateDescriptorSetLayout>(device, "vkCreateDescriptorSetLayout");
     g_host_vkDestroyDescriptorSetLayout =
-        ResolveDeviceProc<PFN_vkDestroyDescriptorSetLayout>(device,
-                                                            "vkDestroyDescriptorSetLayout");
+        ResolveDeviceProc<PFN_vkDestroyDescriptorSetLayout>(device, "vkDestroyDescriptorSetLayout");
     g_host_vkCreateDescriptorPool =
         ResolveDeviceProc<PFN_vkCreateDescriptorPool>(device, "vkCreateDescriptorPool");
     g_host_vkDestroyDescriptorPool =
@@ -376,10 +370,8 @@ void ResolveDeviceFunctions(VkDevice device)
     g_host_vkDestroySemaphore =
         ResolveDeviceProc<PFN_vkDestroySemaphore>(device, "vkDestroySemaphore");
     g_host_vkGetSemaphoreCounterValue =
-        ResolveDeviceProc<PFN_vkGetSemaphoreCounterValue>(device,
-                                                          "vkGetSemaphoreCounterValue");
-    g_host_vkWaitSemaphores =
-        ResolveDeviceProc<PFN_vkWaitSemaphores>(device, "vkWaitSemaphores");
+        ResolveDeviceProc<PFN_vkGetSemaphoreCounterValue>(device, "vkGetSemaphoreCounterValue");
+    g_host_vkWaitSemaphores = ResolveDeviceProc<PFN_vkWaitSemaphores>(device, "vkWaitSemaphores");
     g_host_vkSignalSemaphore =
         ResolveDeviceProc<PFN_vkSignalSemaphore>(device, "vkSignalSemaphore");
     g_host_vkCreateEvent = ResolveDeviceProc<PFN_vkCreateEvent>(device, "vkCreateEvent");
@@ -395,16 +387,14 @@ void ResolveDeviceFunctions(VkDevice device)
         ResolveDeviceProc<PFN_vkResetCommandBuffer>(device, "vkResetCommandBuffer");
     g_host_vkCmdBindPipeline =
         ResolveDeviceProc<PFN_vkCmdBindPipeline>(device, "vkCmdBindPipeline");
-    g_host_vkCmdSetViewport =
-        ResolveDeviceProc<PFN_vkCmdSetViewport>(device, "vkCmdSetViewport");
+    g_host_vkCmdSetViewport = ResolveDeviceProc<PFN_vkCmdSetViewport>(device, "vkCmdSetViewport");
     g_host_vkCmdSetScissor = ResolveDeviceProc<PFN_vkCmdSetScissor>(device, "vkCmdSetScissor");
     g_host_vkCmdBindVertexBuffers =
         ResolveDeviceProc<PFN_vkCmdBindVertexBuffers>(device, "vkCmdBindVertexBuffers");
     g_host_vkCmdBindIndexBuffer =
         ResolveDeviceProc<PFN_vkCmdBindIndexBuffer>(device, "vkCmdBindIndexBuffer");
     g_host_vkCmdDraw = ResolveDeviceProc<PFN_vkCmdDraw>(device, "vkCmdDraw");
-    g_host_vkCmdDrawIndexed =
-        ResolveDeviceProc<PFN_vkCmdDrawIndexed>(device, "vkCmdDrawIndexed");
+    g_host_vkCmdDrawIndexed = ResolveDeviceProc<PFN_vkCmdDrawIndexed>(device, "vkCmdDrawIndexed");
     g_host_vkCmdDrawIndirect =
         ResolveDeviceProc<PFN_vkCmdDrawIndirect>(device, "vkCmdDrawIndirect");
     g_host_vkCmdDrawIndexedIndirect =
@@ -432,16 +422,14 @@ void ResolveDeviceFunctions(VkDevice device)
         ResolveDeviceProc<PFN_vkCmdUpdateBuffer>(device, "vkCmdUpdateBuffer");
 
     // Device-level queries
-    g_host_vkGetBufferMemoryRequirements2 =
-        ResolveDeviceProc<PFN_vkGetBufferMemoryRequirements2>(device,
-                                                             "vkGetBufferMemoryRequirements2");
+    g_host_vkGetBufferMemoryRequirements2 = ResolveDeviceProc<PFN_vkGetBufferMemoryRequirements2>(
+        device, "vkGetBufferMemoryRequirements2");
     g_host_vkGetDeviceQueue2 =
         ResolveDeviceProc<PFN_vkGetDeviceQueue2>(device, "vkGetDeviceQueue2");
     g_host_vkFlushMappedMemoryRanges =
         ResolveDeviceProc<PFN_vkFlushMappedMemoryRanges>(device, "vkFlushMappedMemoryRanges");
-    g_host_vkInvalidateMappedMemoryRanges =
-        ResolveDeviceProc<PFN_vkInvalidateMappedMemoryRanges>(device,
-                                                             "vkInvalidateMappedMemoryRanges");
+    g_host_vkInvalidateMappedMemoryRanges = ResolveDeviceProc<PFN_vkInvalidateMappedMemoryRanges>(
+        device, "vkInvalidateMappedMemoryRanges");
 }
 
 // Forward declarations
@@ -804,7 +792,8 @@ __attribute__((sysv_abi)) VkResult Sysv_vkEnumerateDeviceExtensionProperties(
         {"VK_KHR_external_semaphore_fd", 1},
         {"VK_KHR_external_fence_fd", 1},
     };
-    constexpr uint32_t kExtraCount = static_cast<uint32_t>(sizeof(kAndroidExts) / sizeof(kAndroidExts[0]));
+    constexpr uint32_t kExtraCount =
+        static_cast<uint32_t>(sizeof(kAndroidExts) / sizeof(kAndroidExts[0]));
 
     if (!pProperties) {
         uint32_t host_count = 0;
@@ -821,8 +810,8 @@ __attribute__((sysv_abi)) VkResult Sysv_vkEnumerateDeviceExtensionProperties(
     uint32_t host_count = capacity;
     VkResult res = VK_SUCCESS;
     if (g_host_vkEnumerateDeviceExtensionProperties) {
-        res = g_host_vkEnumerateDeviceExtensionProperties(physicalDevice, pLayerName,
-                                                          &host_count, pProperties);
+        res = g_host_vkEnumerateDeviceExtensionProperties(physicalDevice, pLayerName, &host_count,
+                                                          pProperties);
         if (res != VK_SUCCESS && res != VK_INCOMPLETE) {
             host_count = 0;
         }
@@ -1160,27 +1149,26 @@ Sysv_vkCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo *pCrea
     return g_host_vkCreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkDestroyShaderModule(VkDevice device, VkShaderModule shaderModule,
-                           const VkAllocationCallbacks *pAllocator)
+__attribute__((sysv_abi)) void Sysv_vkDestroyShaderModule(VkDevice device,
+                                                          VkShaderModule shaderModule,
+                                                          const VkAllocationCallbacks *pAllocator)
 {
     if (g_host_vkDestroyShaderModule)
         g_host_vkDestroyShaderModule(device, shaderModule, pAllocator);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkCreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *pCreateInfo,
-                            const VkAllocationCallbacks *pAllocator,
-                            VkPipelineLayout *pPipelineLayout)
+__attribute__((sysv_abi)) VkResult Sysv_vkCreatePipelineLayout(
+    VkDevice device, const VkPipelineLayoutCreateInfo *pCreateInfo,
+    const VkAllocationCallbacks *pAllocator, VkPipelineLayout *pPipelineLayout)
 {
     if (!g_host_vkCreatePipelineLayout)
         return VK_ERROR_INITIALIZATION_FAILED;
     return g_host_vkCreatePipelineLayout(device, pCreateInfo, pAllocator, pPipelineLayout);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkDestroyPipelineLayout(VkDevice device, VkPipelineLayout pipelineLayout,
-                             const VkAllocationCallbacks *pAllocator)
+__attribute__((sysv_abi)) void Sysv_vkDestroyPipelineLayout(VkDevice device,
+                                                            VkPipelineLayout pipelineLayout,
+                                                            const VkAllocationCallbacks *pAllocator)
 {
     if (g_host_vkDestroyPipelineLayout)
         g_host_vkDestroyPipelineLayout(device, pipelineLayout, pAllocator);
@@ -1188,36 +1176,34 @@ Sysv_vkDestroyPipelineLayout(VkDevice device, VkPipelineLayout pipelineLayout,
 
 __attribute__((sysv_abi)) VkResult
 Sysv_vkCreatePipelineCache(VkDevice device, const VkPipelineCacheCreateInfo *pCreateInfo,
-                           const VkAllocationCallbacks *pAllocator,
-                           VkPipelineCache *pPipelineCache)
+                           const VkAllocationCallbacks *pAllocator, VkPipelineCache *pPipelineCache)
 {
     if (!g_host_vkCreatePipelineCache)
         return VK_ERROR_INITIALIZATION_FAILED;
     return g_host_vkCreatePipelineCache(device, pCreateInfo, pAllocator, pPipelineCache);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkDestroyPipelineCache(VkDevice device, VkPipelineCache pipelineCache,
-                            const VkAllocationCallbacks *pAllocator)
+__attribute__((sysv_abi)) void Sysv_vkDestroyPipelineCache(VkDevice device,
+                                                           VkPipelineCache pipelineCache,
+                                                           const VkAllocationCallbacks *pAllocator)
 {
     if (g_host_vkDestroyPipelineCache)
         g_host_vkDestroyPipelineCache(device, pipelineCache, pAllocator);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkGetPipelineCacheData(VkDevice device, VkPipelineCache pipelineCache, size_t *pDataSize,
-                            void *pData)
+__attribute__((sysv_abi)) VkResult Sysv_vkGetPipelineCacheData(VkDevice device,
+                                                               VkPipelineCache pipelineCache,
+                                                               size_t *pDataSize, void *pData)
 {
     if (!g_host_vkGetPipelineCacheData)
         return VK_ERROR_INITIALIZATION_FAILED;
     return g_host_vkGetPipelineCacheData(device, pipelineCache, pDataSize, pData);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
-                               uint32_t createInfoCount,
-                               const VkGraphicsPipelineCreateInfo *pCreateInfos,
-                               const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines)
+__attribute__((sysv_abi)) VkResult Sysv_vkCreateGraphicsPipelines(
+    VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
+    const VkGraphicsPipelineCreateInfo *pCreateInfos, const VkAllocationCallbacks *pAllocator,
+    VkPipeline *pPipelines)
 {
     if (!g_host_vkCreateGraphicsPipelines)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -1225,11 +1211,10 @@ Sysv_vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                                             pAllocator, pPipelines);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
-                              uint32_t createInfoCount,
-                              const VkComputePipelineCreateInfo *pCreateInfos,
-                              const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines)
+__attribute__((sysv_abi)) VkResult Sysv_vkCreateComputePipelines(
+    VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
+    const VkComputePipelineCreateInfo *pCreateInfos, const VkAllocationCallbacks *pAllocator,
+    VkPipeline *pPipelines)
 {
     if (!g_host_vkCreateComputePipelines)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -1279,9 +1264,8 @@ Sysv_vkCreateFramebuffer(VkDevice device, const VkFramebufferCreateInfo *pCreate
     return g_host_vkCreateFramebuffer(device, pCreateInfo, pAllocator, pFramebuffer);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkDestroyFramebuffer(VkDevice device, VkFramebuffer framebuffer,
-                          const VkAllocationCallbacks *pAllocator)
+__attribute__((sysv_abi)) void Sysv_vkDestroyFramebuffer(VkDevice device, VkFramebuffer framebuffer,
+                                                         const VkAllocationCallbacks *pAllocator)
 {
     if (g_host_vkDestroyFramebuffer)
         g_host_vkDestroyFramebuffer(device, framebuffer, pAllocator);
@@ -1364,27 +1348,26 @@ __attribute__((sysv_abi)) VkResult Sysv_vkBindImageMemory(VkDevice device, VkIma
     return g_host_vkBindImageMemory(device, image, memory, memoryOffset);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkBindImageMemory2(VkDevice device, uint32_t bindInfoCount,
-                        const VkBindImageMemoryInfo *pBindInfos)
+__attribute__((sysv_abi)) VkResult Sysv_vkBindImageMemory2(VkDevice device, uint32_t bindInfoCount,
+                                                           const VkBindImageMemoryInfo *pBindInfos)
 {
     if (!g_host_vkBindImageMemory2)
         return VK_ERROR_EXTENSION_NOT_PRESENT;
     return g_host_vkBindImageMemory2(device, bindInfoCount, pBindInfos);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkBindBufferMemory2(VkDevice device, uint32_t bindInfoCount,
-                         const VkBindBufferMemoryInfo *pBindInfos)
+__attribute__((sysv_abi)) VkResult Sysv_vkBindBufferMemory2(
+    VkDevice device, uint32_t bindInfoCount, const VkBindBufferMemoryInfo *pBindInfos)
 {
     if (!g_host_vkBindBufferMemory2)
         return VK_ERROR_EXTENSION_NOT_PRESENT;
     return g_host_vkBindBufferMemory2(device, bindInfoCount, pBindInfos);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
-                       const VkAllocationCallbacks *pAllocator, VkImageView *pView)
+__attribute__((sysv_abi)) VkResult Sysv_vkCreateImageView(VkDevice device,
+                                                          const VkImageViewCreateInfo *pCreateInfo,
+                                                          const VkAllocationCallbacks *pAllocator,
+                                                          VkImageView *pView)
 {
     if (!g_host_vkCreateImageView)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -1398,9 +1381,10 @@ __attribute__((sysv_abi)) void Sysv_vkDestroyImageView(VkDevice device, VkImageV
         g_host_vkDestroyImageView(device, imageView, pAllocator);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
-                     const VkAllocationCallbacks *pAllocator, VkSampler *pSampler)
+__attribute__((sysv_abi)) VkResult Sysv_vkCreateSampler(VkDevice device,
+                                                        const VkSamplerCreateInfo *pCreateInfo,
+                                                        const VkAllocationCallbacks *pAllocator,
+                                                        VkSampler *pSampler)
 {
     if (!g_host_vkCreateSampler)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -1432,27 +1416,26 @@ Sysv_vkDestroyDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout descrip
         g_host_vkDestroyDescriptorSetLayout(device, descriptorSetLayout, pAllocator);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkCreateDescriptorPool(VkDevice device, const VkDescriptorPoolCreateInfo *pCreateInfo,
-                            const VkAllocationCallbacks *pAllocator,
-                            VkDescriptorPool *pDescriptorPool)
+__attribute__((sysv_abi)) VkResult Sysv_vkCreateDescriptorPool(
+    VkDevice device, const VkDescriptorPoolCreateInfo *pCreateInfo,
+    const VkAllocationCallbacks *pAllocator, VkDescriptorPool *pDescriptorPool)
 {
     if (!g_host_vkCreateDescriptorPool)
         return VK_ERROR_INITIALIZATION_FAILED;
     return g_host_vkCreateDescriptorPool(device, pCreateInfo, pAllocator, pDescriptorPool);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkDestroyDescriptorPool(VkDevice device, VkDescriptorPool descriptorPool,
-                             const VkAllocationCallbacks *pAllocator)
+__attribute__((sysv_abi)) void Sysv_vkDestroyDescriptorPool(VkDevice device,
+                                                            VkDescriptorPool descriptorPool,
+                                                            const VkAllocationCallbacks *pAllocator)
 {
     if (g_host_vkDestroyDescriptorPool)
         g_host_vkDestroyDescriptorPool(device, descriptorPool, pAllocator);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkResetDescriptorPool(VkDevice device, VkDescriptorPool descriptorPool,
-                           VkDescriptorPoolResetFlags flags)
+__attribute__((sysv_abi)) VkResult Sysv_vkResetDescriptorPool(VkDevice device,
+                                                              VkDescriptorPool descriptorPool,
+                                                              VkDescriptorPoolResetFlags flags)
 {
     if (!g_host_vkResetDescriptorPool)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -1468,20 +1451,19 @@ Sysv_vkAllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo
     return g_host_vkAllocateDescriptorSets(device, pAllocateInfo, pDescriptorSets);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkFreeDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool,
-                          uint32_t descriptorSetCount, const VkDescriptorSet *pDescriptorSets)
+__attribute__((sysv_abi)) VkResult Sysv_vkFreeDescriptorSets(VkDevice device,
+                                                             VkDescriptorPool descriptorPool,
+                                                             uint32_t descriptorSetCount,
+                                                             const VkDescriptorSet *pDescriptorSets)
 {
     if (!g_host_vkFreeDescriptorSets)
         return VK_ERROR_INITIALIZATION_FAILED;
     return g_host_vkFreeDescriptorSets(device, descriptorPool, descriptorSetCount, pDescriptorSets);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkUpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
-                            const VkWriteDescriptorSet *pDescriptorWrites,
-                            uint32_t descriptorCopyCount,
-                            const VkCopyDescriptorSet *pDescriptorCopies)
+__attribute__((sysv_abi)) void Sysv_vkUpdateDescriptorSets(
+    VkDevice device, uint32_t descriptorWriteCount, const VkWriteDescriptorSet *pDescriptorWrites,
+    uint32_t descriptorCopyCount, const VkCopyDescriptorSet *pDescriptorCopies)
 {
     if (g_host_vkUpdateDescriptorSets)
         g_host_vkUpdateDescriptorSets(device, descriptorWriteCount, pDescriptorWrites,
@@ -1490,9 +1472,9 @@ Sysv_vkUpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
 
 __attribute__((sysv_abi)) void
 Sysv_vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
-                             VkPipelineLayout layout, uint32_t firstSet, uint32_t descriptorSetCount,
-                             const VkDescriptorSet *pDescriptorSets, uint32_t dynamicOffsetCount,
-                             const uint32_t *pDynamicOffsets)
+                             VkPipelineLayout layout, uint32_t firstSet,
+                             uint32_t descriptorSetCount, const VkDescriptorSet *pDescriptorSets,
+                             uint32_t dynamicOffsetCount, const uint32_t *pDynamicOffsets)
 {
     if (g_host_vkCmdBindDescriptorSets)
         g_host_vkCmdBindDescriptorSets(commandBuffer, pipelineBindPoint, layout, firstSet,
@@ -1500,10 +1482,11 @@ Sysv_vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint 
                                        pDynamicOffsets);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineLayout layout,
-                        VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size,
-                        const void *pValues)
+__attribute__((sysv_abi)) void Sysv_vkCmdPushConstants(VkCommandBuffer commandBuffer,
+                                                       VkPipelineLayout layout,
+                                                       VkShaderStageFlags stageFlags,
+                                                       uint32_t offset, uint32_t size,
+                                                       const void *pValues)
 {
     if (g_host_vkCmdPushConstants)
         g_host_vkCmdPushConstants(commandBuffer, layout, stageFlags, offset, size, pValues);
@@ -1573,9 +1556,10 @@ __attribute__((sysv_abi)) VkResult Sysv_vkWaitForFences(VkDevice device, uint32_
     return res;
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkCreateSemaphore(VkDevice device, const VkSemaphoreCreateInfo *pCreateInfo,
-                       const VkAllocationCallbacks *pAllocator, VkSemaphore *pSemaphore)
+__attribute__((sysv_abi)) VkResult Sysv_vkCreateSemaphore(VkDevice device,
+                                                          const VkSemaphoreCreateInfo *pCreateInfo,
+                                                          const VkAllocationCallbacks *pAllocator,
+                                                          VkSemaphore *pSemaphore)
 {
     if (!g_host_vkCreateSemaphore)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -1593,8 +1577,9 @@ __attribute__((sysv_abi)) void Sysv_vkDestroySemaphore(VkDevice device, VkSemaph
         g_host_vkDestroySemaphore(device, semaphore, pAllocator);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkGetSemaphoreCounterValue(VkDevice device, VkSemaphore semaphore, uint64_t *pValue)
+__attribute__((sysv_abi)) VkResult Sysv_vkGetSemaphoreCounterValue(VkDevice device,
+                                                                   VkSemaphore semaphore,
+                                                                   uint64_t *pValue)
 {
     if (!g_host_vkGetSemaphoreCounterValue)
         return VK_ERROR_EXTENSION_NOT_PRESENT;
@@ -1610,8 +1595,8 @@ __attribute__((sysv_abi)) VkResult Sysv_vkWaitSemaphores(VkDevice device,
     return g_host_vkWaitSemaphores(device, pWaitInfo, timeout);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkSignalSemaphore(VkDevice device, const VkSemaphoreSignalInfo *pSignalInfo)
+__attribute__((sysv_abi)) VkResult Sysv_vkSignalSemaphore(VkDevice device,
+                                                          const VkSemaphoreSignalInfo *pSignalInfo)
 {
     if (!g_host_vkSignalSemaphore)
         return VK_ERROR_EXTENSION_NOT_PRESENT;
@@ -1665,170 +1650,174 @@ __attribute__((sysv_abi)) VkResult Sysv_vkResetEvent(VkDevice device, VkEvent ev
 }
 
 // Command Buffer Recording & Actions
-__attribute__((sysv_abi)) VkResult
-Sysv_vkResetCommandPool(VkDevice device, VkCommandPool commandPool,
-                        VkCommandPoolResetFlags flags)
+__attribute__((sysv_abi)) VkResult Sysv_vkResetCommandPool(VkDevice device,
+                                                           VkCommandPool commandPool,
+                                                           VkCommandPoolResetFlags flags)
 {
     if (!g_host_vkResetCommandPool)
         return VK_ERROR_INITIALIZATION_FAILED;
     return g_host_vkResetCommandPool(device, commandPool, flags);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags)
+__attribute__((sysv_abi)) VkResult Sysv_vkResetCommandBuffer(VkCommandBuffer commandBuffer,
+                                                             VkCommandBufferResetFlags flags)
 {
     if (!g_host_vkResetCommandBuffer)
         return VK_ERROR_INITIALIZATION_FAILED;
     return g_host_vkResetCommandBuffer(commandBuffer, flags);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
-                       VkPipeline pipeline)
+__attribute__((sysv_abi)) void Sysv_vkCmdBindPipeline(VkCommandBuffer commandBuffer,
+                                                      VkPipelineBindPoint pipelineBindPoint,
+                                                      VkPipeline pipeline)
 {
     if (g_host_vkCmdBindPipeline)
         g_host_vkCmdBindPipeline(commandBuffer, pipelineBindPoint, pipeline);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdSetViewport(VkCommandBuffer commandBuffer, uint32_t firstViewport, uint32_t viewportCount,
-                      const VkViewport *pViewports)
+__attribute__((sysv_abi)) void Sysv_vkCmdSetViewport(VkCommandBuffer commandBuffer,
+                                                     uint32_t firstViewport, uint32_t viewportCount,
+                                                     const VkViewport *pViewports)
 {
     if (g_host_vkCmdSetViewport)
         g_host_vkCmdSetViewport(commandBuffer, firstViewport, viewportCount, pViewports);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdSetScissor(VkCommandBuffer commandBuffer, uint32_t firstScissor, uint32_t scissorCount,
-                     const VkRect2D *pScissors)
+__attribute__((sysv_abi)) void Sysv_vkCmdSetScissor(VkCommandBuffer commandBuffer,
+                                                    uint32_t firstScissor, uint32_t scissorCount,
+                                                    const VkRect2D *pScissors)
 {
     if (g_host_vkCmdSetScissor)
         g_host_vkCmdSetScissor(commandBuffer, firstScissor, scissorCount, pScissors);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdBindVertexBuffers(VkCommandBuffer commandBuffer, uint32_t firstBinding,
-                            uint32_t bindingCount, const VkBuffer *pBuffers,
-                            const VkDeviceSize *pOffsets)
+__attribute__((sysv_abi)) void Sysv_vkCmdBindVertexBuffers(VkCommandBuffer commandBuffer,
+                                                           uint32_t firstBinding,
+                                                           uint32_t bindingCount,
+                                                           const VkBuffer *pBuffers,
+                                                           const VkDeviceSize *pOffsets)
 {
     if (g_host_vkCmdBindVertexBuffers)
         g_host_vkCmdBindVertexBuffers(commandBuffer, firstBinding, bindingCount, pBuffers,
                                       pOffsets);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdBindIndexBuffer(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
-                          VkIndexType indexType)
+__attribute__((sysv_abi)) void Sysv_vkCmdBindIndexBuffer(VkCommandBuffer commandBuffer,
+                                                         VkBuffer buffer, VkDeviceSize offset,
+                                                         VkIndexType indexType)
 {
     if (g_host_vkCmdBindIndexBuffer)
         g_host_vkCmdBindIndexBuffer(commandBuffer, buffer, offset, indexType);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount,
-               uint32_t firstVertex, uint32_t firstInstance)
+__attribute__((sysv_abi)) void Sysv_vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount,
+                                              uint32_t instanceCount, uint32_t firstVertex,
+                                              uint32_t firstInstance)
 {
     if (g_host_vkCmdDraw)
         g_host_vkCmdDraw(commandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32_t instanceCount,
-                      uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance)
+__attribute__((sysv_abi)) void Sysv_vkCmdDrawIndexed(VkCommandBuffer commandBuffer,
+                                                     uint32_t indexCount, uint32_t instanceCount,
+                                                     uint32_t firstIndex, int32_t vertexOffset,
+                                                     uint32_t firstInstance)
 {
     if (g_host_vkCmdDrawIndexed)
         g_host_vkCmdDrawIndexed(commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset,
                                 firstInstance);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
-                       uint32_t drawCount, uint32_t stride)
+__attribute__((sysv_abi)) void Sysv_vkCmdDrawIndirect(VkCommandBuffer commandBuffer,
+                                                      VkBuffer buffer, VkDeviceSize offset,
+                                                      uint32_t drawCount, uint32_t stride)
 {
     if (g_host_vkCmdDrawIndirect)
         g_host_vkCmdDrawIndirect(commandBuffer, buffer, offset, drawCount, stride);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
-                              uint32_t drawCount, uint32_t stride)
+__attribute__((sysv_abi)) void Sysv_vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer,
+                                                             VkBuffer buffer, VkDeviceSize offset,
+                                                             uint32_t drawCount, uint32_t stride)
 {
     if (g_host_vkCmdDrawIndexedIndirect)
         g_host_vkCmdDrawIndexedIndirect(commandBuffer, buffer, offset, drawCount, stride);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY,
-                   uint32_t groupCountZ)
+__attribute__((sysv_abi)) void Sysv_vkCmdDispatch(VkCommandBuffer commandBuffer,
+                                                  uint32_t groupCountX, uint32_t groupCountY,
+                                                  uint32_t groupCountZ)
 {
     if (g_host_vkCmdDispatch)
         g_host_vkCmdDispatch(commandBuffer, groupCountX, groupCountY, groupCountZ);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset)
+__attribute__((sysv_abi)) void Sysv_vkCmdDispatchIndirect(VkCommandBuffer commandBuffer,
+                                                          VkBuffer buffer, VkDeviceSize offset)
 {
     if (g_host_vkCmdDispatchIndirect)
         g_host_vkCmdDispatchIndirect(commandBuffer, buffer, offset);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer,
-                     uint32_t regionCount, const VkBufferCopy *pRegions)
+__attribute__((sysv_abi)) void Sysv_vkCmdCopyBuffer(VkCommandBuffer commandBuffer,
+                                                    VkBuffer srcBuffer, VkBuffer dstBuffer,
+                                                    uint32_t regionCount,
+                                                    const VkBufferCopy *pRegions)
 {
     if (g_host_vkCmdCopyBuffer)
         g_host_vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, regionCount, pRegions);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdCopyImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout,
-                    VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount,
-                    const VkImageCopy *pRegions)
+__attribute__((sysv_abi)) void Sysv_vkCmdCopyImage(VkCommandBuffer commandBuffer, VkImage srcImage,
+                                                   VkImageLayout srcImageLayout, VkImage dstImage,
+                                                   VkImageLayout dstImageLayout,
+                                                   uint32_t regionCount,
+                                                   const VkImageCopy *pRegions)
 {
     if (g_host_vkCmdCopyImage)
         g_host_vkCmdCopyImage(commandBuffer, srcImage, srcImageLayout, dstImage, dstImageLayout,
                               regionCount, pRegions);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkImage dstImage,
-                            VkImageLayout dstImageLayout, uint32_t regionCount,
-                            const VkBufferImageCopy *pRegions)
+__attribute__((sysv_abi)) void Sysv_vkCmdCopyBufferToImage(VkCommandBuffer commandBuffer,
+                                                           VkBuffer srcBuffer, VkImage dstImage,
+                                                           VkImageLayout dstImageLayout,
+                                                           uint32_t regionCount,
+                                                           const VkBufferImageCopy *pRegions)
 {
     if (g_host_vkCmdCopyBufferToImage)
         g_host_vkCmdCopyBufferToImage(commandBuffer, srcBuffer, dstImage, dstImageLayout,
                                       regionCount, pRegions);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdCopyImageToBuffer(VkCommandBuffer commandBuffer, VkImage srcImage,
-                            VkImageLayout srcImageLayout, VkBuffer dstBuffer, uint32_t regionCount,
-                            const VkBufferImageCopy *pRegions)
+__attribute__((sysv_abi)) void Sysv_vkCmdCopyImageToBuffer(VkCommandBuffer commandBuffer,
+                                                           VkImage srcImage,
+                                                           VkImageLayout srcImageLayout,
+                                                           VkBuffer dstBuffer, uint32_t regionCount,
+                                                           const VkBufferImageCopy *pRegions)
 {
     if (g_host_vkCmdCopyImageToBuffer)
         g_host_vkCmdCopyImageToBuffer(commandBuffer, srcImage, srcImageLayout, dstBuffer,
                                       regionCount, pRegions);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdBlitImage(VkCommandBuffer commandBuffer, VkImage srcImage,
-                    VkImageLayout srcImageLayout, VkImage dstImage,
-                    VkImageLayout dstImageLayout, uint32_t regionCount,
-                    const VkImageBlit *pRegions, VkFilter filter)
+__attribute__((sysv_abi)) void Sysv_vkCmdBlitImage(VkCommandBuffer commandBuffer, VkImage srcImage,
+                                                   VkImageLayout srcImageLayout, VkImage dstImage,
+                                                   VkImageLayout dstImageLayout,
+                                                   uint32_t regionCount,
+                                                   const VkImageBlit *pRegions, VkFilter filter)
 {
     if (g_host_vkCmdBlitImage)
         g_host_vkCmdBlitImage(commandBuffer, srcImage, srcImageLayout, dstImage, dstImageLayout,
                               regionCount, pRegions, filter);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags srcStageMask,
-                          VkPipelineStageFlags dstStageMask, VkDependencyFlags dependencyFlags,
-                          uint32_t memoryBarrierCount, const VkMemoryBarrier *pMemoryBarriers,
-                          uint32_t bufferMemoryBarrierCount,
-                          const VkBufferMemoryBarrier *pBufferMemoryBarriers,
-                          uint32_t imageMemoryBarrierCount,
-                          const VkImageMemoryBarrier *pImageMemoryBarriers)
+__attribute__((sysv_abi)) void Sysv_vkCmdPipelineBarrier(
+    VkCommandBuffer commandBuffer, VkPipelineStageFlags srcStageMask,
+    VkPipelineStageFlags dstStageMask, VkDependencyFlags dependencyFlags,
+    uint32_t memoryBarrierCount, const VkMemoryBarrier *pMemoryBarriers,
+    uint32_t bufferMemoryBarrierCount, const VkBufferMemoryBarrier *pBufferMemoryBarriers,
+    uint32_t imageMemoryBarrierCount, const VkImageMemoryBarrier *pImageMemoryBarriers)
 {
     if (g_host_vkCmdPipelineBarrier)
         g_host_vkCmdPipelineBarrier(commandBuffer, srcStageMask, dstStageMask, dependencyFlags,
@@ -1837,52 +1826,52 @@ Sysv_vkCmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags sr
                                     pImageMemoryBarriers);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdPipelineBarrier2(VkCommandBuffer commandBuffer,
-                           const VkDependencyInfo *pDependencyInfo)
+__attribute__((sysv_abi)) void Sysv_vkCmdPipelineBarrier2(VkCommandBuffer commandBuffer,
+                                                          const VkDependencyInfo *pDependencyInfo)
 {
     if (g_host_vkCmdPipelineBarrier2)
         g_host_vkCmdPipelineBarrier2(commandBuffer, pDependencyInfo);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdClearColorImage(VkCommandBuffer commandBuffer, VkImage image,
-                          VkImageLayout imageLayout, const VkClearColorValue *pColor,
-                          uint32_t rangeCount, const VkImageSubresourceRange *pRanges)
+__attribute__((sysv_abi)) void Sysv_vkCmdClearColorImage(VkCommandBuffer commandBuffer,
+                                                         VkImage image, VkImageLayout imageLayout,
+                                                         const VkClearColorValue *pColor,
+                                                         uint32_t rangeCount,
+                                                         const VkImageSubresourceRange *pRanges)
 {
     if (g_host_vkCmdClearColorImage)
         g_host_vkCmdClearColorImage(commandBuffer, image, imageLayout, pColor, rangeCount, pRanges);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdClearAttachments(VkCommandBuffer commandBuffer, uint32_t attachmentCount,
-                           const VkClearAttachment *pAttachments, uint32_t rectCount,
-                           const VkClearRect *pRects)
+__attribute__((sysv_abi)) void Sysv_vkCmdClearAttachments(VkCommandBuffer commandBuffer,
+                                                          uint32_t attachmentCount,
+                                                          const VkClearAttachment *pAttachments,
+                                                          uint32_t rectCount,
+                                                          const VkClearRect *pRects)
 {
     if (g_host_vkCmdClearAttachments)
         g_host_vkCmdClearAttachments(commandBuffer, attachmentCount, pAttachments, rectCount,
                                      pRects);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdFillBuffer(VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkDeviceSize dstOffset,
-                     VkDeviceSize size, uint32_t data)
+__attribute__((sysv_abi)) void Sysv_vkCmdFillBuffer(VkCommandBuffer commandBuffer,
+                                                    VkBuffer dstBuffer, VkDeviceSize dstOffset,
+                                                    VkDeviceSize size, uint32_t data)
 {
     if (g_host_vkCmdFillBuffer)
         g_host_vkCmdFillBuffer(commandBuffer, dstBuffer, dstOffset, size, data);
 }
 
-__attribute__((sysv_abi)) void
-Sysv_vkCmdUpdateBuffer(VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkDeviceSize dstOffset,
-                       VkDeviceSize dataSize, const void *pData)
+__attribute__((sysv_abi)) void Sysv_vkCmdUpdateBuffer(VkCommandBuffer commandBuffer,
+                                                      VkBuffer dstBuffer, VkDeviceSize dstOffset,
+                                                      VkDeviceSize dataSize, const void *pData)
 {
     if (g_host_vkCmdUpdateBuffer)
         g_host_vkCmdUpdateBuffer(commandBuffer, dstBuffer, dstOffset, dataSize, pData);
 }
 
 // Instance & PhysicalDevice Queries
-__attribute__((sysv_abi)) VkResult
-Sysv_vkEnumerateInstanceVersion(uint32_t *pApiVersion)
+__attribute__((sysv_abi)) VkResult Sysv_vkEnumerateInstanceVersion(uint32_t *pApiVersion)
 {
     if (!pApiVersion)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -1932,9 +1921,10 @@ Sysv_vkGetPhysicalDeviceMemoryProperties2(VkPhysicalDevice physicalDevice,
         g_host_vkGetPhysicalDeviceMemoryProperties2(physicalDevice, pMemoryProperties);
 }
 
-__attribute__((sysv_abi)) void Sysv_vkGetPhysicalDeviceQueueFamilyProperties2(
-    VkPhysicalDevice physicalDevice, uint32_t *pQueueFamilyPropertyCount,
-    VkQueueFamilyProperties2 *pQueueFamilyProperties)
+__attribute__((sysv_abi)) void
+Sysv_vkGetPhysicalDeviceQueueFamilyProperties2(VkPhysicalDevice physicalDevice,
+                                               uint32_t *pQueueFamilyPropertyCount,
+                                               VkQueueFamilyProperties2 *pQueueFamilyProperties)
 {
     if (g_host_vkGetPhysicalDeviceQueueFamilyProperties2)
         g_host_vkGetPhysicalDeviceQueueFamilyProperties2(physicalDevice, pQueueFamilyPropertyCount,
@@ -1949,26 +1939,23 @@ Sysv_vkGetBufferMemoryRequirements2(VkDevice device, const VkBufferMemoryRequire
         g_host_vkGetBufferMemoryRequirements2(device, pInfo, pMemoryRequirements);
 }
 
-__attribute__((sysv_abi)) void Sysv_vkGetDeviceQueue2(VkDevice device,
-                                                      const VkDeviceQueueInfo2 *pQueueInfo,
-                                                      VkQueue *pQueue)
+__attribute__((sysv_abi)) void
+Sysv_vkGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2 *pQueueInfo, VkQueue *pQueue)
 {
     if (g_host_vkGetDeviceQueue2)
         g_host_vkGetDeviceQueue2(device, pQueueInfo, pQueue);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkFlushMappedMemoryRanges(VkDevice device, uint32_t memoryRangeCount,
-                               const VkMappedMemoryRange *pMemoryRanges)
+__attribute__((sysv_abi)) VkResult Sysv_vkFlushMappedMemoryRanges(
+    VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange *pMemoryRanges)
 {
     if (!g_host_vkFlushMappedMemoryRanges)
         return VK_SUCCESS;
     return g_host_vkFlushMappedMemoryRanges(device, memoryRangeCount, pMemoryRanges);
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkInvalidateMappedMemoryRanges(VkDevice device, uint32_t memoryRangeCount,
-                                    const VkMappedMemoryRange *pMemoryRanges)
+__attribute__((sysv_abi)) VkResult Sysv_vkInvalidateMappedMemoryRanges(
+    VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange *pMemoryRanges)
 {
     if (!g_host_vkInvalidateMappedMemoryRanges)
         return VK_SUCCESS;
@@ -1976,8 +1963,9 @@ Sysv_vkInvalidateMappedMemoryRanges(VkDevice device, uint32_t memoryRangeCount,
 }
 
 // External FDs
-__attribute__((sysv_abi)) VkResult
-Sysv_vkGetFenceFdKHR(VkDevice device, const VkFenceGetFdInfoKHR *pGetFdInfo, int *pFd)
+__attribute__((sysv_abi)) VkResult Sysv_vkGetFenceFdKHR(VkDevice device,
+                                                        const VkFenceGetFdInfoKHR *pGetFdInfo,
+                                                        int *pFd)
 {
     (void)device;
     if (!pGetFdInfo || !pFd)
@@ -2061,9 +2049,8 @@ Sysv_vkGetSemaphoreFdKHR(VkDevice device, const VkSemaphoreGetFdInfoKHR *pGetFdI
     return VK_SUCCESS;
 }
 
-__attribute__((sysv_abi)) VkResult
-Sysv_vkImportSemaphoreFdKHR(VkDevice device,
-                            const VkImportSemaphoreFdInfoKHR *pImportSemaphoreFdInfo)
+__attribute__((sysv_abi)) VkResult Sysv_vkImportSemaphoreFdKHR(
+    VkDevice device, const VkImportSemaphoreFdInfoKHR *pImportSemaphoreFdInfo)
 {
     (void)device;
     if (!pImportSemaphoreFdInfo)

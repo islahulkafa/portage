@@ -605,7 +605,8 @@ EGLSync CreateSyncCommon(std::mutex &mutex, EGLint &last_error,
 }
 } // namespace
 
-EGLSync EglDispatcher::CreateSync(EGLDisplay dpy, EGLenum type, const EGLAttrib *attrib_list) noexcept
+EGLSync EglDispatcher::CreateSync(EGLDisplay dpy, EGLenum type,
+                                  const EGLAttrib *attrib_list) noexcept
 {
     EGLint condition = EGL_SYNC_PRIOR_COMMANDS_COMPLETE;
     int initial_fd = EGL_NO_NATIVE_FENCE_FD_ANDROID;
@@ -620,7 +621,8 @@ EGLSync EglDispatcher::CreateSync(EGLDisplay dpy, EGLenum type, const EGLAttrib 
     }
     fs::FileDescriptorTable *fd_table =
         fd_table_override_ ? fd_table_override_ : syscall::SyscallDispatcher::GetFdTable();
-    return CreateSyncCommon(mutex_, last_error_, syncs_, dpy, type, condition, initial_fd, fd_table);
+    return CreateSyncCommon(mutex_, last_error_, syncs_, dpy, type, condition, initial_fd,
+                            fd_table);
 }
 
 EGLSyncKHR EglDispatcher::CreateSyncKHR(EGLDisplay dpy, EGLenum type,
@@ -639,7 +641,8 @@ EGLSyncKHR EglDispatcher::CreateSyncKHR(EGLDisplay dpy, EGLenum type,
     }
     fs::FileDescriptorTable *fd_table =
         fd_table_override_ ? fd_table_override_ : syscall::SyscallDispatcher::GetFdTable();
-    return CreateSyncCommon(mutex_, last_error_, syncs_, dpy, type, condition, initial_fd, fd_table);
+    return CreateSyncCommon(mutex_, last_error_, syncs_, dpy, type, condition, initial_fd,
+                            fd_table);
 }
 
 EGLBoolean EglDispatcher::DestroySync(EGLDisplay dpy, EGLSync sync) noexcept
@@ -1025,7 +1028,7 @@ __attribute__((sysv_abi)) void *eglGetProcAddress(const char *procname)
 }
 
 __attribute__((sysv_abi)) EGLSync eglCreateSync(EGLDisplay dpy, EGLenum type,
-                                                 const EGLAttrib *attrib_list)
+                                                const EGLAttrib *attrib_list)
 {
     return portage::gles::EglDispatcher::Instance().CreateSync(dpy, type, attrib_list);
 }
@@ -1046,14 +1049,14 @@ __attribute__((sysv_abi)) EGLBoolean eglWaitSync(EGLDisplay dpy, EGLSync sync, E
     return portage::gles::EglDispatcher::Instance().WaitSync(dpy, sync, flags);
 }
 
-__attribute__((sysv_abi)) EGLBoolean eglGetSyncAttrib(EGLDisplay dpy, EGLSync sync, EGLint attribute,
-                                                      EGLAttrib *value)
+__attribute__((sysv_abi)) EGLBoolean eglGetSyncAttrib(EGLDisplay dpy, EGLSync sync,
+                                                      EGLint attribute, EGLAttrib *value)
 {
     return portage::gles::EglDispatcher::Instance().GetSyncAttrib(dpy, sync, attribute, value);
 }
 
 __attribute__((sysv_abi)) EGLSyncKHR eglCreateSyncKHR(EGLDisplay dpy, EGLenum type,
-                                                       const EGLint *attrib_list)
+                                                      const EGLint *attrib_list)
 {
     return portage::gles::EglDispatcher::Instance().CreateSyncKHR(dpy, type, attrib_list);
 }

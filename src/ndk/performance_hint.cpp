@@ -106,8 +106,7 @@ APerformanceHintSession *
 PerformanceHintManager::CreateSession(const int32_t *thread_ids, size_t size,
                                       int64_t initial_target_nanos) noexcept
 {
-    auto session =
-        std::make_shared<PerformanceHintSession>(thread_ids, size, initial_target_nanos);
+    auto session = std::make_shared<PerformanceHintSession>(thread_ids, size, initial_target_nanos);
 
     std::lock_guard<std::mutex> lock(mutex_);
     active_sessions_.push_back(session);
@@ -121,20 +120,17 @@ void PerformanceHintManager::CloseSession(APerformanceHintSession *session) noex
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = std::remove_if(active_sessions_.begin(), active_sessions_.end(),
-                             [&](const std::shared_ptr<PerformanceHintSession> &s) {
-                                 return reinterpret_cast<APerformanceHintSession *>(s.get()) ==
-                                        session;
-                             });
+    auto it =
+        std::remove_if(active_sessions_.begin(), active_sessions_.end(),
+                       [&](const std::shared_ptr<PerformanceHintSession> &s) {
+                           return reinterpret_cast<APerformanceHintSession *>(s.get()) == session;
+                       });
     if (it != active_sessions_.end()) {
         active_sessions_.erase(it, active_sessions_.end());
     }
 }
 
-int64_t PerformanceHintManager::GetPreferredUpdateRateNanos() const noexcept
-{
-    return 16'666'666;
-}
+int64_t PerformanceHintManager::GetPreferredUpdateRateNanos() const noexcept { return 16'666'666; }
 
 size_t PerformanceHintManager::GetActiveSessionCount() const noexcept
 {
@@ -153,7 +149,7 @@ __attribute__((sysv_abi)) APerformanceHintManager *APerformanceHintManager_creat
 
 __attribute__((sysv_abi)) APerformanceHintSession *
 APerformanceHintManager_createSession(APerformanceHintManager *manager, const int32_t *threadIds,
-                                     size_t size, int64_t initialTargetWorkDurationNanos)
+                                      size_t size, int64_t initialTargetWorkDurationNanos)
 {
     (void)manager;
     return portage::ndk::PerformanceHintManager::Instance().CreateSession(
@@ -169,7 +165,7 @@ APerformanceHintManager_getPreferredUpdateRateNanos(APerformanceHintManager *man
 
 __attribute__((sysv_abi)) int
 APerformanceHintSession_updateTargetWorkDuration(APerformanceHintSession *session,
-                                                int64_t targetDurationNanos)
+                                                 int64_t targetDurationNanos)
 {
     if (!session) {
         return -22;
@@ -180,7 +176,7 @@ APerformanceHintSession_updateTargetWorkDuration(APerformanceHintSession *sessio
 
 __attribute__((sysv_abi)) int
 APerformanceHintSession_reportActualWorkDuration(APerformanceHintSession *session,
-                                                int64_t actualDurationNanos)
+                                                 int64_t actualDurationNanos)
 {
     if (!session) {
         return -22;

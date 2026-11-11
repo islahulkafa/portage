@@ -75,10 +75,7 @@ GamepadManager &GamepadManager::Instance() noexcept
     return instance;
 }
 
-GamepadManager::GamepadManager() noexcept
-{
-    InitXInput();
-}
+GamepadManager::GamepadManager() noexcept { InitXInput(); }
 
 GamepadManager::~GamepadManager() noexcept
 {
@@ -98,8 +95,7 @@ void GamepadManager::InitXInput() noexcept
         HMODULE mod = LoadLibraryW(name);
         if (mod) {
             xinput_module_ = static_cast<void *>(mod);
-            xinput_get_state_fn_ =
-                reinterpret_cast<void *>(GetProcAddress(mod, "XInputGetState"));
+            xinput_get_state_fn_ = reinterpret_cast<void *>(GetProcAddress(mod, "XInputGetState"));
             break;
         }
     }
@@ -147,20 +143,34 @@ void GamepadManager::PollControllers() noexcept
 
             uint32_t btns = 0;
             const WORD w = xstate.Gamepad.wButtons;
-            if (w & XINPUT_GAMEPAD_A_VAL) btns |= GAMEPAD_BUTTON_A;
-            if (w & XINPUT_GAMEPAD_B_VAL) btns |= GAMEPAD_BUTTON_B;
-            if (w & XINPUT_GAMEPAD_X_VAL) btns |= GAMEPAD_BUTTON_X;
-            if (w & XINPUT_GAMEPAD_Y_VAL) btns |= GAMEPAD_BUTTON_Y;
-            if (w & XINPUT_GAMEPAD_LEFT_SHOULDER_VAL) btns |= GAMEPAD_BUTTON_L1;
-            if (w & XINPUT_GAMEPAD_RIGHT_SHOULDER_VAL) btns |= GAMEPAD_BUTTON_R1;
-            if (w & XINPUT_GAMEPAD_LEFT_THUMB_VAL) btns |= GAMEPAD_BUTTON_THUMBL;
-            if (w & XINPUT_GAMEPAD_RIGHT_THUMB_VAL) btns |= GAMEPAD_BUTTON_THUMBR;
-            if (w & XINPUT_GAMEPAD_START_VAL) btns |= GAMEPAD_BUTTON_START;
-            if (w & XINPUT_GAMEPAD_BACK_VAL) btns |= GAMEPAD_BUTTON_SELECT;
-            if (w & XINPUT_GAMEPAD_DPAD_UP_VAL) btns |= GAMEPAD_BUTTON_DPAD_UP;
-            if (w & XINPUT_GAMEPAD_DPAD_DOWN_VAL) btns |= GAMEPAD_BUTTON_DPAD_DOWN;
-            if (w & XINPUT_GAMEPAD_DPAD_LEFT_VAL) btns |= GAMEPAD_BUTTON_DPAD_LEFT;
-            if (w & XINPUT_GAMEPAD_DPAD_RIGHT_VAL) btns |= GAMEPAD_BUTTON_DPAD_RIGHT;
+            if (w & XINPUT_GAMEPAD_A_VAL)
+                btns |= GAMEPAD_BUTTON_A;
+            if (w & XINPUT_GAMEPAD_B_VAL)
+                btns |= GAMEPAD_BUTTON_B;
+            if (w & XINPUT_GAMEPAD_X_VAL)
+                btns |= GAMEPAD_BUTTON_X;
+            if (w & XINPUT_GAMEPAD_Y_VAL)
+                btns |= GAMEPAD_BUTTON_Y;
+            if (w & XINPUT_GAMEPAD_LEFT_SHOULDER_VAL)
+                btns |= GAMEPAD_BUTTON_L1;
+            if (w & XINPUT_GAMEPAD_RIGHT_SHOULDER_VAL)
+                btns |= GAMEPAD_BUTTON_R1;
+            if (w & XINPUT_GAMEPAD_LEFT_THUMB_VAL)
+                btns |= GAMEPAD_BUTTON_THUMBL;
+            if (w & XINPUT_GAMEPAD_RIGHT_THUMB_VAL)
+                btns |= GAMEPAD_BUTTON_THUMBR;
+            if (w & XINPUT_GAMEPAD_START_VAL)
+                btns |= GAMEPAD_BUTTON_START;
+            if (w & XINPUT_GAMEPAD_BACK_VAL)
+                btns |= GAMEPAD_BUTTON_SELECT;
+            if (w & XINPUT_GAMEPAD_DPAD_UP_VAL)
+                btns |= GAMEPAD_BUTTON_DPAD_UP;
+            if (w & XINPUT_GAMEPAD_DPAD_DOWN_VAL)
+                btns |= GAMEPAD_BUTTON_DPAD_DOWN;
+            if (w & XINPUT_GAMEPAD_DPAD_LEFT_VAL)
+                btns |= GAMEPAD_BUTTON_DPAD_LEFT;
+            if (w & XINPUT_GAMEPAD_DPAD_RIGHT_VAL)
+                btns |= GAMEPAD_BUTTON_DPAD_RIGHT;
             new_state.buttons = btns;
 
             if (w & XINPUT_GAMEPAD_DPAD_LEFT_VAL) {
@@ -223,15 +233,14 @@ void GamepadManager::DispatchStateChange(int user_index, const GamepadState &old
         return;
     }
 
-    bool analog_changed =
-        std::abs(old_state.left_stick_x - new_state.left_stick_x) > 0.001f ||
-        std::abs(old_state.left_stick_y - new_state.left_stick_y) > 0.001f ||
-        std::abs(old_state.right_stick_x - new_state.right_stick_x) > 0.001f ||
-        std::abs(old_state.right_stick_y - new_state.right_stick_y) > 0.001f ||
-        std::abs(old_state.left_trigger - new_state.left_trigger) > 0.001f ||
-        std::abs(old_state.right_trigger - new_state.right_trigger) > 0.001f ||
-        std::abs(old_state.hat_x - new_state.hat_x) > 0.001f ||
-        std::abs(old_state.hat_y - new_state.hat_y) > 0.001f;
+    bool analog_changed = std::abs(old_state.left_stick_x - new_state.left_stick_x) > 0.001f ||
+                          std::abs(old_state.left_stick_y - new_state.left_stick_y) > 0.001f ||
+                          std::abs(old_state.right_stick_x - new_state.right_stick_x) > 0.001f ||
+                          std::abs(old_state.right_stick_y - new_state.right_stick_y) > 0.001f ||
+                          std::abs(old_state.left_trigger - new_state.left_trigger) > 0.001f ||
+                          std::abs(old_state.right_trigger - new_state.right_trigger) > 0.001f ||
+                          std::abs(old_state.hat_x - new_state.hat_x) > 0.001f ||
+                          std::abs(old_state.hat_y - new_state.hat_y) > 0.001f;
 
     if (analog_changed) {
         ndk::InputPointer ptr{};

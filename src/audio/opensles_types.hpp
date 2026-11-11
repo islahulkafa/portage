@@ -30,6 +30,7 @@ using SLuint16 = uint16_t;
 using SLint16 = int16_t;
 using SLuint8 = uint8_t;
 using SLint8 = int8_t;
+using SLchar = uint8_t;
 using SLboolean = uint32_t;
 using SLmillibel = int16_t;
 
@@ -76,6 +77,10 @@ inline constexpr SLInterfaceID_ SL_IID_BUFFERQUEUE_VAL = {
     0x3ab16fb0, 0x51ca, 0x11d8, 0xa7, 0x88, {0x00, 0x20, 0xaf, 0x0b, 0x41, 0x05}};
 inline constexpr SLInterfaceID_ SL_IID_RECORD_VAL = {
     0xc5742e80, 0x51c9, 0x11d8, 0x98, 0x07, {0x00, 0x20, 0xaf, 0x0b, 0x41, 0x05}};
+inline constexpr SLInterfaceID_ SL_IID_MUTESOLO_VAL = {
+    0x5a28ebe0, 0xddd7, 0x11db, 0x82, 0x20, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}};
+inline constexpr SLInterfaceID_ SL_IID_ANDROIDCONFIGURATION_VAL = {
+    0x89f6a7e0, 0xbeac, 0x11df, 0x8b, 0x5c, {0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}};
 
 inline constexpr SLInterfaceID SL_IID_ENGINE = &SL_IID_ENGINE_VAL;
 inline constexpr SLInterfaceID SL_IID_ANDROIDSIMPLEBUFFERQUEUE =
@@ -84,6 +89,8 @@ inline constexpr SLInterfaceID SL_IID_PLAY = &SL_IID_PLAY_VAL;
 inline constexpr SLInterfaceID SL_IID_RECORD = &SL_IID_RECORD_VAL;
 inline constexpr SLInterfaceID SL_IID_VOLUME = &SL_IID_VOLUME_VAL;
 inline constexpr SLInterfaceID SL_IID_BUFFERQUEUE = &SL_IID_BUFFERQUEUE_VAL;
+inline constexpr SLInterfaceID SL_IID_MUTESOLO = &SL_IID_MUTESOLO_VAL;
+inline constexpr SLInterfaceID SL_IID_ANDROIDCONFIGURATION = &SL_IID_ANDROIDCONFIGURATION_VAL;
 
 struct SLObjectItf_;
 using SLObjectItf = const struct SLObjectItf_ **;
@@ -103,6 +110,12 @@ using SLAndroidSimpleBufferQueueItf = const struct SLAndroidSimpleBufferQueueItf
 struct SLVolumeItf_;
 using SLVolumeItf = const struct SLVolumeItf_ **;
 
+struct SLMuteSoloItf_;
+using SLMuteSoloItf = const struct SLMuteSoloItf_ **;
+
+struct SLAndroidConfigurationItf_;
+using SLAndroidConfigurationItf = const struct SLAndroidConfigurationItf_ **;
+
 using slObjectCallback = __attribute__((sysv_abi)) void (*)(SLObjectItf caller, const void *context,
                                                             SLuint32 event, SLresult result,
                                                             SLuint32 param, void *interface);
@@ -110,8 +123,8 @@ using slObjectCallback = __attribute__((sysv_abi)) void (*)(SLObjectItf caller, 
 using slAndroidSimpleBufferQueueCallback =
     __attribute__((sysv_abi)) void (*)(SLAndroidSimpleBufferQueueItf caller, void *context);
 
-using slRecordCallback =
-    __attribute__((sysv_abi)) void (*)(SLRecordItf caller, void *pContext, SLuint32 event);
+using slRecordCallback = __attribute__((sysv_abi)) void (*)(SLRecordItf caller, void *pContext,
+                                                            SLuint32 event);
 
 inline constexpr SLuint32 SL_RECORDSTATE_STOPPED = 0x00000001;
 inline constexpr SLuint32 SL_RECORDSTATE_PAUSED = 0x00000002;
@@ -254,8 +267,7 @@ struct SLRecordItf_ {
     SLresult (*SetMarkerPosition)(SLRecordItf self, SLuint32 mSec) __attribute__((sysv_abi));
     SLresult (*ClearMarkerPosition)(SLRecordItf self) __attribute__((sysv_abi));
     SLresult (*GetMarkerPosition)(SLRecordItf self, SLuint32 *pMsec) __attribute__((sysv_abi));
-    SLresult (*SetPositionUpdatePeriod)(SLRecordItf self, SLuint32 mSec)
-        __attribute__((sysv_abi));
+    SLresult (*SetPositionUpdatePeriod)(SLRecordItf self, SLuint32 mSec) __attribute__((sysv_abi));
     SLresult (*GetPositionUpdatePeriod)(SLRecordItf self, SLuint32 *pMsec)
         __attribute__((sysv_abi));
 };
@@ -288,6 +300,31 @@ struct SLVolumeItf_ {
         __attribute__((sysv_abi));
     SLresult (*SetStereoPosition)(SLVolumeItf self, SLmillibel position) __attribute__((sysv_abi));
     SLresult (*GetStereoPosition)(SLVolumeItf self, SLmillibel *pPosition)
+        __attribute__((sysv_abi));
+};
+
+struct SLMuteSoloItf_ {
+    SLresult (*SetChannelMute)(SLMuteSoloItf self, SLuint8 chan, SLboolean mute)
+        __attribute__((sysv_abi));
+    SLresult (*GetChannelMute)(SLMuteSoloItf self, SLuint8 chan, SLboolean *pMute)
+        __attribute__((sysv_abi));
+    SLresult (*SetChannelSolo)(SLMuteSoloItf self, SLuint8 chan, SLboolean solo)
+        __attribute__((sysv_abi));
+    SLresult (*GetChannelSolo)(SLMuteSoloItf self, SLuint8 chan, SLboolean *pSolo)
+        __attribute__((sysv_abi));
+    SLresult (*GetNumChannels)(SLMuteSoloItf self, SLuint8 *pNumChannels) __attribute__((sysv_abi));
+};
+
+struct SLAndroidConfigurationItf_ {
+    SLresult (*SetConfiguration)(SLAndroidConfigurationItf self, const SLchar *configKey,
+                                 const void *pConfigValue, SLuint32 valueSize)
+        __attribute__((sysv_abi));
+    SLresult (*GetConfiguration)(SLAndroidConfigurationItf self, const SLchar *configKey,
+                                 SLuint32 *pValueSize, void *pConfigValue)
+        __attribute__((sysv_abi));
+    SLresult (*AcquireJavaProxy)(SLAndroidConfigurationItf self, SLuint32 proxyType,
+                                 void **pProxyObj) __attribute__((sysv_abi));
+    SLresult (*ReleaseJavaProxy)(SLAndroidConfigurationItf self, SLuint32 proxyType)
         __attribute__((sysv_abi));
 };
 

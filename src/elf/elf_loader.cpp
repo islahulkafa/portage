@@ -86,12 +86,10 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromFile(const std::string &
     return result;
 }
 
-std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const uint8_t> buffer,
-                                                               const portage::fs::Vfs *vfs,
-                                                               SymbolResolver resolver,
-                                                               DependencyLoader dep_loader,
-                                                               std::string_view origin_dir,
-                                                               LoadOptions options) noexcept
+std::variant<LoadedElf, LoaderError>
+ElfLoader::LoadFromMemory(std::span<const uint8_t> buffer, const portage::fs::Vfs *vfs,
+                          SymbolResolver resolver, DependencyLoader dep_loader,
+                          std::string_view origin_dir, LoadOptions options) noexcept
 {
     if (buffer.size() < sizeof(Elf64_Ehdr)) {
         return LoaderError::FileTooSmall;
@@ -390,7 +388,8 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
                             if (sym.st_name < str_shdr.sh_size) {
                                 const char *name = strtab + sym.st_name;
                                 if (*name) {
-                                    if (ELF64_ST_TYPE(sym.st_info) == STT_TLS && sym.st_shndx != 0) {
+                                    if (ELF64_ST_TYPE(sym.st_info) == STT_TLS &&
+                                        sym.st_shndx != 0) {
                                         loaded_elf.tls_symbols[name] = sym.st_value;
                                     } else if (sym.st_value != 0) {
                                         uintptr_t sym_addr =
@@ -639,6 +638,11 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
                         symtab && strtab) {
                         const auto &s = symtab[sym_idx];
                         const char *sym_name = strtab + s.st_name;
+                        const bool is_weak = (ELF64_ST_BIND(s.st_info) == STB_WEAK);
+                        if (is_weak && (resolver == nullptr || resolver(sym_name) == 0)) {
+                            *reinterpret_cast<uintptr_t *>(patch_addr) = 0;
+                            continue;
+                        }
                         uintptr_t stub =
                             LinkMap::Instance().AllocateLazyPltTrampoline(patch_addr, sym_name);
                         if (stub != 0) {
@@ -652,10 +656,14 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
                     } else if (type == R_X86_64_GLOB_DAT || type == R_X86_64_JUMP_SLOT ||
                                type == R_X86_64_64) {
                         uintptr_t sym_addr = 0;
-                        const char *sym_name = "unknown";
+                        const char *sym_name = "";
+                        bool is_weak = false;
+                        unsigned char sym_type = STT_NOTYPE;
                         if (sym_idx > 0 && symtab && strtab) {
                             const auto &s = symtab[sym_idx];
                             sym_name = strtab + s.st_name;
+                            is_weak = (ELF64_ST_BIND(s.st_info) == STB_WEAK);
+                            sym_type = ELF64_ST_TYPE(s.st_info);
                             if (s.st_shndx != 0 && s.st_value != 0) {
                                 sym_addr = is_pie ? (load_bias + s.st_value) : s.st_value;
                             } else {
@@ -668,6 +676,18 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
                             }
                         }
 
+                        if (sym_addr == 0 && !is_weak && sym_name[0] != '\0') {
+                            if (std::find(loaded_elf.unresolved_symbols.begin(),
+                                          loaded_elf.unresolved_symbols.end(),
+                                          sym_name) == loaded_elf.unresolved_symbols.end()) {
+                                loaded_elf.unresolved_symbols.emplace_back(sym_name);
+                            }
+                            if (options.trap_unresolved_symbols &&
+                                (sym_type == STT_FUNC || sym_type == STT_NOTYPE)) {
+                                sym_addr = LinkMap::Instance().AllocateUnresolvedTrap(sym_name);
+                            }
+                        }
+
                         if (sym_addr != 0) {
                             if (type == R_X86_64_64) {
                                 *reinterpret_cast<uintptr_t *>(patch_addr) =
@@ -675,6 +695,8 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
                             } else {
                                 *reinterpret_cast<uintptr_t *>(patch_addr) = sym_addr;
                             }
+                        } else if (is_weak) {
+                            *reinterpret_cast<uintptr_t *>(patch_addr) = 0;
                         }
                     } else if (type == R_X86_64_COPY) {
                         if (sym_idx > 0 && symtab && strtab) {
@@ -734,8 +756,8 @@ std::variant<LoadedElf, LoaderError> ElfLoader::LoadFromMemory(std::span<const u
                         if (sym_idx > 0 && symtab) {
                             const auto &s = symtab[sym_idx];
                             if (s.st_shndx == 0 && strtab && s.st_name != 0) {
-                                if (LinkMap::Instance().ResolveTlsSymbol(
-                                        strtab + s.st_name, target_modid, sym_off)) {
+                                if (LinkMap::Instance().ResolveTlsSymbol(strtab + s.st_name,
+                                                                         target_modid, sym_off)) {
                                     resolved_external = true;
                                 }
                             } else {
@@ -813,7 +835,10 @@ uintptr_t LoadedElf::FindSymbol(std::string_view name) const
     if (it != symbols.end()) {
         return it->second;
     }
-    return ndk::NdkSymbolRegistry::Instance().Lookup(name);
+    if (uintptr_t primary = ndk::NdkSymbolRegistry::Instance().Lookup(name); primary != 0) {
+        return primary;
+    }
+    return ndk::NdkSymbolRegistry::Instance().LookupFallback(name);
 }
 
 } // namespace portage::elf

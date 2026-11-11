@@ -108,8 +108,8 @@ class EglDispatcher {
                              EGLAttrib *value) noexcept;
     EGLint DupNativeFenceFDANDROID(EGLDisplay dpy, EGLSyncKHR sync) noexcept;
 
-    EGLImageKHR CreateImageKHR(EGLDisplay dpy, EGLContext ctx, EGLenum target, EGLClientBuffer buffer,
-                               const EGLint *attrib_list) noexcept;
+    EGLImageKHR CreateImageKHR(EGLDisplay dpy, EGLContext ctx, EGLenum target,
+                               EGLClientBuffer buffer, const EGLint *attrib_list) noexcept;
     EGLBoolean DestroyImageKHR(EGLDisplay dpy, EGLImageKHR image) noexcept;
     [[nodiscard]] const EglImageData *FindImage(EGLImageKHR image) const noexcept;
 
@@ -179,15 +179,15 @@ __attribute__((sysv_abi)) EGLBoolean eglSwapInterval(EGLDisplay dpy, EGLint inte
 __attribute__((sysv_abi)) EGLint eglGetError(void);
 __attribute__((sysv_abi)) void *eglGetProcAddress(const char *procname);
 __attribute__((sysv_abi)) EGLSync eglCreateSync(EGLDisplay dpy, EGLenum type,
-                                                 const EGLAttrib *attrib_list);
+                                                const EGLAttrib *attrib_list);
 __attribute__((sysv_abi)) EGLBoolean eglDestroySync(EGLDisplay dpy, EGLSync sync);
 __attribute__((sysv_abi)) EGLint eglClientWaitSync(EGLDisplay dpy, EGLSync sync, EGLint flags,
                                                    EGLTime timeout);
 __attribute__((sysv_abi)) EGLBoolean eglWaitSync(EGLDisplay dpy, EGLSync sync, EGLint flags);
-__attribute__((sysv_abi)) EGLBoolean eglGetSyncAttrib(EGLDisplay dpy, EGLSync sync, EGLint attribute,
-                                                      EGLAttrib *value);
+__attribute__((sysv_abi)) EGLBoolean eglGetSyncAttrib(EGLDisplay dpy, EGLSync sync,
+                                                      EGLint attribute, EGLAttrib *value);
 __attribute__((sysv_abi)) EGLSyncKHR eglCreateSyncKHR(EGLDisplay dpy, EGLenum type,
-                                                       const EGLint *attrib_list);
+                                                      const EGLint *attrib_list);
 __attribute__((sysv_abi)) EGLBoolean eglDestroySyncKHR(EGLDisplay dpy, EGLSyncKHR sync);
 __attribute__((sysv_abi)) EGLint eglClientWaitSyncKHR(EGLDisplay dpy, EGLSyncKHR sync, EGLint flags,
                                                       EGLTimeKHR timeout);

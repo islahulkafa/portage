@@ -60,8 +60,7 @@ __attribute__((sysv_abi)) AStatus *AStatus_fromExceptionCode(binder_exception_t 
 __attribute__((sysv_abi)) AStatus *
 AStatus_fromExceptionCodeWithMessage(binder_exception_t exception, const char *message);
 
-__attribute__((sysv_abi)) AStatus *
-AStatus_fromServiceSpecificError(int32_t serviceSpecificError);
+__attribute__((sysv_abi)) AStatus *AStatus_fromServiceSpecificError(int32_t serviceSpecificError);
 
 __attribute__((sysv_abi)) AStatus *
 AStatus_fromServiceSpecificErrorWithMessage(int32_t serviceSpecificError, const char *message);

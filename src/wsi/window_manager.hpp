@@ -87,6 +87,7 @@ class WindowManager {
     uint32_t m_height{720};
     std::atomic<bool> m_running{false};
     std::atomic<bool> m_window_ready{false};
+    std::atomic<bool> m_close_dispatched{false};
     std::atomic<bool> m_headless{false};
     std::atomic<uint64_t> m_frames_presented{0};
 

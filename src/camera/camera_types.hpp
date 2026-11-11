@@ -77,39 +77,51 @@ typedef struct ACameraIdList {
     const char **cameraIds;
 } ACameraIdList;
 
+typedef struct ACameraManager_AvailabilityCallbacks {
+    void *context;
+    void(__attribute__((sysv_abi)) * onCameraAvailable)(void *context, const char *cameraId);
+    void(__attribute__((sysv_abi)) * onCameraUnavailable)(void *context, const char *cameraId);
+} ACameraManager_AvailabilityCallbacks;
+
 typedef struct ACameraDevice_StateCallbacks {
     void *context;
-    void (*onDisconnected)(void *context, ACameraDevice *device);
-    void (*onError)(void *context, ACameraDevice *device, int error);
+    void(__attribute__((sysv_abi)) * onDisconnected)(void *context, ACameraDevice *device);
+    void(__attribute__((sysv_abi)) * onError)(void *context, ACameraDevice *device, int error);
 } ACameraDevice_StateCallbacks;
 
 typedef struct ACameraCaptureSession_stateCallbacks {
     void *context;
-    void (*onClosed)(void *context, ACameraCaptureSession *session);
-    void (*onReady)(void *context, ACameraCaptureSession *session);
-    void (*onActive)(void *context, ACameraCaptureSession *session);
+    void(__attribute__((sysv_abi)) * onClosed)(void *context, ACameraCaptureSession *session);
+    void(__attribute__((sysv_abi)) * onReady)(void *context, ACameraCaptureSession *session);
+    void(__attribute__((sysv_abi)) * onActive)(void *context, ACameraCaptureSession *session);
 } ACameraCaptureSession_stateCallbacks;
 
 typedef struct ACameraCaptureSession_captureCallbacks {
     void *context;
-    void (*onCaptureStarted)(void *context, ACameraCaptureSession *session,
-                             const ACaptureRequest *request, int64_t timestamp);
-    void (*onCaptureProgressed)(void *context, ACameraCaptureSession *session,
-                               ACaptureRequest *request, const ACameraMetadata *result);
-    void (*onCaptureCompleted)(void *context, ACameraCaptureSession *session,
+    void(__attribute__((sysv_abi)) *
+         onCaptureStarted)(void *context, ACameraCaptureSession *session,
+                           const ACaptureRequest *request, int64_t timestamp);
+    void(__attribute__((sysv_abi)) *
+         onCaptureProgressed)(void *context, ACameraCaptureSession *session,
                               ACaptureRequest *request, const ACameraMetadata *result);
-    void (*onCaptureFailed)(void *context, ACameraCaptureSession *session,
-                            ACaptureRequest *request, void *failure);
-    void (*onCaptureSequenceCompleted)(void *context, ACameraCaptureSession *session,
-                                       int sequenceId, int64_t frameNumber);
-    void (*onCaptureSequenceAborted)(void *context, ACameraCaptureSession *session, int sequenceId);
-    void (*onCaptureBufferLost)(void *context, ACameraCaptureSession *session,
-                               ACaptureRequest *request, void *window, int64_t frameNumber);
+    void(__attribute__((sysv_abi)) *
+         onCaptureCompleted)(void *context, ACameraCaptureSession *session,
+                             ACaptureRequest *request, const ACameraMetadata *result);
+    void(__attribute__((sysv_abi)) * onCaptureFailed)(void *context, ACameraCaptureSession *session,
+                                                      ACaptureRequest *request, void *failure);
+    void(__attribute__((sysv_abi)) *
+         onCaptureSequenceCompleted)(void *context, ACameraCaptureSession *session, int sequenceId,
+                                     int64_t frameNumber);
+    void(__attribute__((sysv_abi)) *
+         onCaptureSequenceAborted)(void *context, ACameraCaptureSession *session, int sequenceId);
+    void(__attribute__((sysv_abi)) *
+         onCaptureBufferLost)(void *context, ACameraCaptureSession *session,
+                              ACaptureRequest *request, void *window, int64_t frameNumber);
 } ACameraCaptureSession_captureCallbacks;
 
 typedef struct AImageReader_ImageListener {
     void *context;
-    void (*onImageAvailable)(void *context, AImageReader *reader);
+    void(__attribute__((sysv_abi)) * onImageAvailable)(void *context, AImageReader *reader);
 } AImageReader_ImageListener;
 
 typedef struct AImage_Plane {

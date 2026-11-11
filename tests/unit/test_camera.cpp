@@ -70,8 +70,7 @@ TEST(CameraTest, CameraManagerOpenAndClose)
 TEST(CameraTest, ImageReaderLifecycleAndPlanesRGBA)
 {
     AImageReader *reader = nullptr;
-    media_status_t mstatus =
-        AImageReader_new(640, 480, AIMAGE_FORMAT_RGBA_8888, 3, &reader);
+    media_status_t mstatus = AImageReader_new(640, 480, AIMAGE_FORMAT_RGBA_8888, 3, &reader);
     EXPECT_EQ(mstatus, AMEDIA_OK);
     ASSERT_NE(reader, nullptr);
 
@@ -161,8 +160,7 @@ TEST(CameraTest, ImageReaderLifecycleAndPlanesRGBA)
 TEST(CameraTest, ImageReaderYuvPlanes)
 {
     AImageReader *reader = nullptr;
-    media_status_t mstatus =
-        AImageReader_new(320, 240, AIMAGE_FORMAT_YUV_420_888, 2, &reader);
+    media_status_t mstatus = AImageReader_new(320, 240, AIMAGE_FORMAT_YUV_420_888, 2, &reader);
     EXPECT_EQ(mstatus, AMEDIA_OK);
     ASSERT_NE(reader, nullptr);
 
@@ -283,4 +281,430 @@ TEST(CameraTest, NdkSymbolRegistryLookup)
     EXPECT_NE(registry.Lookup("AImageReader_new"), 0u);
     EXPECT_NE(registry.Lookup("AImageReader_acquireNextImage"), 0u);
     EXPECT_NE(registry.Lookup("AImage_getPlaneData"), 0u);
+    EXPECT_NE(registry.Lookup("ACameraManager_registerAvailabilityCallback"), 0u);
+    EXPECT_NE(registry.Lookup("ACameraManager_unregisterAvailabilityCallback"), 0u);
+}
+
+TEST(CameraTest, AvailabilityCallbackFiresInitialAndOpenCloseTransitions)
+{
+    struct AvailabilityTrace {
+        std::vector<std::string> available{};
+        std::vector<std::string> unavailable{};
+    };
+
+    auto on_available = [](void *ctx, const char *camera_id) __attribute__((sysv_abi)) {
+        auto *trace = static_cast<AvailabilityTrace *>(ctx);
+        if (trace && camera_id) {
+            trace->available.emplace_back(camera_id);
+        }
+    };
+    auto on_unavailable = [](void *ctx, const char *camera_id) __attribute__((sysv_abi)) {
+        auto *trace = static_cast<AvailabilityTrace *>(ctx);
+        if (trace && camera_id) {
+            trace->unavailable.emplace_back(camera_id);
+        }
+    };
+
+    portage::camera::CameraManager::Instance().SetForceSynthetic(true);
+    ACameraManager *mgr = ACameraManager_create();
+    ASSERT_NE(mgr, nullptr);
+
+    ACameraIdList *id_list = nullptr;
+    ASSERT_EQ(ACameraManager_getCameraIdList(mgr, &id_list), ACAMERA_OK);
+    ASSERT_NE(id_list, nullptr);
+    ASSERT_GE(id_list->numCameras, 1);
+    std::string target_id = id_list->cameraIds[0];
+
+    AvailabilityTrace trace;
+    ACameraManager_AvailabilityCallbacks cb{};
+    cb.context = &trace;
+    cb.onCameraAvailable = on_available;
+    cb.onCameraUnavailable = on_unavailable;
+
+    EXPECT_EQ(ACameraManager_registerAvailabilityCallback(mgr, &cb), ACAMERA_OK);
+    EXPECT_EQ(static_cast<int>(trace.available.size()), id_list->numCameras);
+    EXPECT_TRUE(trace.unavailable.empty());
+
+    trace.available.clear();
+    ACameraDevice *device = nullptr;
+    ASSERT_EQ(ACameraManager_openCamera(mgr, target_id.c_str(), nullptr, &device), ACAMERA_OK);
+    ASSERT_NE(device, nullptr);
+    ASSERT_EQ(trace.unavailable.size(), 1u);
+    EXPECT_EQ(trace.unavailable[0], target_id);
+    EXPECT_TRUE(trace.available.empty());
+
+    ASSERT_EQ(ACameraDevice_close(device), ACAMERA_OK);
+    ASSERT_EQ(trace.available.size(), 1u);
+    EXPECT_EQ(trace.available[0], target_id);
+
+    EXPECT_EQ(ACameraManager_unregisterAvailabilityCallback(mgr, &cb), ACAMERA_OK);
+
+    trace.available.clear();
+    trace.unavailable.clear();
+    ASSERT_EQ(ACameraManager_openCamera(mgr, target_id.c_str(), nullptr, &device), ACAMERA_OK);
+    ASSERT_EQ(ACameraDevice_close(device), ACAMERA_OK);
+    EXPECT_TRUE(trace.available.empty());
+    EXPECT_TRUE(trace.unavailable.empty());
+
+    ACameraManager_deleteCameraIdList(id_list);
+    ACameraManager_delete(mgr);
+    portage::camera::CameraManager::Instance().SetForceSynthetic(false);
+}
+
+TEST(CameraTest, ConvertsYuy2AndBgraAndScalesFrames)
+{
+    std::vector<uint8_t> bgra = {
+        10, 20, 30, 255, // pixel (0,0): B=10, G=20, R=30
+        40, 50, 60, 128, // pixel (1,0): B=40, G=50, R=60
+        70, 80, 90, 200, // pixel (0,1)
+        11, 22, 33, 255  // pixel (1,1)
+    };
+    std::vector<uint8_t> rgba;
+    portage::camera::ConvertBgraToRgba(bgra.data(), 8, 2, 2, rgba);
+    ASSERT_EQ(rgba.size(), 16u);
+    EXPECT_EQ(rgba[0], 30u);
+    EXPECT_EQ(rgba[1], 20u);
+    EXPECT_EQ(rgba[2], 10u);
+    EXPECT_EQ(rgba[3], 255u);
+    EXPECT_EQ(rgba[4], 60u);
+    EXPECT_EQ(rgba[5], 50u);
+    EXPECT_EQ(rgba[6], 40u);
+    EXPECT_EQ(rgba[7], 128u);
+
+    std::vector<uint8_t> yuy2 = {
+        235, 128, 235, 128 // Y0=235, U=128, Y1=235, V=128 -> near-white studio BT.601
+    };
+    std::vector<uint8_t> yuy2_rgba;
+    portage::camera::ConvertYuy2ToRgba(yuy2.data(), 4, 2, 1, yuy2_rgba);
+    ASSERT_EQ(yuy2_rgba.size(), 8u);
+    EXPECT_GE(yuy2_rgba[0], 250u);
+    EXPECT_GE(yuy2_rgba[1], 250u);
+    EXPECT_GE(yuy2_rgba[2], 250u);
+    EXPECT_EQ(yuy2_rgba[3], 255u);
+    EXPECT_GE(yuy2_rgba[4], 250u);
+
+    std::vector<uint8_t> scaled;
+    portage::camera::ScaleRgbaFrame(rgba.data(), 2, 2, 4, 4, scaled);
+    ASSERT_EQ(scaled.size(), 64u);
+    EXPECT_EQ(scaled[0], 30u);
+    EXPECT_EQ(scaled[3 * 4 + 0], 60u);
+
+    std::vector<portage::camera::ImagePlaneBuffer> yuv_planes;
+    portage::camera::ExtractYuv420PlanesFromRgba(scaled.data(), 4, 4, yuv_planes);
+    ASSERT_EQ(yuv_planes.size(), 3u);
+    EXPECT_EQ(yuv_planes[0].data.size(), 16u);
+    EXPECT_EQ(yuv_planes[1].data.size(), 4u);
+    EXPECT_EQ(yuv_planes[2].data.size(), 4u);
+}
+
+TEST(CameraTest, PhysicalModeFallsBackGracefullyWithoutHardware)
+{
+    auto &cam_mgr = portage::camera::CameraManager::Instance();
+    cam_mgr.SetForceSynthetic(false);
+
+    ACameraManager *mgr = ACameraManager_create();
+    ASSERT_NE(mgr, nullptr);
+
+    ACameraIdList *id_list = nullptr;
+    ASSERT_EQ(ACameraManager_getCameraIdList(mgr, &id_list), ACAMERA_OK);
+    ASSERT_GE(id_list->numCameras, 1);
+
+    AImageReader *reader = nullptr;
+    ASSERT_EQ(AImageReader_new(160, 120, AIMAGE_FORMAT_RGBA_8888, 2, &reader), AMEDIA_OK);
+    ANativeWindow *win = nullptr;
+    ASSERT_EQ(AImageReader_getWindow(reader, &win), AMEDIA_OK);
+
+    ACameraDevice *device = nullptr;
+    ASSERT_EQ(ACameraManager_openCamera(mgr, id_list->cameraIds[0], nullptr, &device), ACAMERA_OK);
+
+    ACaptureSessionOutput *sess_out = nullptr;
+    ACaptureSessionOutput_create(win, &sess_out);
+    ACaptureSessionOutputContainer *container = nullptr;
+    ACaptureSessionOutputContainer_create(&container);
+    ACaptureSessionOutputContainer_add(container, sess_out);
+
+    ACameraCaptureSession *session = nullptr;
+    ASSERT_EQ(ACameraDevice_createCaptureSession(device, container, nullptr, &session), ACAMERA_OK);
+
+    ACameraOutputTarget *target = nullptr;
+    ACameraOutputTarget_create(win, &target);
+    ACaptureRequest *req = nullptr;
+    ACameraDevice_createCaptureRequest(device, TEMPLATE_PREVIEW, &req);
+    ACaptureRequest_addTarget(req, target);
+
+    int seq_id = 0;
+    ASSERT_EQ(ACameraCaptureSession_capture(session, nullptr, 1, &req, &seq_id), ACAMERA_OK);
+
+    AImage *img = nullptr;
+    ASSERT_EQ(AImageReader_acquireNextImage(reader, &img), AMEDIA_OK);
+    ASSERT_NE(img, nullptr);
+
+    uint8_t *data = nullptr;
+    int len = 0;
+    ASSERT_EQ(AImage_getPlaneData(img, 0, &data, &len), AMEDIA_OK);
+    EXPECT_EQ(len, 160 * 120 * 4);
+
+    AImage_delete(img);
+    ACaptureRequest_free(req);
+    ACameraOutputTarget_free(target);
+    ACameraCaptureSession_close(session);
+    ACaptureSessionOutputContainer_free(container);
+    ACaptureSessionOutput_free(sess_out);
+    ACameraDevice_close(device);
+    AImageReader_delete(reader);
+    ACameraManager_deleteCameraIdList(id_list);
+    ACameraManager_delete(mgr);
+    cam_mgr.SetForceSynthetic(false);
+}
+
+TEST(CameraTest, DirectNativeWindowTargetReceivesPreviewFrames)
+{
+    auto &cam_mgr = portage::camera::CameraManager::Instance();
+    cam_mgr.SetForceSynthetic(true);
+
+    ACameraManager *mgr = ACameraManager_create();
+    ASSERT_NE(mgr, nullptr);
+
+    ANativeWindow win;
+    win.width = 64;
+    win.height = 48;
+    win.format = 1; // WINDOW_FORMAT_RGBA_8888
+    int post_count = 0;
+    win.on_post = [&post_count](ANativeWindow *) { ++post_count; };
+
+    ACameraDevice *device = nullptr;
+    ASSERT_EQ(ACameraManager_openCamera(mgr, "0", nullptr, &device), ACAMERA_OK);
+
+    ACaptureSessionOutput *sess_out = nullptr;
+    ASSERT_EQ(ACaptureSessionOutput_create(&win, &sess_out), ACAMERA_OK);
+    ACaptureSessionOutputContainer *container = nullptr;
+    ASSERT_EQ(ACaptureSessionOutputContainer_create(&container), ACAMERA_OK);
+    ASSERT_EQ(ACaptureSessionOutputContainer_add(container, sess_out), ACAMERA_OK);
+
+    ACameraCaptureSession *session = nullptr;
+    ASSERT_EQ(ACameraDevice_createCaptureSession(device, container, nullptr, &session), ACAMERA_OK);
+
+    ACameraOutputTarget *target = nullptr;
+    ASSERT_EQ(ACameraOutputTarget_create(&win, &target), ACAMERA_OK);
+    ACaptureRequest *req = nullptr;
+    ASSERT_EQ(ACameraDevice_createCaptureRequest(device, TEMPLATE_PREVIEW, &req), ACAMERA_OK);
+    ASSERT_EQ(ACaptureRequest_addTarget(req, target), ACAMERA_OK);
+
+    int seq_id = 0;
+    ASSERT_EQ(ACameraCaptureSession_capture(session, nullptr, 1, &req, &seq_id), ACAMERA_OK);
+
+    EXPECT_EQ(post_count, 1);
+    EXPECT_EQ(win.frame_index, 1u);
+    ASSERT_EQ(win.frontbuffer.size(), static_cast<size_t>(64 * 48 * 4));
+    EXPECT_EQ(win.frontbuffer[0], 255u);
+    EXPECT_EQ(win.frontbuffer[1], 255u);
+    EXPECT_EQ(win.frontbuffer[2], 255u);
+    EXPECT_EQ(win.frontbuffer[3], 255u);
+
+    ACaptureRequest_free(req);
+    ACameraOutputTarget_free(target);
+    ACameraCaptureSession_close(session);
+    ACaptureSessionOutputContainer_free(container);
+    ACaptureSessionOutput_free(sess_out);
+    ACameraDevice_close(device);
+    ACameraManager_delete(mgr);
+    cam_mgr.SetForceSynthetic(false);
+}
+
+TEST(CameraTest, ImageReaderCapturesValidWicJpeg)
+{
+    std::vector<uint8_t> solid_rgba(16 * 16 * 4, 255);
+    std::vector<uint8_t> direct_jpeg;
+    EXPECT_TRUE(portage::camera::EncodeRgbaToJpeg(solid_rgba.data(), 16, 16, direct_jpeg));
+    ASSERT_GE(direct_jpeg.size(), 4u);
+    EXPECT_EQ(direct_jpeg[0], 0xFFu);
+    EXPECT_EQ(direct_jpeg[1], 0xD8u);
+    EXPECT_EQ(direct_jpeg[direct_jpeg.size() - 2], 0xFFu);
+    EXPECT_EQ(direct_jpeg[direct_jpeg.size() - 1], 0xD9u);
+
+    auto &cam_mgr = portage::camera::CameraManager::Instance();
+    cam_mgr.SetForceSynthetic(true);
+
+    ACameraManager *mgr = ACameraManager_create();
+    ASSERT_NE(mgr, nullptr);
+
+    AImageReader *reader = nullptr;
+    ASSERT_EQ(AImageReader_new(160, 120, AIMAGE_FORMAT_JPEG, 2, &reader), AMEDIA_OK);
+    ANativeWindow *win = nullptr;
+    ASSERT_EQ(AImageReader_getWindow(reader, &win), AMEDIA_OK);
+
+    ACameraDevice *device = nullptr;
+    ASSERT_EQ(ACameraManager_openCamera(mgr, "0", nullptr, &device), ACAMERA_OK);
+
+    ACaptureSessionOutput *sess_out = nullptr;
+    ACaptureSessionOutput_create(win, &sess_out);
+    ACaptureSessionOutputContainer *container = nullptr;
+    ACaptureSessionOutputContainer_create(&container);
+    ACaptureSessionOutputContainer_add(container, sess_out);
+
+    ACameraCaptureSession *session = nullptr;
+    ASSERT_EQ(ACameraDevice_createCaptureSession(device, container, nullptr, &session), ACAMERA_OK);
+
+    ACameraOutputTarget *target = nullptr;
+    ACameraOutputTarget_create(win, &target);
+    ACaptureRequest *req = nullptr;
+    ACameraDevice_createCaptureRequest(device, TEMPLATE_STILL_CAPTURE, &req);
+    ACaptureRequest_addTarget(req, target);
+
+    int seq_id = 0;
+    ASSERT_EQ(ACameraCaptureSession_capture(session, nullptr, 1, &req, &seq_id), ACAMERA_OK);
+
+    AImage *img = nullptr;
+    ASSERT_EQ(AImageReader_acquireNextImage(reader, &img), AMEDIA_OK);
+    ASSERT_NE(img, nullptr);
+
+    int32_t fmt = 0;
+    int32_t planes = 0;
+    EXPECT_EQ(AImage_getFormat(img, &fmt), AMEDIA_OK);
+    EXPECT_EQ(fmt, AIMAGE_FORMAT_JPEG);
+    EXPECT_EQ(AImage_getNumberOfPlanes(img, &planes), AMEDIA_OK);
+    EXPECT_EQ(planes, 1);
+
+    uint8_t *jpeg_data = nullptr;
+    int jpeg_len = 0;
+    ASSERT_EQ(AImage_getPlaneData(img, 0, &jpeg_data, &jpeg_len), AMEDIA_OK);
+    ASSERT_GE(jpeg_len, 4);
+    EXPECT_EQ(jpeg_data[0], 0xFFu);
+    EXPECT_EQ(jpeg_data[1], 0xD8u);
+    EXPECT_EQ(jpeg_data[jpeg_len - 2], 0xFFu);
+    EXPECT_EQ(jpeg_data[jpeg_len - 1], 0xD9u);
+
+    AImage_delete(img);
+    ACaptureRequest_free(req);
+    ACameraOutputTarget_free(target);
+    ACameraCaptureSession_close(session);
+    ACaptureSessionOutputContainer_free(container);
+    ACaptureSessionOutput_free(sess_out);
+    ACameraDevice_close(device);
+    AImageReader_delete(reader);
+    ACameraManager_delete(mgr);
+    cam_mgr.SetForceSynthetic(false);
+}
+
+TEST(CameraTest, FiresFullCaptureAndSequenceCallbacks)
+{
+    struct CallbackTrace {
+        int ready_count{0};
+        int active_count{0};
+        int closed_count{0};
+        int started_count{0};
+        int completed_count{0};
+        int seq_completed_count{0};
+        int seq_aborted_count{0};
+        int last_completed_seq{-1};
+        int last_aborted_seq{-1};
+        int64_t last_frame_number{-1};
+        int64_t last_started_ts{0};
+    };
+
+    auto on_ready = [](void *ctx, ACameraCaptureSession *) __attribute__((sysv_abi)) {
+        ++static_cast<CallbackTrace *>(ctx)->ready_count;
+    };
+    auto on_active = [](void *ctx, ACameraCaptureSession *) __attribute__((sysv_abi)) {
+        ++static_cast<CallbackTrace *>(ctx)->active_count;
+    };
+    auto on_closed = [](void *ctx, ACameraCaptureSession *) __attribute__((sysv_abi)) {
+        ++static_cast<CallbackTrace *>(ctx)->closed_count;
+    };
+    auto on_started = [](void *ctx, ACameraCaptureSession *, const ACaptureRequest *, int64_t ts)
+                          __attribute__((sysv_abi)) {
+                              auto *t = static_cast<CallbackTrace *>(ctx);
+                              ++t->started_count;
+                              t->last_started_ts = ts;
+                          };
+    auto on_completed =
+        [](void *ctx, ACameraCaptureSession *, ACaptureRequest *, const ACameraMetadata *)
+            __attribute__((sysv_abi)) { ++static_cast<CallbackTrace *>(ctx)->completed_count; };
+    auto on_seq_completed = [](void *ctx, ACameraCaptureSession *, int seq_id, int64_t frame_num)
+                                __attribute__((sysv_abi)) {
+                                    auto *t = static_cast<CallbackTrace *>(ctx);
+                                    ++t->seq_completed_count;
+                                    t->last_completed_seq = seq_id;
+                                    t->last_frame_number = frame_num;
+                                };
+    auto on_seq_aborted = [](void *ctx, ACameraCaptureSession *, int seq_id)
+                              __attribute__((sysv_abi)) {
+                                  auto *t = static_cast<CallbackTrace *>(ctx);
+                                  ++t->seq_aborted_count;
+                                  t->last_aborted_seq = seq_id;
+                              };
+
+    auto &cam_mgr = portage::camera::CameraManager::Instance();
+    cam_mgr.SetForceSynthetic(true);
+
+    ACameraManager *mgr = ACameraManager_create();
+    AImageReader *reader = nullptr;
+    ASSERT_EQ(AImageReader_new(64, 64, AIMAGE_FORMAT_RGBA_8888, 4, &reader), AMEDIA_OK);
+    ANativeWindow *win = nullptr;
+    AImageReader_getWindow(reader, &win);
+
+    ACameraDevice *device = nullptr;
+    ASSERT_EQ(ACameraManager_openCamera(mgr, "0", nullptr, &device), ACAMERA_OK);
+
+    ACaptureSessionOutput *sess_out = nullptr;
+    ACaptureSessionOutput_create(win, &sess_out);
+    ACaptureSessionOutputContainer *container = nullptr;
+    ACaptureSessionOutputContainer_create(&container);
+    ACaptureSessionOutputContainer_add(container, sess_out);
+
+    CallbackTrace trace;
+    ACameraCaptureSession_stateCallbacks state_cb{};
+    state_cb.context = &trace;
+    state_cb.onReady = on_ready;
+    state_cb.onActive = on_active;
+    state_cb.onClosed = on_closed;
+
+    ACameraCaptureSession *session = nullptr;
+    ASSERT_EQ(ACameraDevice_createCaptureSession(device, container, &state_cb, &session),
+              ACAMERA_OK);
+    EXPECT_GE(trace.ready_count, 1);
+
+    ACameraOutputTarget *target = nullptr;
+    ACameraOutputTarget_create(win, &target);
+    ACaptureRequest *req = nullptr;
+    ACameraDevice_createCaptureRequest(device, TEMPLATE_PREVIEW, &req);
+    ACaptureRequest_addTarget(req, target);
+
+    ACameraCaptureSession_captureCallbacks cap_cb{};
+    cap_cb.context = &trace;
+    cap_cb.onCaptureStarted = on_started;
+    cap_cb.onCaptureCompleted = on_completed;
+    cap_cb.onCaptureSequenceCompleted = on_seq_completed;
+    cap_cb.onCaptureSequenceAborted = on_seq_aborted;
+
+    ACaptureRequest *burst[2] = {req, req};
+    int burst_seq = 0;
+    ASSERT_EQ(ACameraCaptureSession_capture(session, &cap_cb, 2, burst, &burst_seq), ACAMERA_OK);
+    EXPECT_EQ(trace.started_count, 2);
+    EXPECT_EQ(trace.completed_count, 2);
+    EXPECT_GT(trace.last_started_ts, 0);
+    EXPECT_EQ(trace.seq_completed_count, 1);
+    EXPECT_EQ(trace.last_completed_seq, burst_seq);
+    EXPECT_GE(trace.last_frame_number, 2);
+    EXPECT_EQ(trace.seq_aborted_count, 0);
+
+    int repeat_seq = 0;
+    ASSERT_EQ(ACameraCaptureSession_setRepeatingRequest(session, &cap_cb, 1, &req, &repeat_seq),
+              ACAMERA_OK);
+    EXPECT_GE(trace.active_count, 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_EQ(ACameraCaptureSession_abortCaptures(session), ACAMERA_OK);
+    EXPECT_EQ(trace.seq_aborted_count, 1);
+    EXPECT_EQ(trace.last_aborted_seq, repeat_seq);
+
+    ACaptureRequest_free(req);
+    ACameraOutputTarget_free(target);
+    ACameraCaptureSession_close(session);
+    EXPECT_EQ(trace.closed_count, 1);
+    ACaptureSessionOutputContainer_free(container);
+    ACaptureSessionOutput_free(sess_out);
+    ACameraDevice_close(device);
+    AImageReader_delete(reader);
+    ACameraManager_delete(mgr);
+    cam_mgr.SetForceSynthetic(false);
 }

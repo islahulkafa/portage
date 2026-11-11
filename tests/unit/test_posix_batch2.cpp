@@ -60,9 +60,9 @@ TEST_F(PosixBatch2Test, SelectAndPselectPollPipesAndEventFds)
     LinuxTimeval tv{};
     tv.tv_sec = 0;
     tv.tv_usec = 100'000;
-    int64_t sel_res = SyscallDispatcher::Dispatch(
-        23, pipefds[0] + 1, reinterpret_cast<uint64_t>(&readfds), 0, 0,
-        reinterpret_cast<uint64_t>(&tv), 0);
+    int64_t sel_res =
+        SyscallDispatcher::Dispatch(23, pipefds[0] + 1, reinterpret_cast<uint64_t>(&readfds), 0, 0,
+                                    reinterpret_cast<uint64_t>(&tv), 0);
     EXPECT_EQ(sel_res, 1);
     EXPECT_NE(readfds.fds_bits[idx] & (1ULL << bit), 0ULL);
 
@@ -87,9 +87,9 @@ TEST_F(PosixBatch2Test, SelectAndPselectPollPipesAndEventFds)
     LinuxTimespec ts{};
     ts.tv_sec = 0;
     ts.tv_nsec = 100'000'000;
-    int64_t psel_res = SyscallDispatcher::Dispatch(
-        270, evfd + 1, reinterpret_cast<uint64_t>(&readfds), 0, 0, reinterpret_cast<uint64_t>(&ts),
-        0);
+    int64_t psel_res =
+        SyscallDispatcher::Dispatch(270, evfd + 1, reinterpret_cast<uint64_t>(&readfds), 0, 0,
+                                    reinterpret_cast<uint64_t>(&ts), 0);
     EXPECT_EQ(psel_res, 1);
     EXPECT_NE(readfds.fds_bits[idx] & (1ULL << bit), 0ULL);
 
@@ -121,8 +121,8 @@ TEST_F(PosixBatch2Test, GettimeofdayReturnsValidWallClock)
 {
     LinuxTimeval tv{};
     LinuxTimezone tz{};
-    int64_t ret = SyscallDispatcher::Dispatch(
-        96, reinterpret_cast<uint64_t>(&tv), reinterpret_cast<uint64_t>(&tz), 0, 0, 0, 0);
+    int64_t ret = SyscallDispatcher::Dispatch(96, reinterpret_cast<uint64_t>(&tv),
+                                              reinterpret_cast<uint64_t>(&tz), 0, 0, 0, 0);
     EXPECT_EQ(ret, 0);
     EXPECT_GT(tv.tv_sec, 1700000000LL);
     EXPECT_GE(tv.tv_usec, 0LL);
@@ -139,9 +139,8 @@ TEST_F(PosixBatch2Test, SetAndGetRobustListPerThread)
 
     uintptr_t head_out = 0;
     size_t len_out = 0;
-    int64_t get_ret = SyscallDispatcher::Dispatch(
-        274, 0, reinterpret_cast<uint64_t>(&head_out), reinterpret_cast<uint64_t>(&len_out), 0, 0,
-        0);
+    int64_t get_ret = SyscallDispatcher::Dispatch(274, 0, reinterpret_cast<uint64_t>(&head_out),
+                                                  reinterpret_cast<uint64_t>(&len_out), 0, 0, 0);
     EXPECT_EQ(get_ret, 0);
     EXPECT_EQ(head_out, 0x5000ULL);
     EXPECT_EQ(len_out, 24ULL);
@@ -211,7 +210,8 @@ TEST_F(PosixBatch2Test, UtimensatUpdatesAndOmitsTimestamps)
     times[1].tv_sec = 1700000200LL;
     times[1].tv_nsec = 0;
 
-    int64_t u_ret = SyscallDispatcher::Dispatch(280, fd, 0, reinterpret_cast<uint64_t>(times), 0, 0, 0);
+    int64_t u_ret =
+        SyscallDispatcher::Dispatch(280, fd, 0, reinterpret_cast<uint64_t>(times), 0, 0, 0);
     EXPECT_EQ(u_ret, 0);
 
     LinuxStat64 sb{};
@@ -223,8 +223,8 @@ TEST_F(PosixBatch2Test, UtimensatUpdatesAndOmitsTimestamps)
     times[1].tv_sec = 0;
     times[1].tv_nsec = LINUX_UTIME_OMIT;
 
-    EXPECT_EQ(
-        SyscallDispatcher::Dispatch(280, fd, 0, reinterpret_cast<uint64_t>(times), 0, 0, 0), 0);
+    EXPECT_EQ(SyscallDispatcher::Dispatch(280, fd, 0, reinterpret_cast<uint64_t>(times), 0, 0, 0),
+              0);
 
     EXPECT_EQ(SyscallDispatcher::Dispatch(5, fd, reinterpret_cast<uint64_t>(&sb), 0, 0, 0, 0), 0);
     EXPECT_EQ(sb.st_mtime, 1700000200LL);

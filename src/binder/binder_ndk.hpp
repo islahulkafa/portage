@@ -17,8 +17,8 @@ struct AIBinder_DeathRecipient;
 typedef void *(*AIBinder_Class_onCreate)(void *args) __attribute__((sysv_abi));
 typedef void (*AIBinder_Class_onDestroy)(void *userData) __attribute__((sysv_abi));
 typedef binder_status_t (*AIBinder_Class_onTransact)(AIBinder *binder, transaction_code_t code,
-                                                     const AParcel *in,
-                                                     AParcel *out) __attribute__((sysv_abi));
+                                                     const AParcel *in, AParcel *out)
+    __attribute__((sysv_abi));
 
 typedef void (*AIBinder_DeathRecipient_onBinderDied)(void *cookie) __attribute__((sysv_abi));
 
@@ -47,9 +47,9 @@ AIBinder_Class_define(const char *interfaceDescriptor, AIBinder_Class_onCreate o
 __attribute__((sysv_abi)) AIBinder *AIBinder_new(const AIBinder_Class *clazz, void *args);
 
 __attribute__((sysv_abi)) binder_status_t AIBinder_transact(AIBinder *binder,
-                                                           transaction_code_t code,
-                                                           const AParcel *in, AParcel *out,
-                                                           binder_flags_t flags);
+                                                            transaction_code_t code,
+                                                            const AParcel *in, AParcel *out,
+                                                            binder_flags_t flags);
 
 __attribute__((sysv_abi)) void AIBinder_incStrong(AIBinder *binder);
 
@@ -65,11 +65,10 @@ __attribute__((sysv_abi)) bool AIBinder_isRemote(const AIBinder *binder);
 
 __attribute__((sysv_abi)) void *AIBinder_getUserData(AIBinder *binder);
 
-__attribute__((sysv_abi)) const char *
-AIBinder_Class_getDescriptor(const AIBinder_Class *clazz);
+__attribute__((sysv_abi)) const char *AIBinder_Class_getDescriptor(const AIBinder_Class *clazz);
 
 __attribute__((sysv_abi)) bool AIBinder_associateClass(AIBinder *binder,
-                                                      const AIBinder_Class *clazz);
+                                                       const AIBinder_Class *clazz);
 
 __attribute__((sysv_abi)) const AIBinder_Class *AIBinder_getClass(AIBinder *binder);
 

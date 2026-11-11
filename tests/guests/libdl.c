@@ -37,9 +37,8 @@ __attribute__((visibility("default"))) int dladdr(const void *addr, Dl_info *inf
     return 0;
 }
 
-__attribute__((visibility("default"))) int dl_iterate_phdr(int (*callback)(void *info, size_t size,
-                                                                           void *data),
-                                                           void *data)
+__attribute__((visibility("default"))) int
+dl_iterate_phdr(int (*callback)(void *info, size_t size, void *data), void *data)
 {
     (void)callback;
     (void)data;
@@ -47,7 +46,7 @@ __attribute__((visibility("default"))) int dl_iterate_phdr(int (*callback)(void 
 }
 
 __attribute__((visibility("default"))) void *android_dlopen_ext(const char *filename, int flags,
-                                                               const void *extinfo)
+                                                                const void *extinfo)
 {
     (void)filename;
     (void)flags;

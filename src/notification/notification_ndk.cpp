@@ -45,16 +45,15 @@ __attribute__((sysv_abi)) void ANotificationChannel_destroy(ANotificationChannel
     delete channel;
 }
 
-__attribute__((sysv_abi)) void
-ANotificationChannel_setDescription(ANotificationChannel *channel, const char *desc)
+__attribute__((sysv_abi)) void ANotificationChannel_setDescription(ANotificationChannel *channel,
+                                                                   const char *desc)
 {
     if (channel && desc) {
         channel->channel.description = desc;
     }
 }
 
-__attribute__((sysv_abi)) int32_t
-ANotificationChannel_getImportance(ANotificationChannel *channel)
+__attribute__((sysv_abi)) int32_t ANotificationChannel_getImportance(ANotificationChannel *channel)
 {
     if (!channel) {
         return 0;
@@ -62,9 +61,8 @@ ANotificationChannel_getImportance(ANotificationChannel *channel)
     return channel->channel.importance;
 }
 
-__attribute__((sysv_abi)) int32_t
-ANotificationManager_createNotificationChannel(ANotificationManager *mgr,
-                                               ANotificationChannel *channel)
+__attribute__((sysv_abi)) int32_t ANotificationManager_createNotificationChannel(
+    ANotificationManager *mgr, ANotificationChannel *channel)
 {
     if (!mgr || !mgr->mgr || !channel) {
         return -1;
@@ -118,8 +116,7 @@ __attribute__((sysv_abi)) void ANotification_setTitle(ANotification *notificatio
     }
 }
 
-__attribute__((sysv_abi)) void ANotification_setText(ANotification *notification,
-                                                     const char *text)
+__attribute__((sysv_abi)) void ANotification_setText(ANotification *notification, const char *text)
 {
     if (notification && text) {
         notification->record.text = text;

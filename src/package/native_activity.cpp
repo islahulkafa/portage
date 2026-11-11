@@ -205,8 +205,8 @@ void NativeActivityRunner::ConnectInputQueueToWindow()
     });
 
     wsi::WindowManager::Instance().SetCloseCallback([this]() {
-        input::GamepadManager::Instance().SetInputQueue(nullptr);
         if (!is_destroyed_.exchange(true)) {
+            input::GamepadManager::Instance().SetInputQueue(nullptr);
             DispatchPause();
             DispatchStop();
             if (current_window_) {

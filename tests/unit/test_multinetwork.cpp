@@ -67,7 +67,7 @@ TEST_F(MultinetworkTest, ProcessAndSocketNetworkLifecycle)
 TEST_F(MultinetworkTest, NetworkScopedAddrInfoResolution)
 {
     LinuxAddrInfo hints{};
-    hints.ai_family = 2; // AF_INET
+    hints.ai_family = 2;   // AF_INET
     hints.ai_socktype = 1; // SOCK_STREAM
 
     LinuxAddrInfo *res = nullptr;
@@ -151,15 +151,15 @@ TEST_F(MultinetworkTest, RawDnsSendAndResultParsing)
 {
     // Build DNS query packet for "localhost" (ID=0x4321, QTYPE=1, QCLASS=1)
     std::vector<uint8_t> query_msg = {
-        0x43, 0x21, // ID
-        0x01, 0x00, // RD=1
-        0x00, 0x01, // QDCOUNT=1
-        0x00, 0x00, // ANCOUNT=0
-        0x00, 0x00, // NSCOUNT=0
-        0x00, 0x00, // ARCOUNT=0
-        0x09, 'l', 'o', 'c', 'a', 'l', 'h', 'o', 's', 't', 0x00, // QNAME
-        0x00, 0x01, // QTYPE=A
-        0x00, 0x01  // QCLASS=IN
+        0x43, 0x21,                                               // ID
+        0x01, 0x00,                                               // RD=1
+        0x00, 0x01,                                               // QDCOUNT=1
+        0x00, 0x00,                                               // ANCOUNT=0
+        0x00, 0x00,                                               // NSCOUNT=0
+        0x00, 0x00,                                               // ARCOUNT=0
+        0x09, 'l',  'o', 'c', 'a', 'l', 'h', 'o', 's', 't', 0x00, // QNAME
+        0x00, 0x01,                                               // QTYPE=A
+        0x00, 0x01                                                // QCLASS=IN
     };
 
     int query_fd = android_res_nsend(NET_HANDLE_DEFAULT, query_msg.data(), query_msg.size(), 0);

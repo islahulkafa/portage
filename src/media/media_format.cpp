@@ -4,10 +4,7 @@
 
 extern "C" {
 
-__attribute__((sysv_abi)) AMediaFormat *AMediaFormat_new()
-{
-    return new AMediaFormat();
-}
+__attribute__((sysv_abi)) AMediaFormat *AMediaFormat_new() { return new AMediaFormat(); }
 
 __attribute__((sysv_abi)) media_status_t AMediaFormat_delete(AMediaFormat *format)
 {
@@ -107,7 +104,7 @@ __attribute__((sysv_abi)) bool AMediaFormat_getSize(AMediaFormat *format, const 
 }
 
 __attribute__((sysv_abi)) bool AMediaFormat_getBuffer(AMediaFormat *format, const char *name,
-                                                     void **data, size_t *size)
+                                                      void **data, size_t *size)
 {
     if (!format || !name || !data || !size) {
         return false;

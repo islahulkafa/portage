@@ -689,9 +689,10 @@ extern void AHardwareBuffer_describe(const AHardwareBuffer *buffer, AHardwareBuf
 extern int AHardwareBuffer_lock(AHardwareBuffer *buffer, uint64_t usage, int32_t fence,
                                 const struct ARect *rect, void **outVirtualAddress)
     __attribute__((sysv_abi));
-extern int AHardwareBuffer_unlock(AHardwareBuffer *buffer, int32_t *fence) __attribute__((sysv_abi));
+extern int AHardwareBuffer_unlock(AHardwareBuffer *buffer, int32_t *fence)
+    __attribute__((sysv_abi));
 extern int AHardwareBuffer_lockPlanes(AHardwareBuffer *buffer, uint64_t usage, int32_t fence,
-                                     const struct ARect *rect, AHardwareBuffer_Planes *outPlanes)
+                                      const struct ARect *rect, AHardwareBuffer_Planes *outPlanes)
     __attribute__((sysv_abi));
 extern int AHardwareBuffer_getId(const AHardwareBuffer *buffer, uint64_t *outId)
     __attribute__((sysv_abi));
@@ -715,7 +716,8 @@ extern void AMediaFormat_setString(AMediaFormat *format, const char *name, const
 extern void AMediaFormat_setInt32(AMediaFormat *format, const char *name, int32_t value)
     __attribute__((sysv_abi));
 
-extern AMediaCodec *AMediaCodec_createDecoderByType(const char *mime_type) __attribute__((sysv_abi));
+extern AMediaCodec *AMediaCodec_createDecoderByType(const char *mime_type)
+    __attribute__((sysv_abi));
 extern int32_t AMediaCodec_delete(AMediaCodec *codec) __attribute__((sysv_abi));
 extern int32_t AMediaCodec_configure(AMediaCodec *codec, const AMediaFormat *format,
                                      struct ANativeWindow *surface, void *crypto, uint32_t flags)
@@ -730,7 +732,7 @@ extern int32_t AMediaCodec_queueInputBuffer(AMediaCodec *codec, size_t idx, int6
                                             size_t size, uint64_t timeUs, uint32_t flags)
     __attribute__((sysv_abi));
 extern int64_t AMediaCodec_dequeueOutputBuffer(AMediaCodec *codec, AMediaCodecBufferInfo *info,
-                                              int64_t timeoutUs) __attribute__((sysv_abi));
+                                               int64_t timeoutUs) __attribute__((sysv_abi));
 extern uint8_t *AMediaCodec_getOutputBuffer(AMediaCodec *codec, size_t idx, size_t *out_size)
     __attribute__((sysv_abi));
 extern int32_t AMediaCodec_releaseOutputBuffer(AMediaCodec *codec, size_t idx, _Bool render)
@@ -794,25 +796,23 @@ struct AThermalManager;
 typedef void (*AThermal_StatusCallback)(void *data, int status);
 
 extern struct AThermalManager *AThermalManager_acquireManager(void) __attribute__((sysv_abi));
-extern void AThermalManager_releaseManager(struct AThermalManager *manager) __attribute__((sysv_abi));
+extern void AThermalManager_releaseManager(struct AThermalManager *manager)
+    __attribute__((sysv_abi));
 extern int AThermalManager_getCurrentThermalStatus(struct AThermalManager *manager)
     __attribute__((sysv_abi));
-extern float AThermalManager_getThermalHeadroom(struct AThermalManager *manager, int forecastSeconds)
-    __attribute__((sysv_abi));
+extern float AThermalManager_getThermalHeadroom(struct AThermalManager *manager,
+                                                int forecastSeconds) __attribute__((sysv_abi));
 
 struct APerformanceHintManager;
 struct APerformanceHintSession;
 
 extern struct APerformanceHintManager *APerformanceHintManager_create(void)
     __attribute__((sysv_abi));
-extern struct APerformanceHintSession *
-APerformanceHintManager_createSession(struct APerformanceHintManager *manager,
-                                     const int32_t *threadIds, size_t size,
-                                     int64_t initialTargetWorkDurationNanos)
-    __attribute__((sysv_abi));
-extern int
-APerformanceHintSession_reportActualWorkDuration(struct APerformanceHintSession *session,
-                                                int64_t actualDurationNanos)
+extern struct APerformanceHintSession *APerformanceHintManager_createSession(
+    struct APerformanceHintManager *manager, const int32_t *threadIds, size_t size,
+    int64_t initialTargetWorkDurationNanos) __attribute__((sysv_abi));
+extern int APerformanceHintSession_reportActualWorkDuration(struct APerformanceHintSession *session,
+                                                            int64_t actualDurationNanos)
     __attribute__((sysv_abi));
 extern void APerformanceHintSession_close(struct APerformanceHintSession *session)
     __attribute__((sysv_abi));
@@ -1026,7 +1026,7 @@ extern int32_t ACameraManager_openCamera(void *manager, const char *cameraId, vo
                                          void **device) __attribute__((sysv_abi));
 extern int32_t ACameraDevice_close(void *device) __attribute__((sysv_abi));
 extern int32_t ACameraDevice_createCaptureRequest(const void *device, int templateId,
-                                                   void **request) __attribute__((sysv_abi));
+                                                  void **request) __attribute__((sysv_abi));
 extern int32_t ACameraDevice_createCaptureSession(void *device, const void *outputs,
                                                   const void *callbacks, void **session)
     __attribute__((sysv_abi));
@@ -1041,8 +1041,7 @@ extern int32_t ACameraCaptureSession_capture(void *session, void *callbacks, int
     __attribute__((sysv_abi));
 extern int32_t ACameraOutputTarget_create(void *window, void **output) __attribute__((sysv_abi));
 extern void ACameraOutputTarget_free(void *output) __attribute__((sysv_abi));
-extern int32_t ACaptureSessionOutput_create(void *window, void **output)
-    __attribute__((sysv_abi));
+extern int32_t ACaptureSessionOutput_create(void *window, void **output) __attribute__((sysv_abi));
 extern void ACaptureSessionOutput_free(void *output) __attribute__((sysv_abi));
 extern int32_t ACaptureSessionOutputContainer_create(void **container) __attribute__((sysv_abi));
 extern void ACaptureSessionOutputContainer_free(void *container) __attribute__((sysv_abi));
@@ -1054,8 +1053,7 @@ extern int32_t AImageReader_new(int32_t width, int32_t height, int32_t format, i
                                 void **reader) __attribute__((sysv_abi));
 extern void AImageReader_delete(void *reader) __attribute__((sysv_abi));
 extern int32_t AImageReader_getWindow(void *reader, void **window) __attribute__((sysv_abi));
-extern int32_t AImageReader_acquireNextImage(void *reader, void **image)
-    __attribute__((sysv_abi));
+extern int32_t AImageReader_acquireNextImage(void *reader, void **image) __attribute__((sysv_abi));
 extern void AImage_delete(void *image) __attribute__((sysv_abi));
 extern int32_t AImage_getWidth(const void *image, int32_t *width) __attribute__((sysv_abi));
 extern int32_t AImage_getHeight(const void *image, int32_t *height) __attribute__((sysv_abi));
@@ -1083,8 +1081,10 @@ extern void AKeyStore_freeBuffer(void *buf) __attribute__((sysv_abi));
 // Location NDK functions
 extern void *ALocationManager_create(void) __attribute__((sysv_abi));
 extern void ALocationManager_destroy(void *mgr) __attribute__((sysv_abi));
-extern int ALocationManager_isProviderEnabled(void *mgr, const char *provider) __attribute__((sysv_abi));
-extern void *ALocationManager_getLastKnownLocation(void *mgr, const char *provider) __attribute__((sysv_abi));
+extern int ALocationManager_isProviderEnabled(void *mgr, const char *provider)
+    __attribute__((sysv_abi));
+extern void *ALocationManager_getLastKnownLocation(void *mgr, const char *provider)
+    __attribute__((sysv_abi));
 extern double ALocation_getLatitude(const void *loc) __attribute__((sysv_abi));
 extern double ALocation_getLongitude(const void *loc) __attribute__((sysv_abi));
 extern void ALocation_destroy(void *loc) __attribute__((sysv_abi));
@@ -1112,15 +1112,19 @@ extern int32_t ABatteryManager_getCapacity(void *mgr) __attribute__((sysv_abi));
 // Notification & Toast NDK functions
 extern void *ANotificationManager_create(void) __attribute__((sysv_abi));
 extern void ANotificationManager_destroy(void *mgr) __attribute__((sysv_abi));
-extern void *ANotificationChannel_create(const char *id, const char *name, int32_t importance) __attribute__((sysv_abi));
+extern void *ANotificationChannel_create(const char *id, const char *name, int32_t importance)
+    __attribute__((sysv_abi));
 extern void ANotificationChannel_destroy(void *channel) __attribute__((sysv_abi));
-extern int32_t ANotificationManager_createNotificationChannel(void *mgr, void *channel) __attribute__((sysv_abi));
+extern int32_t ANotificationManager_createNotificationChannel(void *mgr, void *channel)
+    __attribute__((sysv_abi));
 extern void *ANotification_create(const char *channel_id) __attribute__((sysv_abi));
 extern void ANotification_destroy(void *notification) __attribute__((sysv_abi));
 extern void ANotification_setTitle(void *notification, const char *title) __attribute__((sysv_abi));
 extern void ANotification_setText(void *notification, const char *text) __attribute__((sysv_abi));
-extern int32_t ANotificationManager_notify(void *mgr, const char *tag, int32_t id, void *notification) __attribute__((sysv_abi));
-extern int32_t ANotificationManager_cancel(void *mgr, const char *tag, int32_t id) __attribute__((sysv_abi));
+extern int32_t ANotificationManager_notify(void *mgr, const char *tag, int32_t id,
+                                           void *notification) __attribute__((sysv_abi));
+extern int32_t ANotificationManager_cancel(void *mgr, const char *tag, int32_t id)
+    __attribute__((sysv_abi));
 extern void AToast_show(const char *text, int32_t duration) __attribute__((sysv_abi));
 
 // Math functions (from DT_NEEDED libgame_math.so)
@@ -1146,19 +1150,26 @@ extern int dladdr(const void *addr, Dl_info *info) __attribute__((sysv_abi));
 
 // StorageManager functions
 struct AStorageManager;
-typedef void (*AStorageManager_obbCallbackFunc)(const char *filename, const int32_t state, void *data);
+typedef void (*AStorageManager_obbCallbackFunc)(const char *filename, const int32_t state,
+                                                void *data);
 
 extern struct AStorageManager *AStorageManager_new(void) __attribute__((sysv_abi));
 extern void AStorageManager_delete(struct AStorageManager *mgr) __attribute__((sysv_abi));
-extern void AStorageManager_mountObb(struct AStorageManager *mgr, const char *filename, const char *key,
-                                     AStorageManager_obbCallbackFunc cb, void *data) __attribute__((sysv_abi));
-extern void AStorageManager_unmountObb(struct AStorageManager *mgr, const char *filename, const int force,
-                                       AStorageManager_obbCallbackFunc cb, void *data) __attribute__((sysv_abi));
-extern int AStorageManager_isObbMounted(struct AStorageManager *mgr, const char *filename) __attribute__((sysv_abi));
-extern const char *AStorageManager_getMountedObbPath(struct AStorageManager *mgr, const char *filename) __attribute__((sysv_abi));
+extern void AStorageManager_mountObb(struct AStorageManager *mgr, const char *filename,
+                                     const char *key, AStorageManager_obbCallbackFunc cb,
+                                     void *data) __attribute__((sysv_abi));
+extern void AStorageManager_unmountObb(struct AStorageManager *mgr, const char *filename,
+                                       const int force, AStorageManager_obbCallbackFunc cb,
+                                       void *data) __attribute__((sysv_abi));
+extern int AStorageManager_isObbMounted(struct AStorageManager *mgr, const char *filename)
+    __attribute__((sysv_abi));
+extern const char *AStorageManager_getMountedObbPath(struct AStorageManager *mgr,
+                                                     const char *filename)
+    __attribute__((sysv_abi));
 
 static volatile int g_engine_obb_state = 0;
-static void __attribute__((sysv_abi)) engine_obb_callback(const char *filename, const int32_t state, void *data)
+static void __attribute__((sysv_abi)) engine_obb_callback(const char *filename, const int32_t state,
+                                                          void *data)
 {
     (void)filename;
     (void)data;
@@ -1470,7 +1481,7 @@ static void __attribute__((noinline)) engine_worker_func(void)
     hb_desc.width = 64;
     hb_desc.height = 64;
     hb_desc.layers = 1;
-    hb_desc.format = 1; // R8G8B8A8
+    hb_desc.format = 1;           // R8G8B8A8
     hb_desc.usage = 3 | (3 << 4); // CPU_READ_OFTEN | CPU_WRITE_OFTEN
     hb_desc.stride = 0;
     hb_desc.rfu0 = 0;
@@ -1481,7 +1492,8 @@ static void __attribute__((noinline)) engine_worker_func(void)
         AHardwareBuffer_Desc desc_out;
         AHardwareBuffer_describe(hb, &desc_out);
         void *vaddr = NULL;
-        if (AHardwareBuffer_lock(hb, 3 << 4 /* CPU_WRITE_OFTEN */, -1, NULL, &vaddr) == 0 && vaddr) {
+        if (AHardwareBuffer_lock(hb, 3 << 4 /* CPU_WRITE_OFTEN */, -1, NULL, &vaddr) == 0 &&
+            vaddr) {
             uint32_t *pix = (uint32_t *)vaddr;
             pix[0] = 0xAABBCCDD;
             AHardwareBuffer_unlock(hb, NULL);
@@ -1537,7 +1549,7 @@ static void __attribute__((noinline)) engine_worker_func(void)
                                                  "engine_media_ready.txt", "MEDIA_OK");
                                 }
                                 AMediaCodec_releaseOutputBuffer(media_codec, (size_t)out_buf_idx,
-                                                               0);
+                                                                0);
                             }
                         }
                     }
@@ -1598,11 +1610,12 @@ static void __attribute__((noinline)) engine_worker_func(void)
         AIBinder_decStrong(vib_svc);
     }
 
-    AIBinder *lic_svc = AServiceManager_getService("com.android.vending.licensing.ILicensingService");
+    AIBinder *lic_svc =
+        AServiceManager_getService("com.android.vending.licensing.ILicensingService");
     if (lic_svc) {
-        AIBinder_Class *lic_class = AIBinder_Class_define(
-            "com.android.vending.licensing.ILicenseResultListener", NULL, NULL,
-            (void *)engine_license_listener_transact);
+        AIBinder_Class *lic_class =
+            AIBinder_Class_define("com.android.vending.licensing.ILicenseResultListener", NULL,
+                                  NULL, (void *)engine_license_listener_transact);
         if (lic_class) {
             AIBinder *lic_listener = AIBinder_new(lic_class, NULL);
             if (lic_listener) {
@@ -1639,7 +1652,8 @@ static void __attribute__((noinline)) engine_worker_func(void)
             AParcel_writeInt32(bill_in, 3);
             AParcel_writeString(bill_in, "com.portage.gameengine", -1);
             AParcel_writeString(bill_in, "inapp", -1);
-            if (AIBinder_transact(bill_svc, 1 /* isBillingSupported */, bill_in, bill_out, 0) == 0) {
+            if (AIBinder_transact(bill_svc, 1 /* isBillingSupported */, bill_in, bill_out, 0) ==
+                0) {
                 int32_t ex = -1;
                 int32_t res = -1;
                 if (AParcel_readInt32(bill_out, &ex) == 0 && ex == 0 &&
@@ -1824,8 +1838,8 @@ static void __attribute__((noinline)) engine_worker_func(void)
 
     struct AStorageManager *smgr = AStorageManager_new();
     if (smgr) {
-        const char *obb_path =
-            "/storage/emulated/0/Android/obb/com.portage.gameengine/main.1.com.portage.gameengine.obb";
+        const char *obb_path = "/storage/emulated/0/Android/obb/com.portage.gameengine/"
+                               "main.1.com.portage.gameengine.obb";
         g_engine_obb_state = 0;
         AStorageManager_mountObb(smgr, obb_path, NULL, engine_obb_callback, NULL);
         for (int i = 0; i < 200 && g_engine_obb_state == 0; ++i) {
@@ -1981,7 +1995,7 @@ static void __attribute__((noinline)) engine_worker_func(void)
 
                         void *cam_sess = NULL;
                         if (ACameraDevice_createCaptureSession(cam_dev, sess_cont, NULL,
-                                                              &cam_sess) == 0 &&
+                                                               &cam_sess) == 0 &&
                             cam_sess) {
                             void *cap_req = NULL;
                             ACameraDevice_createCaptureRequest(cam_dev, 1, &cap_req);
@@ -2039,8 +2053,8 @@ static void __attribute__((noinline)) engine_worker_func(void)
                 ciphertext && cipher_len > 0) {
                 uint8_t *plain = NULL;
                 size_t plain_len = 0;
-                if (AKeyStore_decrypt(keystore, "game_save_key", ciphertext, cipher_len, iv,
-                                      iv_len, tag, tag_len, &plain, &plain_len) == 0 &&
+                if (AKeyStore_decrypt(keystore, "game_save_key", ciphertext, cipher_len, iv, iv_len,
+                                      tag, tag_len, &plain, &plain_len) == 0 &&
                     plain && plain_len == 24) {
                     write_marker(g_engine.internalDataPath, "engine_keystore_ready.txt",
                                  "KEYSTORE_OK");

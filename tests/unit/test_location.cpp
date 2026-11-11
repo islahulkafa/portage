@@ -130,8 +130,8 @@ TEST(LocationTest, LocationManagerGeofenceEnterTransition)
     TestGeofenceContext context;
     // Fence at (37.1000, -122.0000) with 1000 meter radius
     mgr.AddCircularGeofence(101, 37.1000, -122.0000, 1000.0f, 0, 0,
-                           GEOFENCE_TRANSITION_ENTER | GEOFENCE_TRANSITION_EXIT,
-                           &OnGeofenceTransitionCallback, &context);
+                            GEOFENCE_TRANSITION_ENTER | GEOFENCE_TRANSITION_EXIT,
+                            &OnGeofenceTransitionCallback, &context);
 
     // Initial check while outside should not trigger Enter
     EXPECT_EQ(context.transition_count.load(), 0);
@@ -156,8 +156,8 @@ TEST(LocationTest, LocationManagerGeofenceExitTransition)
 
     TestGeofenceContext context;
     mgr.AddCircularGeofence(202, 37.1000, -122.0000, 500.0f, 0, 0,
-                           GEOFENCE_TRANSITION_ENTER | GEOFENCE_TRANSITION_EXIT,
-                           &OnGeofenceTransitionCallback, &context);
+                            GEOFENCE_TRANSITION_ENTER | GEOFENCE_TRANSITION_EXIT,
+                            &OnGeofenceTransitionCallback, &context);
 
     // Initial check while inside triggers ENTER
     EXPECT_EQ(context.transition_count.load(), 1);
@@ -190,8 +190,7 @@ TEST(LocationTest, SyntheticLocationJniReflection)
     jobject loc_mgr = jenv->functions->CallObjectMethod(jenv, context_obj, get_svc_mid, loc_str);
     ASSERT_NE(loc_mgr, nullptr);
 
-    jmethodID is_enabled_mid =
-        reinterpret_cast<jmethodID>(const_cast<char *>("isProviderEnabled"));
+    jmethodID is_enabled_mid = reinterpret_cast<jmethodID>(const_cast<char *>("isProviderEnabled"));
     jstring gps_str = jenv->functions->NewStringUTF(jenv, "gps");
     jboolean gps_enabled =
         jenv->functions->CallBooleanMethod(jenv, loc_mgr, is_enabled_mid, gps_str);
@@ -236,8 +235,8 @@ TEST(LocationTest, SyntheticLocationJniReflection)
     EXPECT_EQ(jenv->functions->CallBooleanMethod(jenv, loc_obj, has_acc_mid), JNI_TRUE);
 
     jmethodID get_prov_mid = reinterpret_cast<jmethodID>(const_cast<char *>("getProvider"));
-    jstring prov_res = reinterpret_cast<jstring>(
-        jenv->functions->CallObjectMethod(jenv, loc_obj, get_prov_mid));
+    jstring prov_res =
+        reinterpret_cast<jstring>(jenv->functions->CallObjectMethod(jenv, loc_obj, get_prov_mid));
     ASSERT_NE(prov_res, nullptr);
     const char *prov_chars = env.GetStringChars(prov_res);
     EXPECT_STREQ(prov_chars, "gps");

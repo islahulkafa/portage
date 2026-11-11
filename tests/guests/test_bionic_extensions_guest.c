@@ -3,13 +3,11 @@
 
 typedef uintptr_t bionic_pthread_t;
 
-typedef struct
-{
+typedef struct {
     uint64_t __reserved[7];
 } bionic_pthread_attr_t;
 
-typedef struct
-{
+typedef struct {
     uint64_t flags;
     void *reserved_addr;
     size_t reserved_size;
@@ -19,8 +17,7 @@ typedef struct
     void *library_namespace;
 } android_dlextinfo;
 
-struct link_map_raw
-{
+struct link_map_raw {
     uint64_t l_addr;
     const char *l_name;
     uint64_t l_ld;
@@ -82,14 +79,11 @@ static inline void sys_exit(int code)
 
 static int str_eq(const char *a, const char *b)
 {
-    if (!a || !b)
-    {
+    if (!a || !b) {
         return 0;
     }
-    while (*a && *b)
-    {
-        if (*a != *b)
-        {
+    while (*a && *b) {
+        if (*a != *b) {
             return 0;
         }
         ++a;
@@ -101,92 +95,75 @@ static int str_eq(const char *a, const char *b)
 void _start(void)
 {
     bionic_pthread_t self = pthread_self();
-    if (self == 0 || !pthread_equal(self, self))
-    {
+    if (self == 0 || !pthread_equal(self, self)) {
         sys_exit(1);
     }
 
-    if (pthread_setname_np(self, "bionic_guest") != 0)
-    {
+    if (pthread_setname_np(self, "bionic_guest") != 0) {
         sys_exit(2);
     }
 
     char name_buf[32];
-    for (size_t i = 0; i < sizeof(name_buf); ++i)
-    {
+    for (size_t i = 0; i < sizeof(name_buf); ++i) {
         name_buf[i] = 0;
     }
     if (pthread_getname_np(self, name_buf, sizeof(name_buf)) != 0 ||
-        !str_eq(name_buf, "bionic_guest"))
-    {
+        !str_eq(name_buf, "bionic_guest")) {
         sys_exit(3);
     }
 
     bionic_pthread_attr_t attr;
-    if (pthread_attr_init(&attr) != 0)
-    {
+    if (pthread_attr_init(&attr) != 0) {
         sys_exit(4);
     }
-    if (pthread_getattr_np(self, &attr) != 0)
-    {
+    if (pthread_getattr_np(self, &attr) != 0) {
         sys_exit(5);
     }
 
     void *stack_base = NULL;
     size_t stack_size = 0;
-    if (pthread_attr_getstack(&attr, &stack_base, &stack_size) != 0)
-    {
+    if (pthread_attr_getstack(&attr, &stack_base, &stack_size) != 0) {
         sys_exit(6);
     }
     uintptr_t local_addr = (uintptr_t)&attr;
     uintptr_t base_addr = (uintptr_t)stack_base;
     if (stack_base == NULL || stack_size < (1024u * 1024u) || local_addr < base_addr ||
-        local_addr >= base_addr + stack_size)
-    {
+        local_addr >= base_addr + stack_size) {
         sys_exit(7);
     }
 
-    if (pthread_attr_setstacksize(&attr, 2u * 1024u * 1024u) != 0)
-    {
+    if (pthread_attr_setstacksize(&attr, 2u * 1024u * 1024u) != 0) {
         sys_exit(8);
     }
     size_t queried_sz = 0;
-    if (pthread_attr_getstacksize(&attr, &queried_sz) != 0 || queried_sz != (2u * 1024u * 1024u))
-    {
+    if (pthread_attr_getstacksize(&attr, &queried_sz) != 0 || queried_sz != (2u * 1024u * 1024u)) {
         sys_exit(9);
     }
-    if (pthread_attr_setguardsize(&attr, 8192u) != 0)
-    {
+    if (pthread_attr_setguardsize(&attr, 8192u) != 0) {
         sys_exit(10);
     }
     size_t guard_sz = 0;
-    if (pthread_attr_getguardsize(&attr, &guard_sz) != 0 || guard_sz != 8192u)
-    {
+    if (pthread_attr_getguardsize(&attr, &guard_sz) != 0 || guard_sz != 8192u) {
         sys_exit(11);
     }
-    if (pthread_attr_setdetachstate(&attr, 1) != 0)
-    {
+    if (pthread_attr_setdetachstate(&attr, 1) != 0) {
         sys_exit(12);
     }
     int detach_state = 0;
-    if (pthread_attr_getdetachstate(&attr, &detach_state) != 0 || detach_state != 1)
-    {
+    if (pthread_attr_getdetachstate(&attr, &detach_state) != 0 || detach_state != 1) {
         sys_exit(13);
     }
-    if (pthread_attr_destroy(&attr) != 0)
-    {
+    if (pthread_attr_destroy(&attr) != 0) {
         sys_exit(14);
     }
 
     struct link_map_raw *lm = NULL;
-    if (dlinfo(NULL, RTLD_DI_LINKMAP, &lm) != 0 || lm == NULL || lm->l_name == NULL)
-    {
+    if (dlinfo(NULL, RTLD_DI_LINKMAP, &lm) != 0 || lm == NULL || lm->l_name == NULL) {
         sys_exit(15);
     }
 
     int64_t math_fd = sys_openat(-100, "/system/lib64/libgame_math.so", 0, 0);
-    if (math_fd < 0)
-    {
+    if (math_fd < 0) {
         sys_exit(16);
     }
 
@@ -196,20 +173,17 @@ void _start(void)
 
     void *math_handle = android_dlopen_ext("fd_game_math", RTLD_LAZY, &ext);
     sys_close((int)math_fd);
-    if (!math_handle)
-    {
+    if (!math_handle) {
         sys_exit(17);
     }
 
     typedef int (*add_fn_t)(int, int);
     add_fn_t add_fn = (add_fn_t)dlsym(math_handle, "math_add");
-    if (!add_fn || add_fn(19, 23) != 42)
-    {
+    if (!add_fn || add_fn(19, 23) != 42) {
         sys_exit(18);
     }
 
-    if (dlclose(math_handle) != 0)
-    {
+    if (dlclose(math_handle) != 0) {
         sys_exit(19);
     }
 

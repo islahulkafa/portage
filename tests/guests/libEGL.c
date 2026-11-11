@@ -129,7 +129,7 @@ EXPORT void *eglGetNativeClientBufferANDROID(const void *buffer)
     return (void *)0;
 }
 EXPORT void *eglCreateImageKHR(void *dpy, void *ctx, unsigned int target, void *buffer,
-                              const int32_t *attrib_list)
+                               const int32_t *attrib_list)
 {
     (void)dpy;
     (void)ctx;

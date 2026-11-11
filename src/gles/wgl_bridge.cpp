@@ -205,7 +205,8 @@ bool WglBridge::Initialize() noexcept
 
     // UBOs
     table_.glBindBufferBase = reinterpret_cast<PFN_glBindBufferBase>(load_fn("glBindBufferBase"));
-    table_.glBindBufferRange = reinterpret_cast<PFN_glBindBufferRange>(load_fn("glBindBufferRange"));
+    table_.glBindBufferRange =
+        reinterpret_cast<PFN_glBindBufferRange>(load_fn("glBindBufferRange"));
     table_.glGetUniformBlockIndex =
         reinterpret_cast<PFN_glGetUniformBlockIndex>(load_fn("glGetUniformBlockIndex"));
     table_.glUniformBlockBinding =
@@ -253,7 +254,8 @@ bool WglBridge::Initialize() noexcept
     table_.glTexSubImage3D = reinterpret_cast<PFN_glTexSubImage3D>(load_fn("glTexSubImage3D"));
 
     // Compute & Barriers
-    table_.glDispatchCompute = reinterpret_cast<PFN_glDispatchCompute>(load_fn("glDispatchCompute"));
+    table_.glDispatchCompute =
+        reinterpret_cast<PFN_glDispatchCompute>(load_fn("glDispatchCompute"));
     table_.glMemoryBarrier = reinterpret_cast<PFN_glMemoryBarrier>(load_fn("glMemoryBarrier"));
 
     if (table_.wglMakeCurrent) {

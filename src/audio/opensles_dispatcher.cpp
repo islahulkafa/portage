@@ -311,11 +311,149 @@ const SLVolumeItf_ g_VolumeItfVTable = {
     nullptr, // GetStereoPosition
 };
 
+struct MuteSoloState {
+    const SLMuteSoloItf_ *vtbl{nullptr};
+    uint32_t channels{2};
+    std::atomic<SLboolean> mute[2]{{SL_BOOLEAN_FALSE}, {SL_BOOLEAN_FALSE}};
+    std::atomic<SLboolean> solo[2]{{SL_BOOLEAN_FALSE}, {SL_BOOLEAN_FALSE}};
+};
+
+struct AndroidConfigState {
+    const SLAndroidConfigurationItf_ *vtbl{nullptr};
+};
+
+SLresult __attribute__((sysv_abi)) MuteSolo_SetChannelMute(SLMuteSoloItf self, SLuint8 chan,
+                                                           SLboolean mute)
+{
+    if (!self) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    auto *state = reinterpret_cast<MuteSoloState *>(self);
+    if (chan >= state->channels || chan >= 2) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    state->mute[chan].store(mute);
+    return SL_RESULT_SUCCESS;
+}
+
+SLresult __attribute__((sysv_abi)) MuteSolo_GetChannelMute(SLMuteSoloItf self, SLuint8 chan,
+                                                           SLboolean *pMute)
+{
+    if (!self || !pMute) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    auto *state = reinterpret_cast<MuteSoloState *>(self);
+    if (chan >= state->channels || chan >= 2) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    *pMute = state->mute[chan].load();
+    return SL_RESULT_SUCCESS;
+}
+
+SLresult __attribute__((sysv_abi)) MuteSolo_SetChannelSolo(SLMuteSoloItf self, SLuint8 chan,
+                                                           SLboolean solo)
+{
+    if (!self) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    auto *state = reinterpret_cast<MuteSoloState *>(self);
+    if (chan >= state->channels || chan >= 2) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    state->solo[chan].store(solo);
+    return SL_RESULT_SUCCESS;
+}
+
+SLresult __attribute__((sysv_abi)) MuteSolo_GetChannelSolo(SLMuteSoloItf self, SLuint8 chan,
+                                                           SLboolean *pSolo)
+{
+    if (!self || !pSolo) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    auto *state = reinterpret_cast<MuteSoloState *>(self);
+    if (chan >= state->channels || chan >= 2) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    *pSolo = state->solo[chan].load();
+    return SL_RESULT_SUCCESS;
+}
+
+SLresult __attribute__((sysv_abi)) MuteSolo_GetNumChannels(SLMuteSoloItf self,
+                                                           SLuint8 *pNumChannels)
+{
+    if (!self || !pNumChannels) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    auto *state = reinterpret_cast<MuteSoloState *>(self);
+    *pNumChannels = static_cast<SLuint8>(state->channels);
+    return SL_RESULT_SUCCESS;
+}
+
+const SLMuteSoloItf_ g_MuteSoloItfVTable = {
+    MuteSolo_SetChannelMute, MuteSolo_GetChannelMute, MuteSolo_SetChannelSolo,
+    MuteSolo_GetChannelSolo, MuteSolo_GetNumChannels,
+};
+
+SLresult __attribute__((sysv_abi)) AndroidConfig_SetConfiguration(SLAndroidConfigurationItf self,
+                                                                  const SLchar *configKey,
+                                                                  const void *pConfigValue,
+                                                                  SLuint32 valueSize)
+{
+    (void)pConfigValue;
+    (void)valueSize;
+    if (!self || !configKey) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    return SL_RESULT_SUCCESS;
+}
+
+SLresult __attribute__((sysv_abi)) AndroidConfig_GetConfiguration(SLAndroidConfigurationItf self,
+                                                                  const SLchar *configKey,
+                                                                  SLuint32 *pValueSize,
+                                                                  void *pConfigValue)
+{
+    (void)pConfigValue;
+    if (!self || !configKey || !pValueSize) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    return SL_RESULT_SUCCESS;
+}
+
+SLresult __attribute__((sysv_abi))
+AndroidConfig_AcquireJavaProxy(SLAndroidConfigurationItf self, SLuint32 proxyType, void **pProxyObj)
+{
+    (void)proxyType;
+    if (!self || !pProxyObj) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    *pProxyObj = nullptr;
+    return SL_RESULT_FEATURE_UNSUPPORTED;
+}
+
+SLresult __attribute__((sysv_abi)) AndroidConfig_ReleaseJavaProxy(SLAndroidConfigurationItf self,
+                                                                  SLuint32 proxyType)
+{
+    (void)proxyType;
+    if (!self) {
+        return SL_RESULT_PARAMETER_INVALID;
+    }
+    return SL_RESULT_SUCCESS;
+}
+
+const SLAndroidConfigurationItf_ g_AndroidConfigurationItfVTable = {
+    AndroidConfig_SetConfiguration,
+    AndroidConfig_GetConfiguration,
+    AndroidConfig_AcquireJavaProxy,
+    AndroidConfig_ReleaseJavaProxy,
+};
+
 struct AudioPlayerObjectImpl {
     const SLObjectItf_ *obj_vtbl{&g_PlayerObjectVTable};
     const SLPlayItf_ *play_vtbl{&g_PlayItfVTable};
     const SLAndroidSimpleBufferQueueItf_ *bq_vtbl{&g_BufferQueueItfVTable};
     const SLVolumeItf_ *vol_vtbl{&g_VolumeItfVTable};
+    MuteSoloState mute_solo{&g_MuteSoloItfVTable, 2};
+    AndroidConfigState android_config{&g_AndroidConfigurationItfVTable};
 
     uint32_t sample_rate{48000};
     uint32_t channels{2};
@@ -395,6 +533,14 @@ SLresult __attribute__((sysv_abi)) Player_GetInterface(SLObjectItf self, const S
     }
     if (MatchIID(iid, SL_IID_VOLUME)) {
         *reinterpret_cast<const SLVolumeItf_ ***>(pInterface) = &impl->vol_vtbl;
+        return SL_RESULT_SUCCESS;
+    }
+    if (MatchIID(iid, SL_IID_MUTESOLO)) {
+        *reinterpret_cast<SLMuteSoloItf *>(pInterface) = &impl->mute_solo.vtbl;
+        return SL_RESULT_SUCCESS;
+    }
+    if (MatchIID(iid, SL_IID_ANDROIDCONFIGURATION)) {
+        *reinterpret_cast<SLAndroidConfigurationItf *>(pInterface) = &impl->android_config.vtbl;
         return SL_RESULT_SUCCESS;
     }
     return SL_RESULT_FEATURE_UNSUPPORTED;
@@ -522,7 +668,8 @@ SLresult __attribute__((sysv_abi)) Record_SetRecordState(SLRecordItf self, SLuin
 SLresult __attribute__((sysv_abi)) Record_GetRecordState(SLRecordItf self, SLuint32 *pState);
 
 const SLRecordItf_ g_RecordItfVTable = {
-    Record_SetRecordState, Record_GetRecordState,
+    Record_SetRecordState,
+    Record_GetRecordState,
     nullptr, // SetDurationLimit
     nullptr, // GetPosition
     nullptr, // RegisterCallback
@@ -538,8 +685,9 @@ const SLRecordItf_ g_RecordItfVTable = {
 SLresult __attribute__((sysv_abi)) RecordBufferQueue_Enqueue(SLAndroidSimpleBufferQueueItf self,
                                                              const void *pBuffer, SLuint32 size);
 SLresult __attribute__((sysv_abi)) RecordBufferQueue_Clear(SLAndroidSimpleBufferQueueItf self);
-SLresult __attribute__((sysv_abi)) RecordBufferQueue_GetState(SLAndroidSimpleBufferQueueItf self,
-                                                              SLAndroidSimpleBufferQueueState *pState);
+SLresult __attribute__((sysv_abi))
+RecordBufferQueue_GetState(SLAndroidSimpleBufferQueueItf self,
+                           SLAndroidSimpleBufferQueueState *pState);
 SLresult __attribute__((sysv_abi))
 RecordBufferQueue_RegisterCallback(SLAndroidSimpleBufferQueueItf self,
                                    slAndroidSimpleBufferQueueCallback callback, void *pContext);
@@ -555,6 +703,8 @@ struct AudioRecorderObjectImpl {
     const SLObjectItf_ *obj_vtbl{&g_RecorderObjectVTable};
     const SLRecordItf_ *rec_vtbl{&g_RecordItfVTable};
     const SLAndroidSimpleBufferQueueItf_ *bq_vtbl{&g_RecordBufferQueueItfVTable};
+    MuteSoloState mute_solo{&g_MuteSoloItfVTable, 1};
+    AndroidConfigState android_config{&g_AndroidConfigurationItfVTable};
 
     uint32_t sample_rate{48000};
     uint32_t channels{1};
@@ -607,11 +757,9 @@ struct AudioRecorderObjectImpl {
             if (entry.buffer && entry.size > 0) {
                 int64_t bytes_read = 0;
                 while (bytes_read < static_cast<int64_t>(entry.size) &&
-                       record_state.load() == SL_RECORDSTATE_RECORDING &&
-                       worker_running.load()) {
+                       record_state.load() == SL_RECORDSTATE_RECORDING && worker_running.load()) {
                     int64_t r = AudioManager::Instance().ReadPcmBytes(
-                        static_cast<uint8_t *>(entry.buffer) + bytes_read,
-                        entry.size - bytes_read);
+                        static_cast<uint8_t *>(entry.buffer) + bytes_read, entry.size - bytes_read);
                     if (r > 0) {
                         bytes_read += r;
                     } else {
@@ -642,6 +790,14 @@ SLresult __attribute__((sysv_abi)) Recorder_GetInterface(SLObjectItf self, const
     }
     if (MatchIID(iid, SL_IID_ANDROIDSIMPLEBUFFERQUEUE) || MatchIID(iid, SL_IID_BUFFERQUEUE)) {
         *reinterpret_cast<const SLAndroidSimpleBufferQueueItf_ ***>(pInterface) = &impl->bq_vtbl;
+        return SL_RESULT_SUCCESS;
+    }
+    if (MatchIID(iid, SL_IID_MUTESOLO)) {
+        *reinterpret_cast<SLMuteSoloItf *>(pInterface) = &impl->mute_solo.vtbl;
+        return SL_RESULT_SUCCESS;
+    }
+    if (MatchIID(iid, SL_IID_ANDROIDCONFIGURATION)) {
+        *reinterpret_cast<SLAndroidConfigurationItf *>(pInterface) = &impl->android_config.vtbl;
         return SL_RESULT_SUCCESS;
     }
     return SL_RESULT_FEATURE_UNSUPPORTED;
@@ -716,8 +872,9 @@ SLresult __attribute__((sysv_abi)) RecordBufferQueue_Clear(SLAndroidSimpleBuffer
     return SL_RESULT_SUCCESS;
 }
 
-SLresult __attribute__((sysv_abi)) RecordBufferQueue_GetState(SLAndroidSimpleBufferQueueItf self,
-                                                              SLAndroidSimpleBufferQueueState *pState)
+SLresult __attribute__((sysv_abi))
+RecordBufferQueue_GetState(SLAndroidSimpleBufferQueueItf self,
+                           SLAndroidSimpleBufferQueueState *pState)
 {
     if (!self || !pState) {
         return SL_RESULT_PARAMETER_INVALID;
@@ -744,11 +901,9 @@ RecordBufferQueue_RegisterCallback(SLAndroidSimpleBufferQueueItf self,
     return SL_RESULT_SUCCESS;
 }
 
-SLresult __attribute__((sysv_abi))
-EngineItf_CreateAudioRecorder(SLEngineItf self, SLObjectItf *pRecorder, SLDataSource *pAudioSrc,
-                              SLDataSink *pAudioSnk, SLuint32 numInterfaces,
-                              const SLInterfaceID *pInterfaceIds,
-                              const SLboolean *pInterfaceRequired)
+SLresult __attribute__((sysv_abi)) EngineItf_CreateAudioRecorder(
+    SLEngineItf self, SLObjectItf *pRecorder, SLDataSource *pAudioSrc, SLDataSink *pAudioSnk,
+    SLuint32 numInterfaces, const SLInterfaceID *pInterfaceIds, const SLboolean *pInterfaceRequired)
 {
     (void)self;
     (void)pAudioSrc;
@@ -766,6 +921,7 @@ EngineItf_CreateAudioRecorder(SLEngineItf self, SLObjectItf *pRecorder, SLDataSo
         if (pcm->formatType == SL_DATAFORMAT_PCM) {
             recorder->channels =
                 (pcm->numChannels >= 1 && pcm->numChannels <= 2) ? pcm->numChannels : 1;
+            recorder->mute_solo.channels = recorder->channels;
             uint32_t srate = pcm->samplesPerSec;
             if (srate >= 1000000) {
                 srate /= 1000;
@@ -801,6 +957,7 @@ EngineItf_CreateAudioPlayer(SLEngineItf self, SLObjectItf *pPlayer, SLDataSource
         if (pcm->formatType == SL_DATAFORMAT_PCM) {
             player->channels =
                 (pcm->numChannels >= 1 && pcm->numChannels <= 2) ? pcm->numChannels : 2;
+            player->mute_solo.channels = player->channels;
             uint32_t srate = pcm->samplesPerSec;
             if (srate >= 1000000) {
                 srate /= 1000;

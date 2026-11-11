@@ -22,7 +22,8 @@ inline void WriteU32(std::vector<uint8_t> &buf, uint32_t v)
     buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
 }
 
-std::vector<uint8_t> BuildTestStringPool(const std::vector<std::string> &strings, bool is_utf8 = true)
+std::vector<uint8_t> BuildTestStringPool(const std::vector<std::string> &strings,
+                                         bool is_utf8 = true)
 {
     std::vector<uint8_t> pool;
     uint32_t string_count = static_cast<uint32_t>(strings.size());
@@ -83,7 +84,8 @@ std::vector<uint8_t> BuildTestResourceTable(const std::string &pkg_name)
     std::vector<std::string> type_strings = {"string", "integer", "bool"};
     auto type_pool = BuildTestStringPool(type_strings, true);
 
-    std::vector<std::string> key_strings = {"app_title", "greeting", "max_players", "is_multiplayer"};
+    std::vector<std::string> key_strings = {"app_title", "greeting", "max_players",
+                                            "is_multiplayer"};
     auto key_pool = BuildTestStringPool(key_strings, true);
 
     // Type 1: string
@@ -218,10 +220,10 @@ std::vector<uint8_t> BuildTestResourceTable(const std::string &pkg_name)
     uint32_t pkg_hdr_size = 288;
     uint32_t type_strings_offset = pkg_hdr_size;
     uint32_t key_strings_offset = type_strings_offset + static_cast<uint32_t>(type_pool.size());
-    uint32_t pkg_total_size = key_strings_offset + static_cast<uint32_t>(key_pool.size()) +
-                              static_cast<uint32_t>(type1_spec.size() + type1_type.size() +
-                                                   type2_spec.size() + type2_type.size() +
-                                                   type3_spec.size() + type3_type.size());
+    uint32_t pkg_total_size =
+        key_strings_offset + static_cast<uint32_t>(key_pool.size()) +
+        static_cast<uint32_t>(type1_spec.size() + type1_type.size() + type2_spec.size() +
+                              type2_type.size() + type3_spec.size() + type3_type.size());
 
     std::vector<uint8_t> pkg;
     WriteU16(pkg, 0x0200);

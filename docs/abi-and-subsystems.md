@@ -22,8 +22,17 @@ extern "C" __attribute__((sysv_abi)) ALooper *ALooper_prepare(int opts);
 
 ## Thunk registration and ABI invariants
 
-- **Central Registry**: Register all native SysV NDK and Bionic thunks in `NdkSymbolRegistry` inside [libandroid_thunks.cpp](../src/ndk/libandroid_thunks.cpp).
-- **Host Precedence Over Guest Stubs**: [`LinkMap::ResolveGlobalSymbol`](../src/elf/link_map.cpp#L205), [`LinkMap::ResolveSymbolForModule`](../src/elf/link_map.cpp#L385), and [`LinkMap::ResolveLazySymbol`](../src/elf/link_map.cpp#L1388) query `NdkSymbolRegistry` before loaded `.so` modules so link-time stub libraries (`libc.so`, `libdl.so`, `libandroid.so`) never shadow host SysV implementations.
+- **Central Registry & Dual-Tier Resolution**: Register all native SysV NDK and Bionic thunks in `NdkSymbolRegistry` inside [libandroid_thunks.cpp](../src/ndk/libandroid_thunks.cpp). Symbols are partitioned into primary thunks and secondary C++ fallback stubs (`RegisterCppFallback()`).
+- **Symbol Resolution Precedence**: [`LinkMap::ResolveGlobalSymbol`](../src/elf/link_map.cpp#L205), [`LinkMap::ResolveSymbolForModule`](../src/elf/link_map.cpp#L385), and [`LinkMap::ResolveLazySymbol`](../src/elf/link_map.cpp#L1388) enforce a 3-tier lookup hierarchy:
+  1. Primary host SysV thunks in `NdkSymbolRegistry` (preventing no-op guest stub libraries like `libc.so` or `libandroid.so` from shadowing host implementations).
+  2. Loaded physical ELF modules (e.g. real `libc++_shared.so` bundled in APKs).
+  3. Secondary C++ fallback stubs in `NdkSymbolRegistry` (e.g. `_Znwm`, `_ZdlPv` when no STL `.so` is bundled).
+- **Bionic stdio & VFS Integration**: `FILE*` streams are unified with Portage's VFS / `FileDescriptorTable`. Standard streams (`stdin`, `stdout`, `stderr`, `__sF[3]`) map directly to FDs 0, 1, and 2.
+- **Bionic LP64 Structures & UTF-32**: Structures match official Bionic LP64 layouts verbatim:
+  - `BionicDirent64` maintaining 280 bytes (`d_ino`, `d_off`, `d_reclen`, `d_type`, `d_name[256]`).
+  - `BionicPthreadAttr` maintaining 56 bytes.
+  - Wide-character APIs (`wint_t`, `wchar_t`) operate on 4-byte UTF-32 code points per Android Bionic standards, bridging to/from Win32 UTF-16 when necessary.
+- **FSGSBASE & Stack Guard**: Guest x86_64 code compiled with `-fstack-protector` accesses `%fs:0x28`. Every host/guest thread manages a `BionicTcb` initialized by `ThreadManager::EnsureCurrentThreadTcb()` with `self` at offset 0 and canary at offset 0x28, guarded across context switches by Windows VEH.
 - **Winpthreads Isolation**: Host MinGW/Clang C++ toolchains pull `<pthread.h>` into translation units. Name host C++ pthread implementations `portage_pthread_*` and bind standard `"pthread_*"` names inside `NdkSymbolRegistry`.
 - **Unmodified Bionic Struct & Bitmask Parity**: Match AOSP / Android NDK LP64 definitions verbatim:
   - `ANDROID_DLEXT_*` bitmasks in [elf_types.hpp](../src/elf/elf_types.hpp) (`ANDROID_DLEXT_RESERVED_ADDRESS = 0x1`, `ANDROID_DLEXT_USE_LIBRARY_FD = 0x10`, `ANDROID_DLEXT_USE_LIBRARY_FD_OFFSET = 0x20`, `ANDROID_DLEXT_USE_NAMESPACE = 0x200`).
@@ -72,20 +81,20 @@ All core runtime components reside under `src/`:
 | `src/arch/` | Guest CPU state, stack frame allocation, registers, and execution dispatch |
 | `src/audio/` | WASAPI audio backend, AAudio stream dispatcher, and OpenSL ES engine |
 | `src/binder/` | Android IPC Binder driver emulation and `ioctl` parcel handlers |
-| `src/camera/` | Camera2 NDK (`ACameraManager`, `ACameraDevice`) via Media Foundation |
+| `src/camera/` | Camera2 NDK (`ACameraManager` availability callbacks, SysV capture/sequence callbacks, `WmfCameraReader` live WMF capture with synthetic fallback, WIC JPEG `AImageReader`, and direct `ANativeWindow` preview) |
 | `src/clipboard/` | Clipboard manager, MIME clip data, and Win32 OLE clipboard integration |
-| `src/elf/` | ELF64 parser, `R_X86_64_TLSDESC`, lazy PLT trampolines, `android_dlopen_ext`, `dlinfo`, `dlclose`, and `LinkMap` |
+| `src/elf/` | ELF64 parser, `R_X86_64_TLSDESC`, lazy PLT trampolines, `android_dlopen_ext`, `dlinfo`, `dlclose`, virtual system library fallback, unresolved symbol trap stubs, and `LinkMap` |
 | `src/fs/` | Virtual File System (VFS), `/proc`, `/sys`, `/dev`, file descriptor tables, `SyncFence`, and pipes |
 | `src/gles/` | OpenGL ES 2.0–3.2 passthrough, EGL 1.5 dispatcher, and WGL bridge |
 | `src/input/` | Evdev input translation, gamepad/haptics state, and Win32 touch/key mapping |
-| `src/launcher/` | CLI runner (`portage.exe`), argument parsing, APK bootstrap, and event loop |
+| `src/launcher/` | CLI runner (`portage.exe`), argument parsing, `--check-apk` audit, APK bootstrap, and event loop |
 | `src/location/` | `LocationManager`, simulated coordinates, and Windows Location API |
-| `src/media/` | `MediaCodec` / `MediaExtractor` NDK via Windows Media Foundation |
+| `src/media/` | `AMediaCodec` (`IMFTransform` encode/decode, async notify worker, NV12/RGBA surface bridging), byte-range `AMediaExtractor`, and `AMediaMuxer` (`IMFSinkWriter` MP4/3GP) over Windows Media Foundation COM MTA dispatch |
 | `src/mem/` | Virtual memory manager, address space mappings (`mmap`/`mprotect`/`mremap`), and shared memory |
-| `src/ndk/` | NDK thunks (`libandroid`, `ALooper`, `AInputQueue`, `AConfiguration`, `liblog`, `AChoreographer`, `AHardwareBuffer`) |
+| `src/ndk/` | NDK thunks (`libandroid`, `ALooper`, `AInputQueue`, `AConfiguration`, `liblog`, `AChoreographer`, `AHardwareBuffer`, WIC `AImageDecoder`, LP64 `libz`, `libm`, Bionic stdio/POSIX/locale/UTF-32 wchar runtime, fortify/`pthread_create`, and C++ fallback stubs) |
 | `src/net/` | BSD/Linux socket translation and loopback networking |
 | `src/notification/` | Notification channels (`NotificationManager`) and Win32 `Shell_NotifyIconW` |
-| `src/package/` | APK ZIP extractor, binary XML, `resources.arsc`, `AAssetManager`, `JNIEnv`, and `ANativeActivity` |
+| `src/package/` | APK ZIP extractor, binary XML, `resources.arsc`, `AAssetManager`, `JNIEnv` (WIC `BitmapFactory`, `SharedPreferences`, `DisplayMetrics`, `PackageManager`, `Build`), and `ANativeActivity` |
 | `src/poll/` | Linux `epoll`, `eventfd`, `timerfd`, and waitable `SyncFence` polling |
 | `src/power/` | `PowerManager`, `WakeLock` (`SetThreadExecutionState`), and battery simulation |
 | `src/process/` | Guest process lifecycle, process tree, and PID/credential state |

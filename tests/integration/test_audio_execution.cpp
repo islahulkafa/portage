@@ -1,9 +1,11 @@
 #include "arch/guest_context.hpp"
 #include "audio/audio_manager.hpp"
 #include "elf/elf_loader.hpp"
+#include "elf/link_map.hpp"
 #include "fs/fd_table.hpp"
 #include "fs/vfs.hpp"
 #include "mem/address_space.hpp"
+#include "ndk/libandroid_thunks.hpp"
 #include "syscall/syscall_dispatcher.hpp"
 #include "thread/thread_manager.hpp"
 #include <gtest/gtest.h>
@@ -107,4 +109,80 @@ TEST_F(AudioExecutionFixture, RunsAudioPcmPlaybackAndControlOperations)
     EXPECT_EQ(stats.sample_rate, 48000u);
     EXPECT_EQ(stats.channels, 2u);
     EXPECT_EQ(stats.format, audio::SNDRV_PCM_FORMAT_S16_LE);
+}
+
+class AudioExecutionTest : public AudioExecutionFixture {
+  protected:
+    void SetUp() override
+    {
+        audio::AudioManager::Instance().ForceNullSink(true);
+        AudioExecutionFixture::SetUp();
+
+        auto &lm = elf::LinkMap::Instance();
+        lm.Reset();
+        lm.SetAddressSpace(address_space_.get());
+        lm.SetVfs(vfs_.get());
+
+        (void)ndk::NdkSymbolRegistry::Instance();
+    }
+
+    void TearDown() override
+    {
+        elf::LinkMap::Instance().Reset();
+        AudioExecutionFixture::TearDown();
+    }
+
+    int ExecuteDynamicGuest(const stdfs::path &elf_path)
+    {
+        auto resolver = [](std::string_view name) -> uint64_t {
+            return elf::LinkMap::Instance().ResolveGlobalSymbol(name);
+        };
+        auto dep_loader = [](const std::vector<std::string> &needed) {
+            for (const auto &soname : needed) {
+                elf::LinkMap::Instance().DlOpen(soname.c_str(), elf::RTLD_LAZY);
+            }
+        };
+
+        elf::LoadOptions opts{};
+        opts.lazy_binding = true;
+
+        auto load_res =
+            loader_->LoadFromFile(elf_path.string(), vfs_.get(), resolver, dep_loader, opts);
+        if (!std::holds_alternative<elf::LoadedElf>(load_res)) {
+            auto err = std::get<elf::LoaderError>(load_res);
+            std::cerr << "[ExecuteDynamicGuest] Failed to load ELF: " << elf_path
+                      << " code=" << static_cast<int>(err) << "\n";
+            return -999;
+        }
+
+        const auto &loaded = std::get<elf::LoadedElf>(load_res);
+        elf::LinkMap::Instance().RegisterLoadedElf(loaded, elf_path.string());
+
+        std::vector<std::string> args = {elf_path.string()};
+        std::vector<std::string> env = {"PATH=/system/bin", "ANDROID_DATA=/data"};
+
+        void *sp = guest_context_->SetupStack(args, env, loaded.auxv_entries);
+        if (!sp) {
+            return -998;
+        }
+
+        return guest_context_->Run(reinterpret_cast<void *>(loaded.entry_point), sp);
+    }
+};
+
+TEST_F(AudioExecutionTest, AaudioLifecycleGuestElf)
+{
+    stdfs::path guest_path = FindGuestBinary("test_aaudio_lifecycle.elf");
+    ASSERT_TRUE(stdfs::exists(guest_path)) << "Guest binary not found at: " << guest_path;
+
+    stdfs::path rootfs_path = guest_path.parent_path() / "rootfs";
+    vfs_->SetRootfs(rootfs_path);
+
+    auto &lm = elf::LinkMap::Instance();
+    lm.AddSearchPath("/system/lib64");
+    lm.AddSearchPath((rootfs_path / "system" / "lib64").string());
+
+    int exit_code = ExecuteDynamicGuest(guest_path);
+    const char *err = lm.DlError();
+    EXPECT_EQ(exit_code, 0) << "dlerror: " << (err ? err : "(none)");
 }

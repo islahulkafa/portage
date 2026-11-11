@@ -6,18 +6,139 @@
 #include "notification/notification_manager.hpp"
 #include "power/power_manager.hpp"
 #include "security/keystore_manager.hpp"
+#include "ndk/image_decoder.hpp"
 #include "ndk/multinetwork.hpp"
 #include "ndk/performance_hint.hpp"
 #include "ndk/thermal.hpp"
 #include "package_manager.hpp"
 #include "resource_table.hpp"
+#include "syscall/syscall_dispatcher.hpp"
 
 #include <algorithm>
 #include <cstdarg>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <span>
 
 namespace portage::package {
+
+namespace {
+
+jobject DecodeBitmapFromEncodedBytes(std::span<const uint8_t> encoded, jobject options_obj)
+{
+    if (encoded.empty()) {
+        return nullptr;
+    }
+
+    auto &jni = JniEnvironment::Instance();
+    ndk::DecodedImageHeader hdr{};
+    if (ndk::WicImageCodec::InspectImage(encoded, hdr) != ANDROID_IMAGE_DECODER_SUCCESS) {
+        return nullptr;
+    }
+
+    bool just_bounds = false;
+    int32_t sample_size = 1;
+    int32_t pref_format = ANDROID_BITMAP_FORMAT_RGBA_8888;
+    std::shared_ptr<JniSyntheticObject> opts;
+    if (options_obj) {
+        opts = jni.LookupObject(options_obj);
+        if (opts) {
+            auto b_it = opts->bool_fields.find("inJustDecodeBounds");
+            just_bounds = (b_it != opts->bool_fields.end() && b_it->second != 0);
+            auto s_it = opts->int_fields.find("inSampleSize");
+            if (s_it != opts->int_fields.end() && s_it->second > 1) {
+                sample_size = s_it->second;
+            }
+            auto c_it = opts->object_fields.find("inPreferredConfig");
+            if (c_it != opts->object_fields.end() && c_it->second) {
+                auto cfg = jni.LookupObject(c_it->second);
+                if (cfg && cfg->int_fields.count("format")) {
+                    pref_format = cfg->int_fields["format"];
+                }
+            }
+        }
+    }
+
+    uint32_t out_w = std::max(1U, hdr.width / static_cast<uint32_t>(sample_size));
+    uint32_t out_h = std::max(1U, hdr.height / static_cast<uint32_t>(sample_size));
+
+    if (opts) {
+        opts->int_fields["outWidth"] = static_cast<int32_t>(out_w);
+        opts->int_fields["outHeight"] = static_cast<int32_t>(out_h);
+        opts->object_fields["outMimeType"] = jni.CreateString(hdr.mime_type);
+        opts->string_fields["outMimeType"] = hdr.mime_type;
+    }
+
+    if (just_bounds) {
+        return nullptr;
+    }
+
+    ndk::ImageDecodeOptions decode_opts{};
+    if (sample_size > 1) {
+        decode_opts.target_width = static_cast<int32_t>(out_w);
+        decode_opts.target_height = static_cast<int32_t>(out_h);
+    }
+    decode_opts.android_format = pref_format;
+
+    std::vector<uint8_t> pixels;
+    uint32_t stride = 0;
+    if (ndk::WicImageCodec::DecodeImageFrame(encoded, 0, decode_opts, pixels, stride, hdr) !=
+        ANDROID_IMAGE_DECODER_SUCCESS) {
+        return nullptr;
+    }
+    return jni.CreateBitmapFromPixels(out_w, out_h, pref_format, stride, std::move(pixels));
+}
+
+bool CommitSharedPrefsEditor(JniEnvironment &env, JniSyntheticObject &editor_syn)
+{
+    const std::string &prefs_name = editor_syn.string_fields.count("prefs_name")
+                                        ? editor_syn.string_fields["prefs_name"]
+                                        : "default";
+    auto &store = env.GetSharedPrefsMap(prefs_name);
+    if (editor_syn.bool_fields["clear"] != 0) {
+        store.clear();
+    }
+    for (const auto &[field_key, val] : editor_syn.int_fields) {
+        if (field_key.starts_with("rm:")) {
+            store.erase(field_key.substr(3));
+        } else if (field_key.starts_with("put_i:")) {
+            JniSharedPrefValue entry{};
+            entry.kind = JniSharedPrefValue::Kind::Int;
+            entry.int_val = val;
+            store[field_key.substr(6)] = entry;
+        }
+    }
+    for (const auto &[field_key, val] : editor_syn.string_fields) {
+        if (field_key.starts_with("put_s:")) {
+            JniSharedPrefValue entry{};
+            entry.kind = JniSharedPrefValue::Kind::String;
+            entry.str_val = val;
+            store[field_key.substr(6)] = entry;
+        }
+    }
+    for (const auto &[field_key, val] : editor_syn.bool_fields) {
+        if (field_key.starts_with("put_b:")) {
+            JniSharedPrefValue entry{};
+            entry.kind = JniSharedPrefValue::Kind::Bool;
+            entry.bool_val = (val != 0);
+            store[field_key.substr(6)] = entry;
+        }
+    }
+    for (const auto &[field_key, val] : editor_syn.float_fields) {
+        if (field_key.starts_with("put_f:")) {
+            JniSharedPrefValue entry{};
+            entry.kind = JniSharedPrefValue::Kind::Float;
+            entry.float_val = val;
+            store[field_key.substr(6)] = entry;
+        }
+    }
+    env.SaveSharedPrefs(prefs_name);
+    return true;
+}
+
+} // namespace
 
 static __attribute__((sysv_abi)) jint Vm_DestroyJavaVM(JavaVM *vm)
 {
@@ -158,9 +279,25 @@ static __attribute__((sysv_abi)) jint Env_EnsureLocalCapacity(JNIEnv *, jint) { 
 
 static void InitSyntheticObjectState(const std::shared_ptr<JniSyntheticObject> &obj)
 {
-    if (obj && obj->class_name == "android/media/AudioRecord") {
+    if (!obj) {
+        return;
+    }
+    if (obj->class_name == "android/media/AudioRecord") {
         obj->int_fields["getState"] = 1;
         obj->int_fields["getRecordingState"] = 1;
+    } else if (obj->class_name == "android/graphics/BitmapFactory$Options") {
+        obj->int_fields["inSampleSize"] = 1;
+        obj->int_fields["outWidth"] = 0;
+        obj->int_fields["outHeight"] = 0;
+        obj->bool_fields["inJustDecodeBounds"] = JNI_FALSE;
+    } else if (obj->class_name == "android/util/DisplayMetrics") {
+        obj->type = JniObjectType::DisplayMetrics;
+        auto &env = JniEnvironment::Instance();
+        obj->int_fields["widthPixels"] = env.GetDisplayWidth();
+        obj->int_fields["heightPixels"] = env.GetDisplayHeight();
+        obj->int_fields["densityDpi"] = env.GetDisplayDensityDpi();
+        obj->float_fields["density"] = env.GetDisplayDensity();
+        obj->float_fields["scaledDensity"] = env.GetDisplayDensity();
     }
 }
 
@@ -385,6 +522,23 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
         return env.RegisterObject(cfg);
     }
     if (std::strcmp(mname, "getString") == 0) {
+        if (obj) {
+            auto syn = env.LookupObject(obj);
+            if (syn && syn->class_name == "android/content/SharedPreferences") {
+                const char *key = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+                const auto &prefs_name = syn->string_fields.count("prefs_name")
+                                             ? syn->string_fields["prefs_name"]
+                                             : "default";
+                auto &store = env.GetSharedPrefsMap(prefs_name);
+                if (key) {
+                    auto it = store.find(key);
+                    if (it != store.end() && it->second.kind == JniSharedPrefValue::Kind::String) {
+                        return env.CreateString(it->second.str_val);
+                    }
+                }
+                return reinterpret_cast<jstring>(arg1);
+            }
+        }
         uint32_t res_id = static_cast<uint32_t>(arg0);
         const auto *pkg = PackageManager::Instance().GetActivePackage();
         if (pkg && pkg->resource_table) {
@@ -394,6 +548,140 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
             }
         }
         return env.CreateString("");
+    }
+    if (std::strcmp(mname, "getSharedPreferences") == 0) {
+        const char *name = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+        auto sp = std::make_shared<JniSyntheticObject>();
+        sp->class_name = "android/content/SharedPreferences";
+        sp->string_fields["prefs_name"] = name ? name : "default";
+        (void)env.GetSharedPrefsMap(sp->string_fields["prefs_name"]);
+        return env.RegisterObject(sp);
+    }
+    if (std::strcmp(mname, "edit") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        auto ed = std::make_shared<JniSyntheticObject>();
+        ed->class_name = "android/content/SharedPreferences$Editor";
+        ed->string_fields["prefs_name"] = (syn && syn->string_fields.count("prefs_name"))
+                                              ? syn->string_fields["prefs_name"]
+                                              : "default";
+        return env.RegisterObject(ed);
+    }
+    if (std::strcmp(mname, "putString") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        const char *key = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+        const char *val = env.GetStringChars(reinterpret_cast<jstring>(arg1));
+        if (syn && key) {
+            syn->string_fields[std::string("put_s:") + key] = val ? val : "";
+        }
+        return obj;
+    }
+    if (std::strcmp(mname, "putInt") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        const char *key = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+        if (syn && key) {
+            syn->int_fields[std::string("put_i:") + key] = static_cast<int32_t>(arg1);
+        }
+        return obj;
+    }
+    if (std::strcmp(mname, "putBoolean") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        const char *key = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+        if (syn && key) {
+            syn->bool_fields[std::string("put_b:") + key] = (arg1 != 0) ? 1 : 0;
+        }
+        return obj;
+    }
+    if (std::strcmp(mname, "putFloat") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        const char *key = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+        double dval = 0.0;
+#if defined(__x86_64__) || defined(_M_X64)
+        __asm__ volatile("movq %%xmm0, %0" : "=r"(dval));
+#endif
+        if (syn && key) {
+            syn->float_fields[std::string("put_f:") + key] = static_cast<float>(dval);
+        }
+        return obj;
+    }
+    if (std::strcmp(mname, "remove") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        const char *key = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+        if (syn && key) {
+            syn->int_fields[std::string("rm:") + key] = 1;
+        }
+        return obj;
+    }
+    if (std::strcmp(mname, "clear") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn) {
+            syn->bool_fields["clear"] = 1;
+        }
+        return obj;
+    }
+    if (std::strcmp(mname, "getDefaultDisplay") == 0) {
+        auto disp = std::make_shared<JniSyntheticObject>();
+        disp->class_name = "android/view/Display";
+        return env.RegisterObject(disp);
+    }
+    if (std::strcmp(mname, "getPackageManager") == 0) {
+        auto pm = std::make_shared<JniSyntheticObject>();
+        pm->class_name = "android/content/pm/PackageManager";
+        return env.RegisterObject(pm);
+    }
+    if (std::strcmp(mname, "getPackageInfo") == 0) {
+        const char *req_pkg = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+        const auto *active_pkg = PackageManager::Instance().GetActivePackage();
+        std::string pkg_name =
+            req_pkg ? req_pkg
+                    : (active_pkg ? active_pkg->manifest.package_name : env.GetPackageName());
+        std::string ver_name = (active_pkg && !active_pkg->manifest.version_name.empty())
+                                   ? active_pkg->manifest.version_name
+                                   : "1.0.0";
+        int32_t ver_code = active_pkg ? active_pkg->manifest.version_code : 1;
+
+        auto app_info = std::make_shared<JniSyntheticObject>();
+        app_info->class_name = "android/content/pm/ApplicationInfo";
+        app_info->object_fields["packageName"] = env.CreateString(pkg_name);
+        app_info->object_fields["dataDir"] = env.CreateString(env.GetFilesDir());
+        app_info->object_fields["nativeLibraryDir"] =
+            env.CreateString(active_pkg ? active_pkg->lib_dir.string() : "/data/app/lib/x86_64");
+        app_info->int_fields["targetSdkVersion"] =
+            active_pkg ? active_pkg->manifest.target_sdk_version : 33;
+
+        auto pi = std::make_shared<JniSyntheticObject>();
+        pi->class_name = "android/content/pm/PackageInfo";
+        pi->object_fields["packageName"] = env.CreateString(pkg_name);
+        pi->object_fields["versionName"] = env.CreateString(ver_name);
+        pi->int_fields["versionCode"] = ver_code;
+        pi->object_fields["applicationInfo"] = env.RegisterObject(app_info);
+        return env.RegisterObject(pi);
+    }
+    if (std::strcmp(mname, "getApplicationInfo") == 0) {
+        const auto *active_pkg = PackageManager::Instance().GetActivePackage();
+        auto app_info = std::make_shared<JniSyntheticObject>();
+        app_info->class_name = "android/content/pm/ApplicationInfo";
+        app_info->object_fields["packageName"] = env.CreateString(env.GetPackageName());
+        app_info->object_fields["dataDir"] = env.CreateString(env.GetFilesDir());
+        app_info->object_fields["nativeLibraryDir"] =
+            env.CreateString(active_pkg ? active_pkg->lib_dir.string() : "/data/app/lib/x86_64");
+        app_info->int_fields["targetSdkVersion"] =
+            active_pkg ? active_pkg->manifest.target_sdk_version : 33;
+        return env.RegisterObject(app_info);
+    }
+    if (std::strcmp(mname, "getStringExtra") == 0 && obj) {
+        const char *key = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+        auto syn = env.LookupObject(obj);
+        if (syn && key && syn->string_fields.count(key)) {
+            return env.CreateString(syn->string_fields[key]);
+        }
+        return nullptr;
+    }
+    if (std::strcmp(mname, "getAction") == 0 && obj) {
+        auto syn = env.LookupObject(obj);
+        if (syn && syn->string_fields.count("action")) {
+            return env.CreateString(syn->string_fields["action"]);
+        }
+        return env.CreateString("android.intent.action.MAIN");
     }
     if (std::strcmp(mname, "loadClass") == 0 || std::strcmp(mname, "findClass") == 0) {
         jstring class_name_str = reinterpret_cast<jstring>(arg0);
@@ -456,6 +744,11 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
             auto nm = std::make_shared<JniSyntheticObject>();
             nm->class_name = "android/app/NotificationManager";
             return env.RegisterObject(nm);
+        }
+        if (svc && std::strcmp(svc, "window") == 0) {
+            auto wm = std::make_shared<JniSyntheticObject>();
+            wm->class_name = "android/view/WindowManager";
+            return env.RegisterObject(wm);
         }
     }
     if (std::strcmp(mname, "getPrimaryClip") == 0) {
@@ -649,8 +942,8 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
         }
         security::KeyStoreManager::Instance().GenerateKey(
             alias, security::KeyAlgorithm::Aes, 256,
-            security::PurposeEncrypt | security::PurposeDecrypt,
-            security::BlockMode::Gcm, security::Padding::None);
+            security::PurposeEncrypt | security::PurposeDecrypt, security::BlockMode::Gcm,
+            security::Padding::None);
         auto key_obj = std::make_shared<JniSyntheticObject>();
         key_obj->class_name = "javax/crypto/SecretKey";
         key_obj->string_fields["alias"] = alias;
@@ -662,20 +955,22 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
         if (obj) {
             auto syn_obj = env.LookupObject(obj);
             if (syn_obj) {
-                if (syn_obj->string_fields.count("alias")) alias = syn_obj->string_fields["alias"];
-                if (syn_obj->string_fields.count("algorithm")) alg = syn_obj->string_fields["algorithm"];
+                if (syn_obj->string_fields.count("alias"))
+                    alias = syn_obj->string_fields["alias"];
+                if (syn_obj->string_fields.count("algorithm"))
+                    alg = syn_obj->string_fields["algorithm"];
             }
         }
         if (alg == "EC") {
             security::KeyStoreManager::Instance().GenerateKeyPair(
                 alias, security::KeyAlgorithm::Ec, 256,
-                security::PurposeSign | security::PurposeVerify,
-                security::Digest::Sha256, security::Padding::None);
+                security::PurposeSign | security::PurposeVerify, security::Digest::Sha256,
+                security::Padding::None);
         } else {
             security::KeyStoreManager::Instance().GenerateKeyPair(
                 alias, security::KeyAlgorithm::Rsa, 2048,
-                security::PurposeSign | security::PurposeVerify,
-                security::Digest::Sha256, security::Padding::Pkcs1);
+                security::PurposeSign | security::PurposeVerify, security::Digest::Sha256,
+                security::Padding::Pkcs1);
         }
         auto kp_obj = std::make_shared<JniSyntheticObject>();
         kp_obj->class_name = "java/security/KeyPair";
@@ -708,7 +1003,8 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
         auto syn = env.LookupObject(obj);
         if (syn && syn->binary_fields.count("iv")) {
             const auto &iv_vec = syn->binary_fields["iv"];
-            jbyteArray arr = env.GetJNIEnv()->functions->NewByteArray(env.GetJNIEnv(), static_cast<jsize>(iv_vec.size()));
+            jbyteArray arr = env.GetJNIEnv()->functions->NewByteArray(
+                env.GetJNIEnv(), static_cast<jsize>(iv_vec.size()));
             auto arr_obj = env.LookupObject(arr);
             if (arr_obj) {
                 arr_obj->byte_data.assign(iv_vec.begin(), iv_vec.end());
@@ -731,8 +1027,10 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
         if (obj) {
             auto syn = env.LookupObject(obj);
             if (syn) {
-                if (syn->string_fields.count("alias")) alias = syn->string_fields["alias"];
-                if (syn->int_fields.count("opmode")) opmode = syn->int_fields["opmode"];
+                if (syn->string_fields.count("alias"))
+                    alias = syn->string_fields["alias"];
+                if (syn->int_fields.count("opmode"))
+                    opmode = syn->int_fields["opmode"];
             }
         }
         if (opmode == 2) {
@@ -740,12 +1038,15 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
             if (obj) {
                 auto syn = env.LookupObject(obj);
                 if (syn) {
-                    if (syn->binary_fields.count("iv")) iv = syn->binary_fields["iv"];
-                    if (syn->binary_fields.count("tag")) tag = syn->binary_fields["tag"];
+                    if (syn->binary_fields.count("iv"))
+                        iv = syn->binary_fields["iv"];
+                    if (syn->binary_fields.count("tag"))
+                        tag = syn->binary_fields["tag"];
                 }
             }
             auto res = security::KeyStoreManager::Instance().Decrypt(alias, input_bytes, iv, tag);
-            jbyteArray arr = env.GetJNIEnv()->functions->NewByteArray(env.GetJNIEnv(), static_cast<jsize>(res.data.size()));
+            jbyteArray arr = env.GetJNIEnv()->functions->NewByteArray(
+                env.GetJNIEnv(), static_cast<jsize>(res.data.size()));
             auto arr_obj = env.LookupObject(arr);
             if (arr_obj) {
                 arr_obj->byte_data.assign(res.data.begin(), res.data.end());
@@ -760,7 +1061,8 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
                     syn->binary_fields["tag"] = res.tag;
                 }
             }
-            jbyteArray arr = env.GetJNIEnv()->functions->NewByteArray(env.GetJNIEnv(), static_cast<jsize>(res.data.size()));
+            jbyteArray arr = env.GetJNIEnv()->functions->NewByteArray(
+                env.GetJNIEnv(), static_cast<jsize>(res.data.size()));
             auto arr_obj = env.LookupObject(arr);
             if (arr_obj) {
                 arr_obj->byte_data.assign(res.data.begin(), res.data.end());
@@ -774,7 +1076,8 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
         if (obj) {
             auto syn = env.LookupObject(obj);
             if (syn) {
-                if (syn->string_fields.count("alias")) alias = syn->string_fields["alias"];
+                if (syn->string_fields.count("alias"))
+                    alias = syn->string_fields["alias"];
                 if (syn->binary_fields.count("data")) {
                     data = syn->binary_fields["data"];
                     syn->binary_fields["data"].clear();
@@ -783,7 +1086,8 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
         }
         std::vector<uint8_t> sig;
         security::KeyStoreManager::Instance().Sign(alias, data, sig);
-        jbyteArray arr = env.GetJNIEnv()->functions->NewByteArray(env.GetJNIEnv(), static_cast<jsize>(sig.size()));
+        jbyteArray arr = env.GetJNIEnv()->functions->NewByteArray(env.GetJNIEnv(),
+                                                                  static_cast<jsize>(sig.size()));
         auto arr_obj = env.LookupObject(arr);
         if (arr_obj) {
             arr_obj->byte_data.assign(sig.begin(), sig.end());
@@ -866,7 +1170,8 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
     if (std::strcmp(mname, "getNotificationChannel") == 0) {
         jstring id_str = reinterpret_cast<jstring>(arg0);
         const char *id = env.GetStringChars(id_str);
-        auto opt = notification::NotificationManager::Instance().GetNotificationChannel(id ? id : "");
+        auto opt =
+            notification::NotificationManager::Instance().GetNotificationChannel(id ? id : "");
         if (!opt) {
             return nullptr;
         }
@@ -885,8 +1190,9 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
             notif->class_name = "android/app/Notification";
             notif->string_fields["title"] = syn->string_fields["title"];
             notif->string_fields["text"] = syn->string_fields["text"];
-            notif->string_fields["channel_id"] =
-                syn->string_fields.count("channel_id") ? syn->string_fields["channel_id"] : "default";
+            notif->string_fields["channel_id"] = syn->string_fields.count("channel_id")
+                                                     ? syn->string_fields["channel_id"]
+                                                     : "default";
             notif->int_fields["small_icon"] = syn->int_fields["small_icon"];
             notif->int_fields["flags"] = syn->int_fields["flags"];
             notif->int_fields["progress_max"] = syn->int_fields["progress_max"];
@@ -900,19 +1206,22 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
         jstring str = reinterpret_cast<jstring>(arg0);
         const char *c = env.GetStringChars(str);
         auto syn = env.LookupObject(obj);
-        if (syn && c) syn->string_fields["title"] = c;
+        if (syn && c)
+            syn->string_fields["title"] = c;
         return obj;
     }
     if (std::strcmp(mname, "setContentText") == 0 && obj) {
         jstring str = reinterpret_cast<jstring>(arg0);
         const char *c = env.GetStringChars(str);
         auto syn = env.LookupObject(obj);
-        if (syn && c) syn->string_fields["text"] = c;
+        if (syn && c)
+            syn->string_fields["text"] = c;
         return obj;
     }
     if (std::strcmp(mname, "setSmallIcon") == 0 && obj) {
         auto syn = env.LookupObject(obj);
-        if (syn) syn->int_fields["small_icon"] = static_cast<int32_t>(arg0);
+        if (syn)
+            syn->int_fields["small_icon"] = static_cast<int32_t>(arg0);
         return obj;
     }
     if (std::strcmp(mname, "setProgress") == 0 && obj) {
@@ -931,16 +1240,20 @@ static __attribute__((sysv_abi)) jobject Env_CallObjectMethod(JNIEnv *, jobject 
     if (std::strcmp(mname, "setOngoing") == 0 && obj) {
         auto syn = env.LookupObject(obj);
         if (syn) {
-            if (arg0) syn->int_fields["flags"] |= notification::FLAG_ONGOING_EVENT;
-            else syn->int_fields["flags"] &= ~notification::FLAG_ONGOING_EVENT;
+            if (arg0)
+                syn->int_fields["flags"] |= notification::FLAG_ONGOING_EVENT;
+            else
+                syn->int_fields["flags"] &= ~notification::FLAG_ONGOING_EVENT;
         }
         return obj;
     }
     if (std::strcmp(mname, "setAutoCancel") == 0 && obj) {
         auto syn = env.LookupObject(obj);
         if (syn) {
-            if (arg0) syn->int_fields["flags"] |= notification::FLAG_AUTO_CANCEL;
-            else syn->int_fields["flags"] &= ~notification::FLAG_AUTO_CANCEL;
+            if (arg0)
+                syn->int_fields["flags"] |= notification::FLAG_AUTO_CANCEL;
+            else
+                syn->int_fields["flags"] &= ~notification::FLAG_AUTO_CANCEL;
         }
         return obj;
     }
@@ -1013,7 +1326,8 @@ static __attribute__((sysv_abi)) jboolean Env_CallBooleanMethod(JNIEnv *, jobjec
         return JNI_FALSE;
     }
     if (std::strcmp(mname, "areNotificationsEnabled") == 0) {
-        return notification::NotificationManager::Instance().AreNotificationsEnabled() ? JNI_TRUE : JNI_FALSE;
+        return notification::NotificationManager::Instance().AreNotificationsEnabled() ? JNI_TRUE
+                                                                                       : JNI_FALSE;
     }
     if (std::strcmp(mname, "isCharging") == 0) {
         return power::PowerManager::Instance().IsCharging() ? JNI_TRUE : JNI_FALSE;
@@ -1093,8 +1407,7 @@ static __attribute__((sysv_abi)) jboolean Env_CallBooleanMethod(JNIEnv *, jobjec
         if (obj && mime) {
             auto syn = JniEnvironment::Instance().LookupObject(obj);
             if (syn) {
-                int count =
-                    syn->int_fields.count("mime_count") ? syn->int_fields["mime_count"] : 0;
+                int count = syn->int_fields.count("mime_count") ? syn->int_fields["mime_count"] : 0;
                 for (int i = 0; i < count; ++i) {
                     std::string key = "mime_" + std::to_string(i);
                     if (syn->string_fields.count(key) && syn->string_fields[key] == mime) {
@@ -1130,7 +1443,42 @@ static __attribute__((sysv_abi)) jboolean Env_CallBooleanMethod(JNIEnv *, jobjec
         auto status = security::KeyStoreManager::Instance().Verify(alias, data, sig_bytes);
         return (status == security::KeyStoreStatus::Success) ? JNI_TRUE : JNI_FALSE;
     }
+    if (std::strcmp(mname, "commit") == 0 && obj) {
+        auto syn = JniEnvironment::Instance().LookupObject(obj);
+        if (syn && syn->class_name == "android/content/SharedPreferences$Editor") {
+            return CommitSharedPrefsEditor(JniEnvironment::Instance(), *syn) ? JNI_TRUE : JNI_FALSE;
+        }
+    }
+    if (std::strcmp(mname, "contains") == 0 && obj) {
+        auto &env = JniEnvironment::Instance();
+        auto syn = env.LookupObject(obj);
+        const char *key = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+        if (syn && syn->class_name == "android/content/SharedPreferences" && key) {
+            const auto &pname = syn->string_fields.count("prefs_name")
+                                    ? syn->string_fields["prefs_name"]
+                                    : "default";
+            return env.GetSharedPrefsMap(pname).contains(key) ? JNI_TRUE : JNI_FALSE;
+        }
+    }
     if (std::strcmp(mname, "getBoolean") == 0) {
+        if (obj) {
+            auto &env = JniEnvironment::Instance();
+            auto syn = env.LookupObject(obj);
+            if (syn && syn->class_name == "android/content/SharedPreferences") {
+                const char *key = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+                const auto &pname = syn->string_fields.count("prefs_name")
+                                        ? syn->string_fields["prefs_name"]
+                                        : "default";
+                const auto &store = env.GetSharedPrefsMap(pname);
+                if (key) {
+                    auto it = store.find(key);
+                    if (it != store.end() && it->second.kind == JniSharedPrefValue::Kind::Bool) {
+                        return it->second.bool_val ? JNI_TRUE : JNI_FALSE;
+                    }
+                }
+                return (arg1 != 0) ? JNI_TRUE : JNI_FALSE;
+            }
+        }
         uint32_t res_id = static_cast<uint32_t>(arg0);
         const auto *pkg = PackageManager::Instance().GetActivePackage();
         if (pkg && pkg->resource_table) {
@@ -1236,6 +1584,24 @@ static __attribute__((sysv_abi)) jint Env_CallIntMethod(JNIEnv *, jobject obj, j
     if (obj) {
         auto syn_obj = JniEnvironment::Instance().LookupObject(obj);
         if (syn_obj && syn_obj->type == JniObjectType::Bitmap) {
+            if (std::strcmp(mname, "getInt") == 0 && obj) {
+                auto &env = JniEnvironment::Instance();
+                auto syn = env.LookupObject(obj);
+                if (syn && syn->class_name == "android/content/SharedPreferences") {
+                    const char *key = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+                    const auto &pname = syn->string_fields.count("prefs_name")
+                                            ? syn->string_fields["prefs_name"]
+                                            : "default";
+                    const auto &store = env.GetSharedPrefsMap(pname);
+                    if (key) {
+                        auto it = store.find(key);
+                        if (it != store.end() && it->second.kind == JniSharedPrefValue::Kind::Int) {
+                            return it->second.int_val;
+                        }
+                    }
+                    return static_cast<jint>(arg1);
+                }
+            }
             if (std::strcmp(mname, "getWidth") == 0) {
                 return static_cast<jint>(syn_obj->bitmap_width);
             }
@@ -1246,6 +1612,24 @@ static __attribute__((sysv_abi)) jint Env_CallIntMethod(JNIEnv *, jobject obj, j
                 std::strcmp(mname, "getAllocationByteCount") == 0) {
                 return static_cast<jint>(syn_obj->bitmap_stride * syn_obj->bitmap_height);
             }
+        }
+    }
+    if (std::strcmp(mname, "getInt") == 0 && obj) {
+        auto &env = JniEnvironment::Instance();
+        auto syn = env.LookupObject(obj);
+        if (syn && syn->class_name == "android/content/SharedPreferences") {
+            const char *key = env.GetStringChars(reinterpret_cast<jstring>(arg0));
+            const auto &pname = syn->string_fields.count("prefs_name")
+                                    ? syn->string_fields["prefs_name"]
+                                    : "default";
+            const auto &store = env.GetSharedPrefsMap(pname);
+            if (key) {
+                auto it = store.find(key);
+                if (it != store.end() && it->second.kind == JniSharedPrefValue::Kind::Int) {
+                    return it->second.int_val;
+                }
+            }
+            return static_cast<jint>(arg1);
         }
     }
     if (std::strcmp(mname, "getWidth") == 0) {
@@ -1343,7 +1727,8 @@ static __attribute__((sysv_abi)) jint Env_CallIntMethod(JNIEnv *, jobject obj, j
         return 50000;
     }
     if (std::strcmp(mname, "getCurrentThermalStatus") == 0) {
-        return static_cast<jint>(portage::ndk::ThermalManager::Instance().GetCurrentThermalStatus());
+        return static_cast<jint>(
+            portage::ndk::ThermalManager::Instance().GetCurrentThermalStatus());
     }
     if (std::strcmp(mname, "reportActualWorkDuration") == 0 ||
         std::strcmp(mname, "updateTargetWorkDuration") == 0) {
@@ -1410,6 +1795,30 @@ static __attribute__((sysv_abi)) jint Env_CallIntMethod(JNIEnv *, jobject obj, j
         }
         return 0;
     }
+    if (std::strcmp(mname, "getFloat") == 0 && obj) {
+        auto &env = JniEnvironment::Instance();
+        auto syn = env.LookupObject(obj);
+        if (syn && syn->class_name == "android/content/SharedPreferences") {
+            uintptr_t a0 = 0;
+            double def_val = 0.0;
+#if defined(__x86_64__) || defined(_M_X64)
+            __asm__ volatile("movq %%rcx, %0" : "=r"(a0));
+            __asm__ volatile("movq %%xmm0, %0" : "=r"(def_val));
+#endif
+            const char *key = env.GetStringChars(reinterpret_cast<jstring>(a0));
+            const auto &pname = syn->string_fields.count("prefs_name")
+                                    ? syn->string_fields["prefs_name"]
+                                    : "default";
+            const auto &store = env.GetSharedPrefsMap(pname);
+            if (key) {
+                auto it = store.find(key);
+                if (it != store.end() && it->second.kind == JniSharedPrefValue::Kind::Float) {
+                    return it->second.float_val;
+                }
+            }
+            return static_cast<jfloat>(def_val);
+        }
+    }
     if (obj) {
         auto synth = JniEnvironment::Instance().LookupObject(obj);
         if (synth) {
@@ -1446,6 +1855,30 @@ static __attribute__((sysv_abi)) jlong Env_CallLongMethod(JNIEnv *, jobject obj,
         ndk::MultinetworkManager::Instance().GetProcNetwork(&h);
         return static_cast<jlong>(h);
     }
+    if (std::strcmp(mname, "getFloat") == 0 && obj) {
+        auto &env = JniEnvironment::Instance();
+        auto syn = env.LookupObject(obj);
+        if (syn && syn->class_name == "android/content/SharedPreferences") {
+            uintptr_t a0 = 0;
+            double def_val = 0.0;
+#if defined(__x86_64__) || defined(_M_X64)
+            __asm__ volatile("movq %%rcx, %0" : "=r"(a0));
+            __asm__ volatile("movq %%xmm0, %0" : "=r"(def_val));
+#endif
+            const char *key = env.GetStringChars(reinterpret_cast<jstring>(a0));
+            const auto &pname = syn->string_fields.count("prefs_name")
+                                    ? syn->string_fields["prefs_name"]
+                                    : "default";
+            const auto &store = env.GetSharedPrefsMap(pname);
+            if (key) {
+                auto it = store.find(key);
+                if (it != store.end() && it->second.kind == JniSharedPrefValue::Kind::Float) {
+                    return it->second.float_val;
+                }
+            }
+            return static_cast<jfloat>(def_val);
+        }
+    }
     if (obj) {
         auto synth = JniEnvironment::Instance().LookupObject(obj);
         if (synth) {
@@ -1478,7 +1911,7 @@ static __attribute__((sysv_abi)) jlong Env_CallLongMethodA(JNIEnv *env, jobject 
 }
 
 static __attribute__((sysv_abi)) jfloat Env_CallFloatMethod(JNIEnv *, jobject obj,
-                                                             jmethodID methodID, ...)
+                                                            jmethodID methodID, ...)
 {
     if (!methodID) {
         return 0.0f;
@@ -1490,6 +1923,30 @@ static __attribute__((sysv_abi)) jfloat Env_CallFloatMethod(JNIEnv *, jobject ob
         __asm__ volatile("movq %%rcx, %0" : "=r"(arg0));
 #endif
         return portage::ndk::ThermalManager::Instance().GetThermalHeadroom(static_cast<int>(arg0));
+    }
+    if (std::strcmp(mname, "getFloat") == 0 && obj) {
+        auto &env = JniEnvironment::Instance();
+        auto syn = env.LookupObject(obj);
+        if (syn && syn->class_name == "android/content/SharedPreferences") {
+            uintptr_t a0 = 0;
+            double def_val = 0.0;
+#if defined(__x86_64__) || defined(_M_X64)
+            __asm__ volatile("movq %%rcx, %0" : "=r"(a0));
+            __asm__ volatile("movq %%xmm0, %0" : "=r"(def_val));
+#endif
+            const char *key = env.GetStringChars(reinterpret_cast<jstring>(a0));
+            const auto &pname = syn->string_fields.count("prefs_name")
+                                    ? syn->string_fields["prefs_name"]
+                                    : "default";
+            const auto &store = env.GetSharedPrefsMap(pname);
+            if (key) {
+                auto it = store.find(key);
+                if (it != store.end() && it->second.kind == JniSharedPrefValue::Kind::Float) {
+                    return it->second.float_val;
+                }
+            }
+            return static_cast<jfloat>(def_val);
+        }
     }
     if (obj) {
         auto synth = JniEnvironment::Instance().LookupObject(obj);
@@ -1600,7 +2057,8 @@ static void DispatchVoidMethod(jobject obj, jmethodID methodID)
     }
 }
 
-static __attribute__((sysv_abi)) void Env_CallVoidMethod(JNIEnv *, jobject obj, jmethodID methodID, ...)
+static __attribute__((sysv_abi)) void Env_CallVoidMethod(JNIEnv *, jobject obj, jmethodID methodID,
+                                                         ...)
 {
     uintptr_t arg0 = 0;
     uintptr_t arg1 = 0;
@@ -1610,7 +2068,8 @@ static __attribute__((sysv_abi)) void Env_CallVoidMethod(JNIEnv *, jobject obj, 
     __asm__ volatile("movq %%r8, %0" : "=r"(arg1));
     __asm__ volatile("movq %%r9, %0" : "=r"(arg2));
 #endif
-    if (!methodID) return;
+    if (!methodID)
+        return;
     const char *mname = reinterpret_cast<const char *>(methodID);
     if (std::strcmp(mname, "init") == 0 || std::strcmp(mname, "initialize") == 0) {
         if (obj) {
@@ -1739,7 +2198,8 @@ static __attribute__((sysv_abi)) void Env_CallVoidMethod(JNIEnv *, jobject obj, 
             if (syn && syn->int_fields.count("wakelock_id")) {
                 uint32_t id = static_cast<uint32_t>(syn->int_fields["wakelock_id"]);
                 int64_t timeout_ms = static_cast<int64_t>(arg0);
-                power::PowerManager::Instance().AcquireWakeLock(id, timeout_ms > 0 ? timeout_ms : -1);
+                power::PowerManager::Instance().AcquireWakeLock(id,
+                                                                timeout_ms > 0 ? timeout_ms : -1);
             }
         }
         return;
@@ -1783,9 +2243,12 @@ static __attribute__((sysv_abi)) void Env_CallVoidMethod(JNIEnv *, jobject obj, 
                 notification::NotificationChannel ch;
                 ch.id = syn->string_fields.count("id") ? syn->string_fields["id"] : "default";
                 ch.name = syn->string_fields.count("name") ? syn->string_fields["name"] : "Default";
-                ch.description = syn->string_fields.count("description") ? syn->string_fields["description"] : "";
-                ch.importance = syn->int_fields.count("importance") ? syn->int_fields["importance"]
-                                                                   : notification::IMPORTANCE_DEFAULT;
+                ch.description = syn->string_fields.count("description")
+                                     ? syn->string_fields["description"]
+                                     : "";
+                ch.importance = syn->int_fields.count("importance")
+                                    ? syn->int_fields["importance"]
+                                    : notification::IMPORTANCE_DEFAULT;
                 notification::NotificationManager::Instance().CreateNotificationChannel(ch);
             }
         }
@@ -1813,7 +2276,8 @@ static __attribute__((sysv_abi)) void Env_CallVoidMethod(JNIEnv *, jobject obj, 
             if (syn2 && syn2->class_name == "android/app/Notification") {
                 jstring tag_str = reinterpret_cast<jstring>(arg0);
                 const char *t = JniEnvironment::Instance().GetStringChars(tag_str);
-                if (t) tag = t;
+                if (t)
+                    tag = t;
                 id = static_cast<int32_t>(arg1);
                 notif_obj = reinterpret_cast<jobject>(arg2);
             }
@@ -1827,8 +2291,9 @@ static __attribute__((sysv_abi)) void Env_CallVoidMethod(JNIEnv *, jobject obj, 
                 rec.tag = tag;
                 rec.title = syn->string_fields["title"];
                 rec.text = syn->string_fields["text"];
-                rec.channel_id =
-                    syn->string_fields.count("channel_id") ? syn->string_fields["channel_id"] : "default";
+                rec.channel_id = syn->string_fields.count("channel_id")
+                                     ? syn->string_fields["channel_id"]
+                                     : "default";
                 rec.small_icon = syn->int_fields["small_icon"];
                 rec.flags = syn->int_fields["flags"];
                 rec.progress_max = syn->int_fields["progress_max"];
@@ -1857,6 +2322,28 @@ static __attribute__((sysv_abi)) void Env_CallVoidMethod(JNIEnv *, jobject obj, 
         notification::NotificationManager::Instance().CancelAllNotifications();
         return;
     }
+    if (std::strcmp(mname, "apply") == 0 && obj) {
+        auto syn = JniEnvironment::Instance().LookupObject(obj);
+        if (syn && syn->class_name == "android/content/SharedPreferences$Editor") {
+            CommitSharedPrefsEditor(JniEnvironment::Instance(), *syn);
+            return;
+        }
+    }
+    if (std::strcmp(mname, "getMetrics") == 0) {
+        jobject dm_arg = reinterpret_cast<jobject>(arg0);
+        if (dm_arg) {
+            auto dm = JniEnvironment::Instance().LookupObject(dm_arg);
+            if (dm) {
+                auto &env = JniEnvironment::Instance();
+                dm->int_fields["widthPixels"] = env.GetDisplayWidth();
+                dm->int_fields["heightPixels"] = env.GetDisplayHeight();
+                dm->int_fields["densityDpi"] = env.GetDisplayDensityDpi();
+                dm->float_fields["density"] = env.GetDisplayDensity();
+                dm->float_fields["scaledDensity"] = env.GetDisplayDensity();
+            }
+        }
+        return;
+    }
     if (std::strcmp(mname, "show") == 0 && obj) {
         auto syn = JniEnvironment::Instance().LookupObject(obj);
         if (syn && syn->class_name == "android/widget/Toast") {
@@ -1869,7 +2356,8 @@ static __attribute__((sysv_abi)) void Env_CallVoidMethod(JNIEnv *, jobject obj, 
     DispatchVoidMethod(obj, methodID);
 }
 
-static __attribute__((sysv_abi)) void Env_CallVoidMethodV(JNIEnv *, jobject obj, jmethodID methodID, va_list)
+static __attribute__((sysv_abi)) void Env_CallVoidMethodV(JNIEnv *, jobject obj, jmethodID methodID,
+                                                          va_list)
 {
     DispatchVoidMethod(obj, methodID);
 }
@@ -1882,21 +2370,94 @@ static __attribute__((sysv_abi)) void Env_CallVoidMethodA(JNIEnv *, jobject obj,
 
 // Static method calls
 static __attribute__((sysv_abi)) jobject Env_CallStaticObjectMethod(JNIEnv *, jclass clazz,
-                                                                    jmethodID methodID, ...)
+                                                                    jmethodID methodID,
+                                                                    uintptr_t arg0, uintptr_t arg1,
+                                                                    uintptr_t arg2, uintptr_t arg3)
 {
-    uintptr_t arg0 = 0;
-    uintptr_t arg1 = 0;
-    uintptr_t arg2 = 0;
-#if defined(__x86_64__) || defined(_M_X64)
-    __asm__ volatile("movq %%rcx, %0" : "=r"(arg0));
-    __asm__ volatile("movq %%r8, %0" : "=r"(arg1));
-    __asm__ volatile("movq %%r9, %0" : "=r"(arg2));
-#endif
-
     if (!methodID) {
         return nullptr;
     }
+
     const char *mname = reinterpret_cast<const char *>(methodID);
+    if (std::strcmp(mname, "decodeByteArray") == 0) {
+        auto arr_syn = JniEnvironment::Instance().LookupObject(reinterpret_cast<jobject>(arg0));
+        if (!arr_syn || arr_syn->byte_data.empty()) {
+            return nullptr;
+        }
+        int32_t offset = static_cast<int32_t>(arg1);
+        int32_t length = static_cast<int32_t>(arg2);
+        if (offset < 0 || length <= 0 ||
+            static_cast<size_t>(offset) + static_cast<size_t>(length) > arr_syn->byte_data.size()) {
+            return nullptr;
+        }
+        const auto *ptr = reinterpret_cast<const uint8_t *>(arr_syn->byte_data.data() + offset);
+        jobject opts_obj = reinterpret_cast<jobject>(arg3);
+        return DecodeBitmapFromEncodedBytes(
+            std::span<const uint8_t>(ptr, static_cast<size_t>(length)), opts_obj);
+    }
+    if (std::strcmp(mname, "decodeResource") == 0) {
+        uint32_t res_id = static_cast<uint32_t>(arg1);
+        jobject opts_obj = reinterpret_cast<jobject>(arg2);
+        const auto *pkg = PackageManager::Instance().GetActivePackage();
+        if (!pkg || !pkg->archive || !pkg->resource_table) {
+            return nullptr;
+        }
+        auto res_path = pkg->resource_table->GetString(res_id);
+        if (!res_path.has_value() || res_path->empty()) {
+            return nullptr;
+        }
+        auto entry_bytes = pkg->archive->ReadEntry(*res_path);
+        if (!entry_bytes.has_value()) {
+            return nullptr;
+        }
+        return DecodeBitmapFromEncodedBytes(*entry_bytes, opts_obj);
+    }
+    if (std::strcmp(mname, "decodeFile") == 0) {
+        const char *path_c =
+            JniEnvironment::Instance().GetStringChars(reinterpret_cast<jstring>(arg0));
+        jobject opts_obj = reinterpret_cast<jobject>(arg1);
+        if (!path_c) {
+            return nullptr;
+        }
+        std::filesystem::path target_path(path_c);
+        if (auto *vfs = syscall::SyscallDispatcher::GetVfs()) {
+            auto resolved = vfs->Resolve(path_c);
+            if (!resolved.host_path.empty()) {
+                target_path = resolved.host_path;
+            }
+        }
+        std::ifstream ifs(target_path, std::ios::binary | std::ios::ate);
+        if (!ifs.is_open()) {
+            return nullptr;
+        }
+        auto sz = ifs.tellg();
+        if (sz <= 0) {
+            return nullptr;
+        }
+        std::vector<uint8_t> bytes(static_cast<size_t>(sz));
+        ifs.seekg(0, std::ios::beg);
+        ifs.read(reinterpret_cast<char *>(bytes.data()), sz);
+        return DecodeBitmapFromEncodedBytes(bytes, opts_obj);
+    }
+    if (std::strcmp(mname, "decodeStream") == 0) {
+        auto stream_syn = JniEnvironment::Instance().LookupObject(reinterpret_cast<jobject>(arg0));
+        jobject opts_obj = reinterpret_cast<jobject>(arg2);
+        if (!stream_syn) {
+            return nullptr;
+        }
+        if (auto it = stream_syn->binary_fields.find("bytes");
+            it != stream_syn->binary_fields.end()) {
+            return DecodeBitmapFromEncodedBytes(it->second, opts_obj);
+        }
+        if (!stream_syn->byte_data.empty()) {
+            return DecodeBitmapFromEncodedBytes(
+                std::span<const uint8_t>(
+                    reinterpret_cast<const uint8_t *>(stream_syn->byte_data.data()),
+                    stream_syn->byte_data.size()),
+                opts_obj);
+        }
+        return nullptr;
+    }
     if (std::strcmp(mname, "createBitmap") == 0) {
         uint32_t w = static_cast<uint32_t>(arg0 > 0 ? arg0 : 64);
         uint32_t h = static_cast<uint32_t>(arg1 > 0 ? arg1 : 64);
@@ -2077,14 +2638,16 @@ static __attribute__((sysv_abi)) jobject Env_CallStaticObjectMethod(JNIEnv *, jc
 static __attribute__((sysv_abi)) jobject Env_CallStaticObjectMethodV(JNIEnv *env, jclass clazz,
                                                                      jmethodID methodID, va_list)
 {
-    return Env_CallStaticObjectMethod(env, clazz, methodID);
+    return Env_CallStaticObjectMethod(env, clazz, methodID, 0, 0, 0, 0);
 }
 
 static __attribute__((sysv_abi)) jobject Env_CallStaticObjectMethodA(JNIEnv *env, jclass clazz,
                                                                      jmethodID methodID,
-                                                                     const void *)
+                                                                     const void *args)
 {
-    return Env_CallStaticObjectMethod(env, clazz, methodID);
+    const auto *jv = static_cast<const uint64_t *>(args);
+    return Env_CallStaticObjectMethod(env, clazz, methodID, jv ? jv[0] : 0, jv ? jv[1] : 0,
+                                      jv ? jv[2] : 0, jv ? jv[3] : 0);
 }
 
 static __attribute__((sysv_abi)) jboolean Env_CallStaticBooleanMethod(JNIEnv *, jclass,
@@ -2165,8 +2728,8 @@ static __attribute__((sysv_abi)) jshort Env_CallStaticShortMethodA(JNIEnv *, jcl
     return 0;
 }
 
-static __attribute__((sysv_abi)) jint Env_CallStaticIntMethod(JNIEnv *, jclass,
-                                                              jmethodID methodID, ...)
+static __attribute__((sysv_abi)) jint Env_CallStaticIntMethod(JNIEnv *, jclass, jmethodID methodID,
+                                                              ...)
 {
     if (methodID) {
         const char *mname = reinterpret_cast<const char *>(methodID);
@@ -2418,6 +2981,22 @@ static __attribute__((sysv_abi)) jobject Env_GetStaticObjectField(JNIEnv *, jcla
         if (std::strcmp(fname, "FINGERPRINT") == 0) {
             return env.CreateString("generic/portage/x86_64:13/TQ3A.230901.001/1:userdebug/"
                                     "test-keys");
+        }
+        if (std::strcmp(fname, "BRAND") == 0) {
+            return env.CreateString("portage");
+        }
+        if (std::strcmp(fname, "DEVICE") == 0 || std::strcmp(fname, "BOARD") == 0) {
+            return env.CreateString("portage_x86_64");
+        }
+        if (std::strcmp(fname, "DISPLAY") == 0) {
+            return env.CreateString("Portage.13");
+        }
+        if (std::strcmp(fname, "SUPPORTED_ABIS") == 0) {
+            auto arr = std::make_shared<JniSyntheticObject>();
+            arr->type = JniObjectType::ObjectArray;
+            arr->class_name = "[Ljava/lang/String;";
+            arr->object_data.push_back(env.CreateString("x86_64"));
+            return env.RegisterObject(arr);
         }
     }
 
@@ -3234,7 +3813,9 @@ void JniEnvironment::SetupInterfaceTables()
     env_functions_->SetDoubleField = Env_SetDoubleField;
 
     env_functions_->GetStaticMethodID = Env_GetStaticMethodID;
-    env_functions_->CallStaticObjectMethod = Env_CallStaticObjectMethod;
+    env_functions_->CallStaticObjectMethod =
+        reinterpret_cast<decltype(env_functions_->CallStaticObjectMethod)>(
+            reinterpret_cast<void *>(&Env_CallStaticObjectMethod));
     env_functions_->CallStaticObjectMethodV = Env_CallStaticObjectMethodV;
     env_functions_->CallStaticObjectMethodA = Env_CallStaticObjectMethodA;
     env_functions_->CallStaticBooleanMethod = Env_CallStaticBooleanMethod;
@@ -3434,6 +4015,7 @@ void JniEnvironment::Reset()
     object_table_.clear();
     objects_by_handle_.clear();
     registered_natives_.clear();
+    shared_prefs_.clear();
     pending_exception_ = nullptr;
     next_handle_ = 0x1000;
     SetupSyntheticHierarchy();
@@ -3511,6 +4093,117 @@ jobject JniEnvironment::CreateBitmap(uint32_t width, uint32_t height, int32_t fo
     obj->bitmap_locked = false;
 
     return RegisterObject(obj);
+}
+
+jobject JniEnvironment::CreateBitmapFromPixels(uint32_t width, uint32_t height, int32_t format,
+                                               uint32_t stride, std::vector<uint8_t> pixels)
+{
+    if (width == 0 || height == 0 || stride == 0 ||
+        pixels.size() < static_cast<size_t>(stride) * height) {
+        return CreateBitmap(width, height, format);
+    }
+    auto obj = std::make_shared<JniSyntheticObject>();
+    obj->type = JniObjectType::Bitmap;
+    obj->class_name = "android/graphics/Bitmap";
+    obj->bitmap_width = width;
+    obj->bitmap_height = height;
+    obj->bitmap_format = (format > 0) ? format : ANDROID_BITMAP_FORMAT_RGBA_8888;
+    obj->bitmap_stride = stride;
+    obj->bitmap_pixels = std::move(pixels);
+    obj->buffer_address = obj->bitmap_pixels.data();
+    obj->buffer_capacity = static_cast<jlong>(obj->bitmap_pixels.size());
+    obj->bitmap_locked = false;
+    return RegisterObject(obj);
+}
+
+std::unordered_map<std::string, JniSharedPrefValue> &
+JniEnvironment::GetSharedPrefsMap(std::string_view prefs_name)
+{
+    std::string name_str(prefs_name.empty() ? "default" : prefs_name);
+    auto &map_ref = shared_prefs_[name_str];
+    if (!map_ref.empty() || files_dir_.empty()) {
+        return map_ref;
+    }
+
+    std::filesystem::path prefs_path =
+        std::filesystem::path(files_dir_).parent_path() / "shared_prefs" / (name_str + ".kv");
+    std::ifstream ifs(prefs_path);
+    if (!ifs.is_open()) {
+        return map_ref;
+    }
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.size() < 3 || line[1] != '|') {
+            continue;
+        }
+        auto sep = line.find('=', 2);
+        if (sep == std::string::npos) {
+            continue;
+        }
+        std::string key = line.substr(2, sep - 2);
+        std::string val = line.substr(sep + 1);
+        JniSharedPrefValue entry{};
+        switch (line[0]) {
+        case 'S':
+            entry.kind = JniSharedPrefValue::Kind::String;
+            entry.str_val = val;
+            map_ref[key] = entry;
+            break;
+        case 'I':
+            entry.kind = JniSharedPrefValue::Kind::Int;
+            entry.int_val = std::stoi(val);
+            map_ref[key] = entry;
+            break;
+        case 'F':
+            entry.kind = JniSharedPrefValue::Kind::Float;
+            entry.float_val = std::stof(val);
+            map_ref[key] = entry;
+            break;
+        case 'B':
+            entry.kind = JniSharedPrefValue::Kind::Bool;
+            entry.bool_val = (val == "1");
+            map_ref[key] = entry;
+            break;
+        default:
+            break;
+        }
+    }
+    return map_ref;
+}
+
+void JniEnvironment::SaveSharedPrefs(std::string_view prefs_name) const
+{
+    std::string name_str(prefs_name.empty() ? "default" : prefs_name);
+    auto it = shared_prefs_.find(name_str);
+    if (it == shared_prefs_.end() || files_dir_.empty()) {
+        return;
+    }
+    std::error_code ec;
+    std::filesystem::path dir = std::filesystem::path(files_dir_).parent_path() / "shared_prefs";
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+        return;
+    }
+    std::ofstream ofs(dir / (name_str + ".kv"), std::ios::trunc);
+    if (!ofs.is_open()) {
+        return;
+    }
+    for (const auto &[key, val] : it->second) {
+        switch (val.kind) {
+        case JniSharedPrefValue::Kind::String:
+            ofs << "S|" << key << "=" << val.str_val << "\n";
+            break;
+        case JniSharedPrefValue::Kind::Int:
+            ofs << "I|" << key << "=" << val.int_val << "\n";
+            break;
+        case JniSharedPrefValue::Kind::Float:
+            ofs << "F|" << key << "=" << val.float_val << "\n";
+            break;
+        case JniSharedPrefValue::Kind::Bool:
+            ofs << "B|" << key << "=" << (val.bool_val ? "1" : "0") << "\n";
+            break;
+        }
+    }
 }
 
 void JniEnvironment::RegisterNativeMethod(std::string_view className, std::string_view methodName,

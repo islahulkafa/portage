@@ -98,8 +98,7 @@ bool PowerManager::AcquireWakeLock(uint32_t id, int64_t timeout_ms) noexcept
     }
 
     if (timeout_ms > 0) {
-        rec.expire_time =
-            std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+        rec.expire_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
         rec.has_timeout = true;
         timer_cv_.notify_all();
     } else {
@@ -290,10 +289,7 @@ bool PowerManager::IsCharging() const noexcept
     return state.status == BATTERY_STATUS_CHARGING || state.status == BATTERY_STATUS_FULL;
 }
 
-int32_t PowerManager::GetCapacity() const noexcept
-{
-    return GetBatteryState().capacity_percent;
-}
+int32_t PowerManager::GetCapacity() const noexcept { return GetBatteryState().capacity_percent; }
 
 void PowerManager::UpdateHostExecutionStateLocked() noexcept
 {
@@ -351,9 +347,8 @@ void PowerManager::TimerWorkerLoop() noexcept
             }
         }
 
-        timer_cv_.wait_until(lock, next_wake, [this] {
-            return !running_.load(std::memory_order_acquire);
-        });
+        timer_cv_.wait_until(lock, next_wake,
+                             [this] { return !running_.load(std::memory_order_acquire); });
     }
 }
 

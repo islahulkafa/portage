@@ -24,10 +24,7 @@ HapticManager &HapticManager::Instance() noexcept
     return instance;
 }
 
-HapticManager::HapticManager() noexcept
-{
-    InitXInput();
-}
+HapticManager::HapticManager() noexcept { InitXInput(); }
 
 HapticManager::~HapticManager() noexcept
 {
@@ -48,8 +45,7 @@ void HapticManager::InitXInput() noexcept
         HMODULE mod = LoadLibraryW(name);
         if (mod) {
             xinput_module_ = static_cast<void *>(mod);
-            xinput_set_state_fn_ =
-                reinterpret_cast<void *>(GetProcAddress(mod, "XInputSetState"));
+            xinput_set_state_fn_ = reinterpret_cast<void *>(GetProcAddress(mod, "XInputSetState"));
             break;
         }
     }

@@ -4,16 +4,17 @@
 #include "ndk/sensor.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
 struct ARect {
-    int32_t left{0};
-    int32_t top{0};
-    int32_t right{0};
-    int32_t bottom{0};
+    int32_t left;
+    int32_t top;
+    int32_t right;
+    int32_t bottom;
 };
 
 struct ANativeWindow_Buffer {
@@ -47,6 +48,8 @@ struct ANativeWindow {
     int64_t last_latch_time_nanos{0};
     int64_t last_present_time_nanos{0};
     uint64_t frame_index{0};
+    bool owned_heap{false};
+    std::function<void(ANativeWindow *)> on_post{};
 };
 
 namespace portage::ndk {
@@ -59,11 +62,16 @@ class NdkSymbolRegistry {
     [[nodiscard]] uintptr_t Lookup(std::string_view name) const;
     [[nodiscard]] size_t Count() const noexcept;
 
+    void RegisterFallback(std::string_view name, uintptr_t address);
+    [[nodiscard]] uintptr_t LookupFallback(std::string_view name) const;
+    [[nodiscard]] size_t FallbackCount() const noexcept;
+
   private:
     NdkSymbolRegistry();
     void RegisterAll();
 
     std::unordered_map<std::string, uintptr_t> symbols_{};
+    std::unordered_map<std::string, uintptr_t> fallback_symbols_{};
 };
 
 } // namespace portage::ndk
@@ -83,9 +91,11 @@ __attribute__((sysv_abi)) int32_t ANativeWindow_lock(ANativeWindow *window,
 __attribute__((sysv_abi)) int32_t ANativeWindow_unlockAndPost(ANativeWindow *window);
 __attribute__((sysv_abi)) int32_t ANativeWindow_getLastQueueDuration(ANativeWindow *window,
                                                                      int64_t *outDuration);
-__attribute__((sysv_abi)) int32_t
-ANativeWindow_getFrameTimestamps(ANativeWindow *window, uint64_t frameId, int64_t *outQueueTime,
-                                 int64_t *outLatchTime, int64_t *outPresentTime);
+__attribute__((sysv_abi)) int32_t ANativeWindow_getFrameTimestamps(ANativeWindow *window,
+                                                                   uint64_t frameId,
+                                                                   int64_t *outQueueTime,
+                                                                   int64_t *outLatchTime,
+                                                                   int64_t *outPresentTime);
 
 struct AAsset;
 struct AAssetManager;
@@ -131,19 +141,19 @@ struct BionicPthreadAttr {
 
 __attribute__((sysv_abi)) uintptr_t portage_pthread_self() noexcept;
 __attribute__((sysv_abi)) int portage_pthread_equal(uintptr_t t1, uintptr_t t2) noexcept;
-__attribute__((sysv_abi)) int portage_pthread_setname_np(uintptr_t thread, const char *name) noexcept;
+__attribute__((sysv_abi)) int portage_pthread_setname_np(uintptr_t thread,
+                                                         const char *name) noexcept;
 __attribute__((sysv_abi)) int portage_pthread_getname_np(uintptr_t thread, char *buf,
-                                                        size_t len) noexcept;
+                                                         size_t len) noexcept;
 __attribute__((sysv_abi)) int portage_pthread_getattr_np(uintptr_t thread,
-                                                        BionicPthreadAttr *attr) noexcept;
+                                                         BionicPthreadAttr *attr) noexcept;
 __attribute__((sysv_abi)) int portage_pthread_attr_init(BionicPthreadAttr *attr) noexcept;
 __attribute__((sysv_abi)) int portage_pthread_attr_destroy(BionicPthreadAttr *attr) noexcept;
 __attribute__((sysv_abi)) int portage_pthread_attr_getstack(const BionicPthreadAttr *attr,
                                                             void **stackaddr,
                                                             size_t *stacksize) noexcept;
-__attribute__((sysv_abi)) int portage_pthread_attr_setstack(BionicPthreadAttr *attr,
-                                                            void *stackaddr,
-                                                            size_t stacksize) noexcept;
+__attribute__((sysv_abi)) int
+portage_pthread_attr_setstack(BionicPthreadAttr *attr, void *stackaddr, size_t stacksize) noexcept;
 __attribute__((sysv_abi)) int portage_pthread_attr_getstacksize(const BionicPthreadAttr *attr,
                                                                 size_t *stacksize) noexcept;
 __attribute__((sysv_abi)) int portage_pthread_attr_setstacksize(BionicPthreadAttr *attr,

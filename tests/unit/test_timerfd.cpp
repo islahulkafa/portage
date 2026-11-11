@@ -40,15 +40,9 @@ __attribute__((sysv_abi)) int LooperTimerCallback(int fd, int events, void *data
 
 class TimerfdTest : public ::testing::Test {
   protected:
-    void SetUp() override
-    {
-        SyscallDispatcher::Initialize(&as_, &vfs_, &fd_table_);
-    }
+    void SetUp() override { SyscallDispatcher::Initialize(&as_, &vfs_, &fd_table_); }
 
-    void TearDown() override
-    {
-        SyscallDispatcher::Shutdown();
-    }
+    void TearDown() override { SyscallDispatcher::Shutdown(); }
 
     portage::mem::AddressSpace as_{};
     portage::fs::Vfs vfs_{};
@@ -60,8 +54,8 @@ TEST_F(TimerfdTest, CreateValidatesClockAndFlags)
     int fd_mono = SyscallDispatcher::Dispatch(283, LINUX_CLOCK_MONOTONIC, 0, 0, 0, 0, 0);
     EXPECT_GE(fd_mono, 3);
 
-    int fd_real = SyscallDispatcher::Dispatch(
-        283, LINUX_CLOCK_REALTIME, LINUX_TFD_NONBLOCK | LINUX_TFD_CLOEXEC, 0, 0, 0, 0);
+    int fd_real = SyscallDispatcher::Dispatch(283, LINUX_CLOCK_REALTIME,
+                                              LINUX_TFD_NONBLOCK | LINUX_TFD_CLOEXEC, 0, 0, 0, 0);
     EXPECT_GE(fd_real, 3);
 
     EXPECT_EQ(SyscallDispatcher::Dispatch(283, 99, 0, 0, 0, 0, 0), LINUX_EINVAL);
@@ -83,19 +77,19 @@ TEST_F(TimerfdTest, SettimeArmsOneShotTimer)
     spec.it_interval.tv_sec = 0;
     spec.it_interval.tv_nsec = 0;
 
-    int64_t set_ret = SyscallDispatcher::Dispatch(286, fd, 0, reinterpret_cast<uint64_t>(&spec), 0,
-                                                  0, 0);
+    int64_t set_ret =
+        SyscallDispatcher::Dispatch(286, fd, 0, reinterpret_cast<uint64_t>(&spec), 0, 0, 0);
     ASSERT_EQ(set_ret, 0);
 
     uint64_t exp = 0;
-    int64_t read_ret = SyscallDispatcher::Dispatch(0, fd, reinterpret_cast<uint64_t>(&exp),
-                                                   sizeof(exp), 0, 0, 0);
+    int64_t read_ret =
+        SyscallDispatcher::Dispatch(0, fd, reinterpret_cast<uint64_t>(&exp), sizeof(exp), 0, 0, 0);
     EXPECT_EQ(read_ret, 8);
     EXPECT_EQ(exp, 1ULL);
 
     LinuxItimerspec curr{};
-    int64_t get_ret = SyscallDispatcher::Dispatch(287, fd, reinterpret_cast<uint64_t>(&curr), 0, 0,
-                                                  0, 0);
+    int64_t get_ret =
+        SyscallDispatcher::Dispatch(287, fd, reinterpret_cast<uint64_t>(&curr), 0, 0, 0, 0);
     EXPECT_EQ(get_ret, 0);
     EXPECT_EQ(curr.it_value.tv_sec, 0);
     EXPECT_EQ(curr.it_value.tv_nsec, 0);
@@ -122,8 +116,8 @@ TEST_F(TimerfdTest, SettimePeriodicTimerAccumulatesExpirations)
     std::this_thread::sleep_for(std::chrono::milliseconds(45));
 
     uint64_t exp = 0;
-    int64_t read_ret = SyscallDispatcher::Dispatch(0, fd, reinterpret_cast<uint64_t>(&exp),
-                                                   sizeof(exp), 0, 0, 0);
+    int64_t read_ret =
+        SyscallDispatcher::Dispatch(0, fd, reinterpret_cast<uint64_t>(&exp), sizeof(exp), 0, 0, 0);
     EXPECT_EQ(read_ret, 8);
     EXPECT_GE(exp, 3ULL);
 
@@ -210,12 +204,11 @@ TEST_F(TimerfdTest, TimerfdIntegratesWithEpollAndPoll)
               0);
 
     LinuxEpollEvent out_ev{};
-    EXPECT_EQ(SyscallDispatcher::Dispatch(232, epfd, reinterpret_cast<uint64_t>(&out_ev), 1, 0, 0,
-                                          0),
-              0);
+    EXPECT_EQ(
+        SyscallDispatcher::Dispatch(232, epfd, reinterpret_cast<uint64_t>(&out_ev), 1, 0, 0, 0), 0);
 
-    int64_t n = SyscallDispatcher::Dispatch(232, epfd, reinterpret_cast<uint64_t>(&out_ev), 1, 200,
-                                            0, 0);
+    int64_t n =
+        SyscallDispatcher::Dispatch(232, epfd, reinterpret_cast<uint64_t>(&out_ev), 1, 200, 0, 0);
     EXPECT_EQ(n, 1);
     EXPECT_NE(out_ev.events & LINUX_EPOLLIN, 0U);
     EXPECT_EQ(out_ev.data, 0xCAFEULL);
@@ -233,8 +226,8 @@ TEST_F(TimerfdTest, TimerfdIntegratesWithEpollAndPoll)
     LinuxPollFd pfd{};
     pfd.fd = fd;
     pfd.events = LINUX_POLLIN;
-    int64_t p_res = SyscallDispatcher::Dispatch(7, reinterpret_cast<uint64_t>(&pfd), 1, 200, 0, 0,
-                                                0);
+    int64_t p_res =
+        SyscallDispatcher::Dispatch(7, reinterpret_cast<uint64_t>(&pfd), 1, 200, 0, 0, 0);
     EXPECT_EQ(p_res, 1);
     EXPECT_NE(pfd.revents & LINUX_POLLIN, 0);
 
@@ -273,8 +266,7 @@ TEST_F(TimerfdTest, TimerfdIntegratesWithALooper)
               0);
 
     LooperCallbackState t_state{};
-    ASSERT_EQ(ALooper_addFd(looper, tfd, 2, ALOOPER_EVENT_INPUT, LooperTimerCallback, &t_state),
-              1);
+    ASSERT_EQ(ALooper_addFd(looper, tfd, 2, ALOOPER_EVENT_INPUT, LooperTimerCallback, &t_state), 1);
     int poll_t = ALooper_pollOnce(200, nullptr, nullptr, nullptr);
     EXPECT_EQ(poll_t, ALOOPER_POLL_CALLBACK);
     EXPECT_EQ(t_state.calls, 1);

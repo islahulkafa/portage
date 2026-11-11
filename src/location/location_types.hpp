@@ -5,11 +5,7 @@
 
 namespace portage::location {
 
-enum class LocationProviderType {
-    Gps,
-    Network,
-    Passive
-};
+enum class LocationProviderType { Gps, Network, Passive };
 
 enum class LocationStatus {
     Success = 0,
@@ -55,11 +51,15 @@ struct GeofenceCircle {
     bool dwell_triggered = false;
 };
 
-typedef __attribute__((sysv_abi)) void (*ALocationListener_onLocationChanged)(
-    const ALocation *location, void *context);
-typedef __attribute__((sysv_abi)) void (*ALocationListener_onStatusChanged)(
-    const char *provider, int status, void *context);
-typedef __attribute__((sysv_abi)) void (*AGeofenceListener_onTransition)(
-    int fence_id, int transition, const ALocation *location, void *context);
+typedef
+    __attribute__((sysv_abi)) void (*ALocationListener_onLocationChanged)(const ALocation *location,
+                                                                          void *context);
+typedef
+    __attribute__((sysv_abi)) void (*ALocationListener_onStatusChanged)(const char *provider,
+                                                                        int status, void *context);
+typedef
+    __attribute__((sysv_abi)) void (*AGeofenceListener_onTransition)(int fence_id, int transition,
+                                                                     const ALocation *location,
+                                                                     void *context);
 
 } // namespace portage::location

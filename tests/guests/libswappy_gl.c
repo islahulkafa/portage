@@ -7,10 +7,7 @@ __attribute__((visibility("default"))) void SwappyGL_init(void *env, void *activ
     (void)activity;
 }
 
-__attribute__((visibility("default"))) void SwappyGL_setWindow(void *window)
-{
-    (void)window;
-}
+__attribute__((visibility("default"))) void SwappyGL_setWindow(void *window) { (void)window; }
 
 __attribute__((visibility("default"))) bool SwappyGL_swap(void *display, void *surface)
 {
@@ -36,7 +33,4 @@ __attribute__((visibility("default"))) void SwappyGL_setAutoSwapInterval(bool en
     (void)enabled;
 }
 
-__attribute__((visibility("default"))) bool SwappyGL_isEnabled(void)
-{
-    return true;
-}
+__attribute__((visibility("default"))) bool SwappyGL_isEnabled(void) { return true; }

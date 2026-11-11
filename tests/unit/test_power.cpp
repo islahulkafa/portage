@@ -146,16 +146,15 @@ TEST(PowerTest, SyntheticPowerAndBatteryJniReflection)
 
     jmethodID get_svc_mid = reinterpret_cast<jmethodID>(const_cast<char *>("getSystemService"));
     jstring power_str = jenv->functions->NewStringUTF(jenv, "power");
-    jobject power_mgr = jenv->functions->CallObjectMethod(jenv, context_obj, get_svc_mid, power_str);
+    jobject power_mgr =
+        jenv->functions->CallObjectMethod(jenv, context_obj, get_svc_mid, power_str);
     ASSERT_NE(power_mgr, nullptr);
 
-    jmethodID is_inter_mid =
-        reinterpret_cast<jmethodID>(const_cast<char *>("isInteractive"));
+    jmethodID is_inter_mid = reinterpret_cast<jmethodID>(const_cast<char *>("isInteractive"));
     jboolean is_inter = jenv->functions->CallBooleanMethod(jenv, power_mgr, is_inter_mid);
     EXPECT_EQ(is_inter, JNI_TRUE);
 
-    jmethodID new_wl_mid =
-        reinterpret_cast<jmethodID>(const_cast<char *>("newWakeLock"));
+    jmethodID new_wl_mid = reinterpret_cast<jmethodID>(const_cast<char *>("newWakeLock"));
     jstring tag_str = jenv->functions->NewStringUTF(jenv, "jni_wake_lock");
     jobject wl_obj = jenv->functions->CallObjectMethod(
         jenv, power_mgr, new_wl_mid, static_cast<uintptr_t>(PARTIAL_WAKE_LOCK), tag_str);
@@ -176,25 +175,21 @@ TEST(PowerTest, SyntheticPowerAndBatteryJniReflection)
     jobject bat_mgr = jenv->functions->CallObjectMethod(jenv, context_obj, get_svc_mid, bat_str);
     ASSERT_NE(bat_mgr, nullptr);
 
-    jmethodID is_charging_mid =
-        reinterpret_cast<jmethodID>(const_cast<char *>("isCharging"));
+    jmethodID is_charging_mid = reinterpret_cast<jmethodID>(const_cast<char *>("isCharging"));
     jboolean is_charging = jenv->functions->CallBooleanMethod(jenv, bat_mgr, is_charging_mid);
     EXPECT_EQ(is_charging, JNI_TRUE);
 
-    jmethodID get_prop_mid =
-        reinterpret_cast<jmethodID>(const_cast<char *>("getIntProperty"));
-    jint cap = jenv->functions->CallIntMethod(
-        jenv, bat_mgr, get_prop_mid, static_cast<uintptr_t>(BATTERY_PROPERTY_CAPACITY));
+    jmethodID get_prop_mid = reinterpret_cast<jmethodID>(const_cast<char *>("getIntProperty"));
+    jint cap = jenv->functions->CallIntMethod(jenv, bat_mgr, get_prop_mid,
+                                              static_cast<uintptr_t>(BATTERY_PROPERTY_CAPACITY));
     EXPECT_EQ(cap, 88);
 
-    jmethodID reg_rcv_mid =
-        reinterpret_cast<jmethodID>(const_cast<char *>("registerReceiver"));
-    jobject intent_obj = jenv->functions->CallObjectMethod(
-        jenv, context_obj, reg_rcv_mid, nullptr, nullptr);
+    jmethodID reg_rcv_mid = reinterpret_cast<jmethodID>(const_cast<char *>("registerReceiver"));
+    jobject intent_obj =
+        jenv->functions->CallObjectMethod(jenv, context_obj, reg_rcv_mid, nullptr, nullptr);
     ASSERT_NE(intent_obj, nullptr);
 
-    jmethodID get_int_extra_mid =
-        reinterpret_cast<jmethodID>(const_cast<char *>("getIntExtra"));
+    jmethodID get_int_extra_mid = reinterpret_cast<jmethodID>(const_cast<char *>("getIntExtra"));
     jstring level_str = jenv->functions->NewStringUTF(jenv, "level");
     jint level = jenv->functions->CallIntMethod(jenv, intent_obj, get_int_extra_mid, level_str, -1);
     EXPECT_EQ(level, 88);

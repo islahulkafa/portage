@@ -39,21 +39,20 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             float norm_y0 = static_cast<float>(y);
             float norm_x1 = static_cast<float>(std::max(0, w - x));
             float norm_y1 = static_cast<float>(std::max(0, h - y));
-            std::vector<ndk::InputPointer> ptrs = {
-                {.id = 0,
-                 .x = norm_x0,
-                 .y = norm_y0,
-                 .raw_x = norm_x0,
-                 .raw_y = norm_y0,
-                 .pressure = 1.0f,
-                 .size = 1.0f},
-                {.id = 1,
-                 .x = norm_x1,
-                 .y = norm_y1,
-                 .raw_x = norm_x1,
-                 .raw_y = norm_y1,
-                 .pressure = 1.0f,
-                 .size = 1.0f}};
+            std::vector<ndk::InputPointer> ptrs = {{.id = 0,
+                                                    .x = norm_x0,
+                                                    .y = norm_y0,
+                                                    .raw_x = norm_x0,
+                                                    .raw_y = norm_y0,
+                                                    .pressure = 1.0f,
+                                                    .size = 1.0f},
+                                                   {.id = 1,
+                                                    .x = norm_x1,
+                                                    .y = norm_y1,
+                                                    .raw_x = norm_x1,
+                                                    .raw_y = norm_y1,
+                                                    .pressure = 1.0f,
+                                                    .size = 1.0f}};
             WindowManager::Instance().DispatchMultiTouch(AMOTION_EVENT_ACTION_DOWN, ptrs);
         } else {
             WindowManager::Instance().DispatchMouse(x, y, w, h, 0);
@@ -73,21 +72,20 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             float norm_y0 = static_cast<float>(y);
             float norm_x1 = static_cast<float>(std::max(0, w - x));
             float norm_y1 = static_cast<float>(std::max(0, h - y));
-            std::vector<ndk::InputPointer> ptrs = {
-                {.id = 0,
-                 .x = norm_x0,
-                 .y = norm_y0,
-                 .raw_x = norm_x0,
-                 .raw_y = norm_y0,
-                 .pressure = 0.0f,
-                 .size = 1.0f},
-                {.id = 1,
-                 .x = norm_x1,
-                 .y = norm_y1,
-                 .raw_x = norm_x1,
-                 .raw_y = norm_y1,
-                 .pressure = 0.0f,
-                 .size = 1.0f}};
+            std::vector<ndk::InputPointer> ptrs = {{.id = 0,
+                                                    .x = norm_x0,
+                                                    .y = norm_y0,
+                                                    .raw_x = norm_x0,
+                                                    .raw_y = norm_y0,
+                                                    .pressure = 0.0f,
+                                                    .size = 1.0f},
+                                                   {.id = 1,
+                                                    .x = norm_x1,
+                                                    .y = norm_y1,
+                                                    .raw_x = norm_x1,
+                                                    .raw_y = norm_y1,
+                                                    .pressure = 0.0f,
+                                                    .size = 1.0f}};
             WindowManager::Instance().DispatchMultiTouch(AMOTION_EVENT_ACTION_UP, ptrs);
         } else {
             WindowManager::Instance().DispatchMouse(x, y, w, h, 1);
@@ -124,21 +122,20 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 float norm_y0 = static_cast<float>(y);
                 float norm_x1 = static_cast<float>(std::max(0, w - x));
                 float norm_y1 = static_cast<float>(std::max(0, h - y));
-                std::vector<ndk::InputPointer> ptrs = {
-                    {.id = 0,
-                     .x = norm_x0,
-                     .y = norm_y0,
-                     .raw_x = norm_x0,
-                     .raw_y = norm_y0,
-                     .pressure = 1.0f,
-                     .size = 1.0f},
-                    {.id = 1,
-                     .x = norm_x1,
-                     .y = norm_y1,
-                     .raw_x = norm_x1,
-                     .raw_y = norm_y1,
-                     .pressure = 1.0f,
-                     .size = 1.0f}};
+                std::vector<ndk::InputPointer> ptrs = {{.id = 0,
+                                                        .x = norm_x0,
+                                                        .y = norm_y0,
+                                                        .raw_x = norm_x0,
+                                                        .raw_y = norm_y0,
+                                                        .pressure = 1.0f,
+                                                        .size = 1.0f},
+                                                       {.id = 1,
+                                                        .x = norm_x1,
+                                                        .y = norm_y1,
+                                                        .raw_x = norm_x1,
+                                                        .raw_y = norm_y1,
+                                                        .pressure = 1.0f,
+                                                        .size = 1.0f}};
                 WindowManager::Instance().DispatchMultiTouch(AMOTION_EVENT_ACTION_MOVE, ptrs);
             } else {
                 WindowManager::Instance().DispatchMouse(x, y, w, h, 2);
@@ -229,8 +226,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 wchar_t path[MAX_PATH];
                 if (DragQueryFileW(hDrop, i, path, MAX_PATH) > 0) {
                     char utf8_path[MAX_PATH * 3];
-                    WideCharToMultiByte(CP_UTF8, 0, path, -1, utf8_path, sizeof(utf8_path),
-                                        nullptr, nullptr);
+                    WideCharToMultiByte(CP_UTF8, 0, path, -1, utf8_path, sizeof(utf8_path), nullptr,
+                                        nullptr);
                     clipboard::ClipboardManager::Instance().DispatchDropEvent(
                         static_cast<float>(pt.x), static_cast<float>(pt.y), utf8_path);
                 }
@@ -381,12 +378,16 @@ void WindowManager::DispatchResize(uint32_t width, uint32_t height)
 void WindowManager::DispatchClose()
 {
     CloseEventCallback cb;
+    bool should_invoke = false;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        cb = m_close_callback;
         m_running.store(false);
+        if (!m_close_dispatched.exchange(true)) {
+            cb = m_close_callback;
+            should_invoke = static_cast<bool>(cb);
+        }
     }
-    if (cb) {
+    if (should_invoke) {
         cb();
     }
     m_cv.notify_all();
@@ -395,13 +396,14 @@ void WindowManager::DispatchClose()
 void WindowManager::WaitUntilClosed() noexcept
 {
     std::unique_lock<std::mutex> lock(m_mutex);
-    m_cv.wait(lock, [this] { return !m_running.load() || m_hwnd == nullptr; });
+    m_cv.wait(lock, [this] { return !m_running.load() && m_hwnd == nullptr; });
 }
 
 void WindowManager::Reset() noexcept
 {
     DestroyWindow();
     ClearCallbacks();
+    m_close_dispatched.store(false);
     m_headless.store(false);
     m_frames_presented.store(0);
     m_width = 1280;
@@ -410,15 +412,31 @@ void WindowManager::Reset() noexcept
 
 bool WindowManager::EnsureWindow(uint32_t width, uint32_t height, std::string_view title)
 {
-    std::unique_lock<std::mutex> lock(m_mutex);
+    std::thread finished_thread;
+    {
+        std::unique_lock<std::mutex> lock(m_mutex);
 
-    m_width = width;
-    m_height = height;
+        m_width = width;
+        m_height = height;
 
-    if (m_headless.load()) {
-        return true;
+        if (m_headless.load()) {
+            return true;
+        }
+
+        if (m_hwnd != NULL) {
+            return true;
+        }
+
+        if (m_window_thread.joinable() && !m_running.load()) {
+            finished_thread = std::move(m_window_thread);
+        }
     }
 
+    if (finished_thread.joinable() && finished_thread.get_id() != std::this_thread::get_id()) {
+        finished_thread.join();
+    }
+
+    std::unique_lock<std::mutex> lock(m_mutex);
     if (m_hwnd != NULL) {
         return true;
     }
@@ -426,12 +444,21 @@ bool WindowManager::EnsureWindow(uint32_t width, uint32_t height, std::string_vi
     std::wstring wtitle(title.begin(), title.end());
     m_running.store(true);
     m_window_ready.store(false);
+    m_close_dispatched.store(false);
 
     m_window_thread = std::thread(&WindowManager::WindowThreadFunc, this, width, height, wtitle);
 
     m_cv.wait(lock, [this] { return m_window_ready.load(); });
 
-    return m_hwnd != NULL;
+    bool created = (m_hwnd != NULL);
+    if (!created && m_window_thread.joinable()) {
+        finished_thread = std::move(m_window_thread);
+        lock.unlock();
+        if (finished_thread.get_id() != std::this_thread::get_id()) {
+            finished_thread.join();
+        }
+    }
+    return created;
 }
 
 void WindowManager::WindowThreadFunc(uint32_t width, uint32_t height, std::wstring title)
@@ -457,12 +484,15 @@ void WindowManager::WindowThreadFunc(uint32_t width, uint32_t height, std::wstri
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_hwnd = hwnd;
+        if (!hwnd) {
+            m_running.store(false);
+        }
         m_window_ready.store(true);
     }
     m_cv.notify_all();
 
     if (!hwnd) {
-        m_running.store(false);
+        UnregisterClassW(L"PortageWindowClass", m_hinstance);
         return;
     }
 
@@ -497,21 +527,30 @@ void WindowManager::WindowThreadFunc(uint32_t width, uint32_t height, std::wstri
 
 void WindowManager::DestroyWindow() noexcept
 {
-    if (!m_running.load() && m_hwnd == nullptr) {
-        return;
+    HWND hwnd = nullptr;
+    std::thread thread_to_join;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        hwnd = m_hwnd;
+        m_running.store(false);
+        if (m_window_thread.joinable() && m_window_thread.get_id() != std::this_thread::get_id()) {
+            thread_to_join = std::move(m_window_thread);
+        }
     }
 
-    m_running.store(false);
-
-    if (m_hwnd) {
-        PostMessageW(m_hwnd, WM_CLOSE, 0, 0);
+    if (hwnd != nullptr) {
+        PostMessageW(hwnd, WM_CLOSE, 0, 0);
     }
 
-    if (m_window_thread.joinable()) {
-        m_window_thread.join();
+    if (thread_to_join.joinable()) {
+        thread_to_join.join();
     }
 
-    m_hwnd = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_hwnd = nullptr;
+    }
+    m_cv.notify_all();
 }
 
 } // namespace portage::wsi

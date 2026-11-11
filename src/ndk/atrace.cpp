@@ -16,8 +16,7 @@ TraceManager &TraceManager::Instance() noexcept
 uint64_t TraceManager::QueryTimestampNs() noexcept
 {
     auto now = std::chrono::steady_clock::now().time_since_epoch();
-    return static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
 }
 
 void TraceManager::SetEnabled(bool enabled) noexcept
@@ -25,10 +24,7 @@ void TraceManager::SetEnabled(bool enabled) noexcept
     enabled_.store(enabled, std::memory_order_relaxed);
 }
 
-bool TraceManager::IsEnabled() const noexcept
-{
-    return enabled_.load(std::memory_order_relaxed);
-}
+bool TraceManager::IsEnabled() const noexcept { return enabled_.load(std::memory_order_relaxed); }
 
 void TraceManager::BeginSection(std::string_view section_name)
 {

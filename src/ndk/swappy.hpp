@@ -78,5 +78,4 @@ void SwappyGL_setTargetFrameRateHz(uint32_t targetFps) __attribute__((sysv_abi))
 int64_t SwappyGL_getSwapIntervalNS() __attribute__((sysv_abi));
 void SwappyGL_setAutoSwapInterval(bool enabled) __attribute__((sysv_abi));
 bool SwappyGL_isEnabled() __attribute__((sysv_abi));
-
 }

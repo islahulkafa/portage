@@ -414,6 +414,15 @@ struct JniSyntheticObject {
     bool bitmap_locked{false};
 };
 
+struct JniSharedPrefValue {
+    enum class Kind { String, Int, Float, Bool };
+    Kind kind{Kind::String};
+    std::string str_val{};
+    int32_t int_val{0};
+    float float_val{0.0f};
+    bool bool_val{false};
+};
+
 class JniEnvironment {
   public:
     static JniEnvironment &Instance() noexcept;
@@ -433,6 +442,12 @@ class JniEnvironment {
 
     jobject CreateDirectByteBuffer(void *address, jlong capacity);
     jobject CreateBitmap(uint32_t width, uint32_t height, int32_t format = 1);
+    jobject CreateBitmapFromPixels(uint32_t width, uint32_t height, int32_t format, uint32_t stride,
+                                   std::vector<uint8_t> pixels);
+
+    std::unordered_map<std::string, JniSharedPrefValue> &
+    GetSharedPrefsMap(std::string_view prefs_name);
+    void SaveSharedPrefs(std::string_view prefs_name) const;
 
     void RegisterNativeMethod(std::string_view className, std::string_view methodName,
                               std::string_view sig, void *fnPtr);
@@ -488,6 +503,8 @@ class JniEnvironment {
     std::vector<std::shared_ptr<JniSyntheticObject>> object_table_{};
     std::unordered_map<jobject, std::shared_ptr<JniSyntheticObject>> objects_by_handle_{};
     std::unordered_map<std::string, void *> registered_natives_{};
+    std::unordered_map<std::string, std::unordered_map<std::string, JniSharedPrefValue>>
+        shared_prefs_{};
 
     uintptr_t next_handle_{0x1000};
 

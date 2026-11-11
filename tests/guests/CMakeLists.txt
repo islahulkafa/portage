@@ -207,6 +207,7 @@ add_custom_command(
         -shared
         -fPIC
         -O2
+        "-Wl,-soname,libaaudio.so"
         "${CMAKE_CURRENT_SOURCE_DIR}/libaaudio.c"
         -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libaaudio.so"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libaaudio.c"
@@ -224,6 +225,7 @@ add_custom_command(
         -shared
         -fPIC
         -O2
+        "-Wl,-soname,libOpenSLES.so"
         "${CMAKE_CURRENT_SOURCE_DIR}/libOpenSLES.c"
         -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libOpenSLES.so"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libOpenSLES.c"
@@ -595,6 +597,101 @@ add_custom_command(
 )
 add_custom_target(build_guest_test_bionic_extensions_guest DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/test_bionic_extensions_guest.elf")
 
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/test_cpp_runtime_guest.elf"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -fPIE
+        "-Wl,-pie"
+        "-Wl,--no-dynamic-linker"
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_cpp_runtime_guest.c"
+        "-L${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+        -lc
+        -ldl
+        -o "${CMAKE_CURRENT_BINARY_DIR}/test_cpp_runtime_guest.elf"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_cpp_runtime_guest.c"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libc.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libdl.so"
+    COMMENT "Cross-compiling Android x86_64 C++ runtime and Bionic stdio test ELF: test_cpp_runtime_guest.elf"
+)
+add_custom_target(build_guest_test_cpp_runtime_guest DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/test_cpp_runtime_guest.elf")
+
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/test_aaudio_lifecycle.elf"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -fno-stack-protector
+        -fPIE
+        "-Wl,-pie"
+        "-Wl,--no-dynamic-linker"
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_aaudio_lifecycle.c"
+        "-L${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+        -laaudio
+        -o "${CMAKE_CURRENT_BINARY_DIR}/test_aaudio_lifecycle.elf"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_aaudio_lifecycle.c"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libaaudio.so"
+    COMMENT "Cross-compiling Android x86_64 AAudio lifecycle test ELF: test_aaudio_lifecycle.elf"
+)
+add_custom_target(build_guest_test_aaudio_lifecycle DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/test_aaudio_lifecycle.elf")
+
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/test_mediandk_pipeline.elf"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -fno-stack-protector
+        -fPIE
+        "-Wl,-pie"
+        "-Wl,--no-dynamic-linker"
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_mediandk_pipeline.c"
+        "-L${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+        -lmediandk
+        -landroid
+        -o "${CMAKE_CURRENT_BINARY_DIR}/test_mediandk_pipeline.elf"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_mediandk_pipeline.c"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libmediandk.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libandroid.so"
+    COMMENT "Cross-compiling Android x86_64 Media NDK pipeline test ELF: test_mediandk_pipeline.elf"
+)
+add_custom_target(build_guest_test_mediandk_pipeline DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/test_mediandk_pipeline.elf")
+
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/test_camera2_pipeline.elf"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -fno-stack-protector
+        -fPIE
+        "-Wl,-pie"
+        "-Wl,--no-dynamic-linker"
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_camera2_pipeline.c"
+        "-L${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+        -lcamera2ndk
+        -lmediandk
+        -landroid
+        -o "${CMAKE_CURRENT_BINARY_DIR}/test_camera2_pipeline.elf"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_camera2_pipeline.c"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libcamera2ndk.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libmediandk.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libandroid.so"
+    COMMENT "Cross-compiling Android x86_64 Camera2 NDK pipeline test ELF: test_camera2_pipeline.elf"
+)
+add_custom_target(build_guest_test_camera2_pipeline DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/test_camera2_pipeline.elf")
+
 add_custom_target(build_guest_binaries
     DEPENDS
         "${CMAKE_CURRENT_BINARY_DIR}/hello_freestanding.elf"
@@ -646,6 +743,10 @@ add_custom_target(build_guest_binaries
         "${CMAKE_CURRENT_BINARY_DIR}/libtest_game_engine.so"
         "${CMAKE_CURRENT_BINARY_DIR}/libtest_gles_quad.so"
         "${CMAKE_CURRENT_BINARY_DIR}/test_bionic_extensions_guest.elf"
+        "${CMAKE_CURRENT_BINARY_DIR}/test_aaudio_lifecycle.elf"
+        "${CMAKE_CURRENT_BINARY_DIR}/test_mediandk_pipeline.elf"
+        "${CMAKE_CURRENT_BINARY_DIR}/test_camera2_pipeline.elf"
+        "${CMAKE_CURRENT_BINARY_DIR}/test_cpp_runtime_guest.elf"
 )
 
 add_custom_command(
@@ -670,3 +771,124 @@ add_custom_target(sample_game_engine_apk ALL
     DEPENDS "${CMAKE_BINARY_DIR}/game_engine.apk"
             "${CMAKE_BINARY_DIR}/main.1.com.portage.gameengine.obb"
 )
+
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libz.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "-Wl,-soname,libz.so"
+        "${CMAKE_CURRENT_SOURCE_DIR}/libz.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libz.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libz.c"
+    COMMENT "Cross-compiling Android x86_64 shared library: libz.so"
+)
+
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libm.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "-Wl,-soname,libm.so"
+        "${CMAKE_CURRENT_SOURCE_DIR}/libm.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libm.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libm.c"
+    COMMENT "Cross-compiling Android x86_64 shared library: libm.so"
+)
+
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/libtest_ndk_showcase.so"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -fno-stack-protector
+        -shared
+        -fPIC
+        -O2
+        "-L${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_ndk_showcase.c"
+        -landroid
+        -ljnigraphics
+        -lGLESv2
+        -lz
+        -lm
+        -lc
+        -o "${CMAKE_CURRENT_BINARY_DIR}/libtest_ndk_showcase.so"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_ndk_showcase.c"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libandroid.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libjnigraphics.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libGLESv2.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libz.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libm.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libc.so"
+    COMMENT "Cross-compiling Android x86_64 NDK showcase library: libtest_ndk_showcase.so"
+)
+
+add_custom_command(
+    OUTPUT "${CMAKE_BINARY_DIR}/ndk_showcase.apk"
+    COMMAND assemble_samples
+        --showcase
+        "${CMAKE_BINARY_DIR}/ndk_showcase.apk"
+        com.portage.ndkshowcase
+        test_ndk_showcase
+        "${CMAKE_CURRENT_BINARY_DIR}/libtest_ndk_showcase.so"
+    DEPENDS
+        assemble_samples
+        "${CMAKE_CURRENT_BINARY_DIR}/libtest_ndk_showcase.so"
+    COMMENT "Assembling NDK compatibility showcase APK: ndk_showcase.apk"
+)
+
+add_custom_target(sample_ndk_showcase_apk ALL
+    DEPENDS "${CMAKE_BINARY_DIR}/ndk_showcase.apk"
+)
+
+if(PORTAGE_ANDROID_NDK_COMPILER AND PORTAGE_ANDROID_NDK_LIBCXX)
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/libtest_ndk_cpp_showcase.so"
+        COMMAND "${PORTAGE_ANDROID_NDK_COMPILER}"
+            -std=c++20
+            -shared
+            -fPIC
+            -fexceptions
+            -frtti
+            -O2
+            "${CMAKE_CURRENT_SOURCE_DIR}/test_ndk_cpp_showcase.cpp"
+            -llog
+            -landroid
+            -o "${CMAKE_CURRENT_BINARY_DIR}/libtest_ndk_cpp_showcase.so"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/test_ndk_cpp_showcase.cpp"
+        COMMENT "Cross-compiling Android x86_64 NDK C++20 showcase library: libtest_ndk_cpp_showcase.so"
+    )
+
+    add_custom_command(
+        OUTPUT "${CMAKE_BINARY_DIR}/ndk_cpp_showcase.apk"
+        COMMAND assemble_samples
+            --showcase
+            "${CMAKE_BINARY_DIR}/ndk_cpp_showcase.apk"
+            com.portage.ndkcppshowcase
+            test_ndk_cpp_showcase
+            "${CMAKE_CURRENT_BINARY_DIR}/libtest_ndk_cpp_showcase.so"
+            "${PORTAGE_ANDROID_NDK_LIBCXX}"
+        DEPENDS
+            assemble_samples
+            "${CMAKE_CURRENT_BINARY_DIR}/libtest_ndk_cpp_showcase.so"
+        COMMENT "Assembling NDK C++ STL showcase APK: ndk_cpp_showcase.apk"
+    )
+
+    add_custom_target(sample_ndk_cpp_showcase_apk ALL
+        DEPENDS "${CMAKE_BINARY_DIR}/ndk_cpp_showcase.apk"
+    )
+endif()

@@ -66,7 +66,7 @@ CreateTestObbArchive(const std::vector<std::pair<std::string, std::string>> &fil
         meta.name = name;
         meta.data.assign(content.begin(), content.end());
         meta.crc = static_cast<uint32_t>(crc32(0L, reinterpret_cast<const Bytef *>(content.data()),
-                                                static_cast<uInt>(content.size())));
+                                               static_cast<uInt>(content.size())));
         meta.offset = static_cast<uint32_t>(zip.size());
 
         WriteU32(zip, 0x04034b50);
@@ -232,9 +232,9 @@ TEST_F(StorageManagerTest, FooterParsingValidAndAlt)
 
 TEST_F(StorageManagerTest, MountAndUnmountObb)
 {
-    auto obb_bytes = CreateTestObbArchive({{"assets/config.json", "{\"key\":\"val\"}"},
-                                           {"data/level1.dat", "LEVEL1_DATA"}},
-                                          "com.portage.sample", 1);
+    auto obb_bytes = CreateTestObbArchive(
+        {{"assets/config.json", "{\"key\":\"val\"}"}, {"data/level1.dat", "LEVEL1_DATA"}},
+        "com.portage.sample", 1);
     auto host_obb_file = test_dir_ / "rootfs" / "sdcard" / "test.obb";
     {
         std::ofstream out(host_obb_file, std::ios::binary);
@@ -325,7 +325,8 @@ TEST_F(StorageManagerTest, ScopedStorageVfsResolution)
     auto res2 = vfs_->Resolve("/sdcard/Download");
     EXPECT_EQ(res1.host_path, res2.host_path);
 
-    auto res3 = vfs_->Resolve("/storage/emulated/0/Android/obb/com.test.app/main.1.com.test.app.obb");
+    auto res3 =
+        vfs_->Resolve("/storage/emulated/0/Android/obb/com.test.app/main.1.com.test.app.obb");
     auto res4 = vfs_->Resolve("/sdcard/Android/obb/com.test.app/main.1.com.test.app.obb");
     EXPECT_EQ(res3.host_path, res4.host_path);
 }
@@ -349,27 +350,33 @@ TEST_F(StorageManagerTest, JniSyntheticEnvironment)
     auto *env = jni.GetJNIEnv();
     ASSERT_NE(env, nullptr);
 
-    package::jclass clazz = reinterpret_cast<package::jclass>(const_cast<char *>("android/os/Environment"));
-    package::jmethodID mid_dir = reinterpret_cast<package::jmethodID>(const_cast<char *>("getExternalStorageDirectory"));
+    package::jclass clazz =
+        reinterpret_cast<package::jclass>(const_cast<char *>("android/os/Environment"));
+    package::jmethodID mid_dir =
+        reinterpret_cast<package::jmethodID>(const_cast<char *>("getExternalStorageDirectory"));
     package::jobject dir_obj = env->functions->CallStaticObjectMethod(env, clazz, mid_dir);
     ASSERT_NE(dir_obj, nullptr);
 
-    package::jmethodID mid_path = reinterpret_cast<package::jmethodID>(const_cast<char *>("getAbsolutePath"));
+    package::jmethodID mid_path =
+        reinterpret_cast<package::jmethodID>(const_cast<char *>("getAbsolutePath"));
     package::jobject path_str = env->functions->CallObjectMethod(env, dir_obj, mid_path);
     ASSERT_NE(path_str, nullptr);
     const char *path_chars = env->functions->GetStringUTFChars(env, path_str, nullptr);
     EXPECT_STREQ(path_chars, "/storage/emulated/0");
     env->functions->ReleaseStringUTFChars(env, path_str, path_chars);
 
-    package::jmethodID mid_state = reinterpret_cast<package::jmethodID>(const_cast<char *>("getExternalStorageState"));
+    package::jmethodID mid_state =
+        reinterpret_cast<package::jmethodID>(const_cast<char *>("getExternalStorageState"));
     package::jobject state_str = env->functions->CallStaticObjectMethod(env, clazz, mid_state);
     ASSERT_NE(state_str, nullptr);
     const char *state_chars = env->functions->GetStringUTFChars(env, state_str, nullptr);
     EXPECT_STREQ(state_chars, "mounted");
     env->functions->ReleaseStringUTFChars(env, state_str, state_chars);
 
-    package::jobject dummy_ctx = reinterpret_cast<package::jobject>(const_cast<char *>("dummy_context"));
-    package::jmethodID mid_obb = reinterpret_cast<package::jmethodID>(const_cast<char *>("getObbDir"));
+    package::jobject dummy_ctx =
+        reinterpret_cast<package::jobject>(const_cast<char *>("dummy_context"));
+    package::jmethodID mid_obb =
+        reinterpret_cast<package::jmethodID>(const_cast<char *>("getObbDir"));
     package::jobject obb_obj = env->functions->CallObjectMethod(env, dummy_ctx, mid_obb);
     ASSERT_NE(obb_obj, nullptr);
     package::jobject obb_path_str = env->functions->CallObjectMethod(env, obb_obj, mid_path);

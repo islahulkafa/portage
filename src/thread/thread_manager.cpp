@@ -33,6 +33,8 @@ DWORD WINAPI WorkerThreadThunk(LPVOID lpParam)
 
     if (tls != 0) {
         arch::SetActiveTcb(tls);
+    } else {
+        ThreadManager::Instance().EnsureCurrentThreadTcb();
     }
 
     if ((flags & LINUX_CLONE_CHILD_SETTID) && child_tid_ptr != 0) {
@@ -80,6 +82,34 @@ ThreadManager &ThreadManager::Instance() noexcept
     return instance;
 }
 
+uintptr_t ThreadManager::EnsureCurrentThreadTcb() noexcept
+{
+    arch::EnsureVectoredHandlerInstalled();
+    uintptr_t current = arch::GetActiveTcb();
+    if (current != 0) {
+        return current;
+    }
+
+    static thread_local BionicTcb tl_tcb;
+    tl_tcb.self = &tl_tcb;
+    tl_tcb.stack_guard = 0x595e9fbd94fda766ULL;
+    uintptr_t tcb_addr = reinterpret_cast<uintptr_t>(&tl_tcb);
+
+    arch::SetActiveTcb(tcb_addr);
+
+    DWORD win32_tid = GetCurrentThreadId();
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_win32_to_tid.find(win32_tid);
+    if (it != m_win32_to_tid.end()) {
+        auto tit = m_threads.find(it->second);
+        if (tit != m_threads.end() && tit->second) {
+            tit->second->tcb = tcb_addr;
+        }
+    }
+
+    return tcb_addr;
+}
+
 int ThreadManager::RegisterMainThread() noexcept
 {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -93,6 +123,14 @@ int ThreadManager::RegisterMainThread() noexcept
     uint64_t sl = __readgsqword(0x10);
     thread->stack_limit = sl;
     thread->stack_size = (sb > sl) ? static_cast<size_t>(sb - sl) : (8 * 1024 * 1024);
+
+    static thread_local BionicTcb tl_tcb;
+    tl_tcb.self = &tl_tcb;
+    tl_tcb.stack_guard = 0x595e9fbd94fda766ULL;
+    uintptr_t tcb_addr = reinterpret_cast<uintptr_t>(&tl_tcb);
+    thread->tcb = tcb_addr;
+    arch::EnsureVectoredHandlerInstalled();
+    arch::SetActiveTcb(tcb_addr);
 
     m_threads[thread->tid] = thread;
     m_win32_to_tid[win32_tid] = thread->tid;
@@ -244,7 +282,9 @@ void ThreadManager::OnThreadExit(int tid, int exit_code) noexcept
             it->second->is_exited = true;
             it->second->exit_code = exit_code;
             clear_tid_ptr = it->second->clear_child_tid;
+            it->second->clear_child_tid = 0;
             hThread = it->second->win32_handle;
+            it->second->win32_handle = INVALID_HANDLE_VALUE;
         }
     }
 
@@ -253,7 +293,7 @@ void ThreadManager::OnThreadExit(int tid, int exit_code) noexcept
         WakeByAddressAll(reinterpret_cast<void *>(clear_tid_ptr));
     }
 
-    if (hThread != INVALID_HANDLE_VALUE && hThread != GetCurrentThread()) {
+    if (hThread != nullptr && hThread != INVALID_HANDLE_VALUE && hThread != GetCurrentThread()) {
         CloseHandle(hThread);
     }
 }
@@ -366,8 +406,8 @@ std::shared_ptr<GuestThread> ThreadManager::ResolvePthreadHandle(uintptr_t handl
     }
 
     for (const auto &[tid, th] : m_threads) {
-        if (th && ((th->tcb != 0 && th->tcb == handle) ||
-                   static_cast<uintptr_t>(th->tid) == handle)) {
+        if (th &&
+            ((th->tcb != 0 && th->tcb == handle) || static_cast<uintptr_t>(th->tid) == handle)) {
             return th;
         }
     }

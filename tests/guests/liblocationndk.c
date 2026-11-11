@@ -10,7 +10,8 @@ typedef struct ALocation ALocation;
 
 typedef void (*ALocationListener_onLocationChanged)(const ALocation *location, void *context);
 typedef void (*ALocationListener_onStatusChanged)(const char *provider, int status, void *context);
-typedef void (*AGeofenceListener_onTransition)(int fence_id, int transition, const ALocation *location, void *context);
+typedef void (*AGeofenceListener_onTransition)(int fence_id, int transition,
+                                               const ALocation *location, void *context);
 
 __attribute__((visibility("default"))) ALocationManager *ALocationManager_create(void)
 {
@@ -22,25 +23,26 @@ __attribute__((visibility("default"))) void ALocationManager_destroy(ALocationMa
     (void)mgr;
 }
 
-__attribute__((visibility("default"))) int ALocationManager_isProviderEnabled(
-    ALocationManager *mgr, const char *provider)
+__attribute__((visibility("default"))) int ALocationManager_isProviderEnabled(ALocationManager *mgr,
+                                                                              const char *provider)
 {
     (void)mgr;
     (void)provider;
     return 0;
 }
 
-__attribute__((visibility("default"))) ALocation *ALocationManager_getLastKnownLocation(
-    ALocationManager *mgr, const char *provider)
+__attribute__((visibility("default"))) ALocation *
+ALocationManager_getLastKnownLocation(ALocationManager *mgr, const char *provider)
 {
     (void)mgr;
     (void)provider;
     return (ALocation *)0;
 }
 
-__attribute__((visibility("default"))) int ALocationManager_requestLocationUpdates(
-    ALocationManager *mgr, const char *provider, int64_t min_time_ms, float min_distance_m,
-    ALocationListener_onLocationChanged callback, void *context)
+__attribute__((visibility("default"))) int
+ALocationManager_requestLocationUpdates(ALocationManager *mgr, const char *provider,
+                                        int64_t min_time_ms, float min_distance_m,
+                                        ALocationListener_onLocationChanged callback, void *context)
 {
     (void)mgr;
     (void)provider;
@@ -51,8 +53,8 @@ __attribute__((visibility("default"))) int ALocationManager_requestLocationUpdat
     return 0;
 }
 
-__attribute__((visibility("default"))) int ALocationManager_removeUpdates(
-    ALocationManager *mgr, ALocationListener_onLocationChanged callback)
+__attribute__((visibility("default"))) int
+ALocationManager_removeUpdates(ALocationManager *mgr, ALocationListener_onLocationChanged callback)
 {
     (void)mgr;
     (void)callback;
@@ -101,7 +103,8 @@ __attribute__((visibility("default"))) int64_t ALocation_getTime(const ALocation
     return 0;
 }
 
-__attribute__((visibility("default"))) int64_t ALocation_getElapsedRealtimeNanos(const ALocation *loc)
+__attribute__((visibility("default"))) int64_t
+ALocation_getElapsedRealtimeNanos(const ALocation *loc)
 {
     (void)loc;
     return 0;
@@ -131,15 +134,13 @@ __attribute__((visibility("default"))) int ALocation_hasAccuracy(const ALocation
     return 0;
 }
 
-__attribute__((visibility("default"))) void ALocation_destroy(ALocation *loc)
-{
-    (void)loc;
-}
+__attribute__((visibility("default"))) void ALocation_destroy(ALocation *loc) { (void)loc; }
 
-__attribute__((visibility("default"))) int AGeofenceManager_addCircularGeofence(
-    ALocationManager *mgr, int fence_id, double lat, double lon, float radius_m,
-    int64_t expiration_ms, int64_t dwell_duration_ms, uint32_t transition_mask,
-    AGeofenceListener_onTransition callback, void *context)
+__attribute__((visibility("default"))) int
+AGeofenceManager_addCircularGeofence(ALocationManager *mgr, int fence_id, double lat, double lon,
+                                     float radius_m, int64_t expiration_ms,
+                                     int64_t dwell_duration_ms, uint32_t transition_mask,
+                                     AGeofenceListener_onTransition callback, void *context)
 {
     (void)mgr;
     (void)fence_id;
@@ -154,8 +155,8 @@ __attribute__((visibility("default"))) int AGeofenceManager_addCircularGeofence(
     return 0;
 }
 
-__attribute__((visibility("default"))) int AGeofenceManager_removeGeofence(
-    ALocationManager *mgr, int fence_id)
+__attribute__((visibility("default"))) int AGeofenceManager_removeGeofence(ALocationManager *mgr,
+                                                                           int fence_id)
 {
     (void)mgr;
     (void)fence_id;

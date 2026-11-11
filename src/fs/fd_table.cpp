@@ -45,8 +45,7 @@ bool SyncFenceState::IsSignaled() noexcept
     if (gl_sync) {
         const auto &tbl = gles::WglBridge::Instance().GetDispatchTable();
         if (tbl.glClientWaitSync) {
-            const ::GLenum status =
-                tbl.glClientWaitSync(static_cast<::GLsync>(gl_sync), 0, 0);
+            const ::GLenum status = tbl.glClientWaitSync(static_cast<::GLsync>(gl_sync), 0, 0);
             if (status == ::GL_ALREADY_SIGNALED || status == ::GL_CONDITION_SATISFIED) {
                 signaled = true;
                 if (wake_event && wake_event != INVALID_HANDLE_VALUE) {
@@ -89,9 +88,8 @@ uint64_t TimerFdState::RefreshExpirationsLocked(bool force_signaled)
     }
 
     auto now = std::chrono::steady_clock::now();
-    bool signaled = force_signaled ||
-                    (timer_handle && timer_handle != INVALID_HANDLE_VALUE &&
-                     WaitForSingleObject(timer_handle, 0) == WAIT_OBJECT_0);
+    bool signaled = force_signaled || (timer_handle && timer_handle != INVALID_HANDLE_VALUE &&
+                                       WaitForSingleObject(timer_handle, 0) == WAIT_OBJECT_0);
 
     if (now >= next_expiration) {
         if (interval_ns > 0) {
@@ -114,8 +112,7 @@ uint64_t TimerFdState::RefreshExpirationsLocked(bool force_signaled)
         if (interval_ns > 0) {
             counter += 1;
             next_expiration += std::chrono::nanoseconds(interval_ns);
-            auto rem =
-                std::chrono::duration_cast<std::chrono::nanoseconds>(next_expiration - now);
+            auto rem = std::chrono::duration_cast<std::chrono::nanoseconds>(next_expiration - now);
             ArmWaitableTimerLocked(rem);
         } else {
             counter += 1;
@@ -148,8 +145,7 @@ void TimerFdState::GetTime(int64_t &out_value_ns, int64_t &out_interval_ns)
 }
 
 void TimerFdState::SetTime(bool arm, std::chrono::steady_clock::time_point target_tp,
-                           int64_t new_interval_ns, int64_t *old_value_ns,
-                           int64_t *old_interval_ns)
+                           int64_t new_interval_ns, int64_t *old_value_ns, int64_t *old_interval_ns)
 {
     std::lock_guard<std::mutex> lock(mutex);
     if (old_value_ns || old_interval_ns) {
@@ -162,9 +158,9 @@ void TimerFdState::SetTime(bool arm, std::chrono::steady_clock::time_point targe
                 *old_value_ns = 0;
             } else {
                 auto now = std::chrono::steady_clock::now();
-                auto rem = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                               next_expiration - now)
-                               .count();
+                auto rem =
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(next_expiration - now)
+                        .count();
                 *old_value_ns = (rem > 0) ? rem : 0;
             }
         }
@@ -230,8 +226,7 @@ int64_t TimerFdState::ReadExpirations(bool nonblock, uint64_t &out_expirations)
 
         if (num_handles > 0) {
             DWORD wait_res = WaitForMultipleObjects(num_handles, handles, FALSE, INFINITE);
-            if (wait_res == WAIT_OBJECT_0 && th && th != INVALID_HANDLE_VALUE &&
-                handles[0] == th) {
+            if (wait_res == WAIT_OBJECT_0 && th && th != INVALID_HANDLE_VALUE && handles[0] == th) {
                 std::lock_guard<std::mutex> lock(mutex);
                 if (generation == saved_gen) {
                     uint64_t cur = RefreshExpirationsLocked(true);
@@ -687,7 +682,8 @@ int FileDescriptorTable::CloseRange(unsigned int first, unsigned int last, unsig
     if (first > last) {
         return -22; // -EINVAL
     }
-    constexpr unsigned int valid_flags = 0x2 /* CLOSE_RANGE_UNSHARE */ | 0x4 /* CLOSE_RANGE_CLOEXEC */;
+    constexpr unsigned int valid_flags =
+        0x2 /* CLOSE_RANGE_UNSHARE */ | 0x4 /* CLOSE_RANGE_CLOEXEC */;
     if ((flags & ~valid_flags) != 0) {
         return -22; // -EINVAL
     }

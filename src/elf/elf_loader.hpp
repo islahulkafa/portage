@@ -74,12 +74,14 @@ struct LoadedElf {
     std::vector<uintptr_t> init_functions{};
     std::vector<uintptr_t> fini_functions{};
     std::vector<std::shared_ptr<tlsdesc_dynamic_arg>> tlsdesc_args{};
+    std::vector<std::string> unresolved_symbols{};
 
     [[nodiscard]] uintptr_t FindSymbol(std::string_view name) const;
 };
 
 struct LoadOptions {
     bool lazy_binding{false};
+    bool trap_unresolved_symbols{true};
     void *reserved_addr{nullptr};
     size_t reserved_size{0};
 };

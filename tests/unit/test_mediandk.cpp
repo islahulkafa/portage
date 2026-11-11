@@ -115,8 +115,7 @@ TEST_F(MediaNdkTest, ExtractsTrackInformationAndSamples)
     EXPECT_EQ(AMediaExtractor_selectTrack(ex, 0), AMEDIA_OK);
 
     std::vector<uint8_t> sample_buf(4096);
-    int64_t read_bytes =
-        AMediaExtractor_readSampleData(ex, sample_buf.data(), sample_buf.size());
+    int64_t read_bytes = AMediaExtractor_readSampleData(ex, sample_buf.data(), sample_buf.size());
     EXPECT_GT(read_bytes, 0);
 
     EXPECT_EQ(AMediaExtractor_getSampleTrackIndex(ex), 0);
@@ -213,9 +212,9 @@ TEST_F(MediaNdkTest, DecodesVideoStreamAndBlitsToWindow)
         in_words[i] = 0xAABBCCDD;
     }
 
-    EXPECT_EQ(AMediaCodec_queueInputBuffer(codec, static_cast<size_t>(in_idx), 0, frame_bytes,
-                                           2000, 0),
-              AMEDIA_OK);
+    EXPECT_EQ(
+        AMediaCodec_queueInputBuffer(codec, static_cast<size_t>(in_idx), 0, frame_bytes, 2000, 0),
+        AMEDIA_OK);
 
     AMediaCodecBufferInfo out_info{};
     int64_t out_idx = AMediaCodec_dequeueOutputBuffer(codec, &out_info, 1000);
@@ -317,6 +316,24 @@ TEST_F(MediaNdkTest, RegistersAllNdkSymbols)
         "AMediaCodec_getOutputFormat",
         "AMediaCodec_releaseOutputBuffer",
         "AMediaCodec_releaseOutputBufferAtTime",
+        "AMediaCodec_getName",
+        "AMediaCodec_releaseName",
+        "AMediaCodec_getInputFormat",
+        "AMediaCodec_getBufferFormat",
+        "AMediaCodec_setParameters",
+        "AMediaCodec_signalEndOfInputStream",
+        "AMediaCodec_createInputSurface",
+        "AMediaCodec_createPersistentInputSurface",
+        "AMediaCodec_setInputSurface",
+        "AMediaCodec_setAsyncNotifyCallback",
+        "AMediaMuxer_new",
+        "AMediaMuxer_delete",
+        "AMediaMuxer_setLocation",
+        "AMediaMuxer_setOrientationHint",
+        "AMediaMuxer_addTrack",
+        "AMediaMuxer_start",
+        "AMediaMuxer_writeSampleData",
+        "AMediaMuxer_stop",
     };
 
     for (const char *sym : media_symbols) {

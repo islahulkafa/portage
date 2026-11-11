@@ -42,10 +42,8 @@ std::string ProcFs::CanonicalizePath(std::string_view path)
         size_t next_slash = s.find('/', 6);
         std::string first_part =
             (next_slash == std::string::npos) ? s.substr(6) : s.substr(6, next_slash - 6);
-        if (!first_part.empty() &&
-            std::all_of(first_part.begin(), first_part.end(), [](unsigned char c) {
-                return std::isdigit(c);
-            })) {
+        if (!first_part.empty() && std::all_of(first_part.begin(), first_part.end(),
+                                               [](unsigned char c) { return std::isdigit(c); })) {
             if (next_slash == std::string::npos) {
                 return "/proc/self";
             }
@@ -224,10 +222,7 @@ std::string ProcFs::GenerateStat()
     return ss.str();
 }
 
-std::string ProcFs::GenerateStatm()
-{
-    return "65536 16384 4096 8192 0 8192 0\n";
-}
+std::string ProcFs::GenerateStatm() { return "65536 16384 4096 8192 0 8192 0\n"; }
 
 std::string ProcFs::GenerateComm(int tid)
 {

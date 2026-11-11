@@ -19,12 +19,12 @@ __attribute__((sysv_abi)) void AKeyStore_delete(AKeyStore *store);
 __attribute__((sysv_abi)) int32_t AKeyStore_containsAlias(AKeyStore *store, const char *alias);
 __attribute__((sysv_abi)) int32_t AKeyStore_deleteKey(AKeyStore *store, const char *alias);
 __attribute__((sysv_abi)) int32_t AKeyStore_listAliases(AKeyStore *store,
-                                                         AKeyStore_AliasList **outList);
+                                                        AKeyStore_AliasList **outList);
 __attribute__((sysv_abi)) void AKeyStore_deleteAliasList(AKeyStore_AliasList *list);
 
 __attribute__((sysv_abi)) int32_t AKeyStore_generateAesKey(AKeyStore *store, const char *alias,
-                                                            int32_t keyBits, int32_t blockMode,
-                                                            int32_t padding);
+                                                           int32_t keyBits, int32_t blockMode,
+                                                           int32_t padding);
 __attribute__((sysv_abi)) int32_t AKeyStore_generateRsaKeyPair(AKeyStore *store, const char *alias,
                                                                int32_t keyBits, int32_t padding);
 __attribute__((sysv_abi)) int32_t AKeyStore_generateEcKeyPair(AKeyStore *store, const char *alias);

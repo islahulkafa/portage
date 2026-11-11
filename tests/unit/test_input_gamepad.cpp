@@ -198,7 +198,8 @@ TEST_F(InputGamepadTest, GamepadButtonKeyEvents)
 
     EXPECT_EQ(down_keys.size(), 2u);
     EXPECT_NE(std::find(down_keys.begin(), down_keys.end(), AKEYCODE_BUTTON_A), down_keys.end());
-    EXPECT_NE(std::find(down_keys.begin(), down_keys.end(), AKEYCODE_BUTTON_START), down_keys.end());
+    EXPECT_NE(std::find(down_keys.begin(), down_keys.end(), AKEYCODE_BUTTON_START),
+              down_keys.end());
 
     // Release buttons
     input::GamepadState release_state{};
@@ -300,41 +301,43 @@ TEST_F(InputGamepadTest, HistoricalMotionSamples)
     ndk::InputQueueImpl queue;
     auto *q_ptr = reinterpret_cast<AInputQueue *>(&queue);
 
-    std::vector<ndk::InputPointer> current_ptrs = {
-        {.id = 0, .x = 100.0f, .y = 200.0f, .raw_x = 100.0f, .raw_y = 200.0f, .pressure = 1.0f, .size = 1.0f}
-    };
+    std::vector<ndk::InputPointer> current_ptrs = {{.id = 0,
+                                                    .x = 100.0f,
+                                                    .y = 200.0f,
+                                                    .raw_x = 100.0f,
+                                                    .raw_y = 200.0f,
+                                                    .pressure = 1.0f,
+                                                    .size = 1.0f}};
 
-    std::vector<ndk::HistoricalSample> history = {
-        {.event_time = 1000000LL,
-         .pointers = {{.id = 0,
-                       .x = 90.0f,
-                       .y = 190.0f,
-                       .raw_x = 90.0f,
-                       .raw_y = 190.0f,
-                       .pressure = 0.8f,
-                       .size = 1.0f,
-                       .touch_major = 15.0f,
-                       .touch_minor = 10.0f,
-                       .tool_major = 5.0f,
-                       .tool_minor = 3.0f,
-                       .orientation = 0.1f}}},
-        {.event_time = 2000000LL,
-         .pointers = {{.id = 0,
-                       .x = 95.0f,
-                       .y = 195.0f,
-                       .raw_x = 95.0f,
-                       .raw_y = 195.0f,
-                       .pressure = 0.9f,
-                       .size = 1.0f,
-                       .touch_major = 16.0f,
-                       .touch_minor = 11.0f,
-                       .tool_major = 6.0f,
-                       .tool_minor = 4.0f,
-                       .orientation = 0.2f}}}
-    };
+    std::vector<ndk::HistoricalSample> history = {{.event_time = 1000000LL,
+                                                   .pointers = {{.id = 0,
+                                                                 .x = 90.0f,
+                                                                 .y = 190.0f,
+                                                                 .raw_x = 90.0f,
+                                                                 .raw_y = 190.0f,
+                                                                 .pressure = 0.8f,
+                                                                 .size = 1.0f,
+                                                                 .touch_major = 15.0f,
+                                                                 .touch_minor = 10.0f,
+                                                                 .tool_major = 5.0f,
+                                                                 .tool_minor = 3.0f,
+                                                                 .orientation = 0.1f}}},
+                                                  {.event_time = 2000000LL,
+                                                   .pointers = {{.id = 0,
+                                                                 .x = 95.0f,
+                                                                 .y = 195.0f,
+                                                                 .raw_x = 95.0f,
+                                                                 .raw_y = 195.0f,
+                                                                 .pressure = 0.9f,
+                                                                 .size = 1.0f,
+                                                                 .touch_major = 16.0f,
+                                                                 .touch_minor = 11.0f,
+                                                                 .tool_major = 6.0f,
+                                                                 .tool_minor = 4.0f,
+                                                                 .orientation = 0.2f}}}};
 
     queue.EnqueueMotionEvent(AMOTION_EVENT_ACTION_MOVE, current_ptrs, AINPUT_SOURCE_TOUCHSCREEN,
-                            history);
+                             history);
 
     AInputEvent *event = nullptr;
     ASSERT_EQ(AInputQueue_getEvent(q_ptr, &event), 0);

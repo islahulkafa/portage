@@ -23,10 +23,7 @@ MultinetworkManager &MultinetworkManager::Instance() noexcept
     return instance;
 }
 
-MultinetworkManager::~MultinetworkManager()
-{
-    Reset();
-}
+MultinetworkManager::~MultinetworkManager() { Reset(); }
 
 void MultinetworkManager::Reset() noexcept
 {
@@ -105,8 +102,8 @@ net_handle_t MultinetworkManager::GetSocketNetwork(int fd) noexcept
 }
 
 int MultinetworkManager::GetAddrInfoForNetwork(net_handle_t network, const char *node,
-                                              const char *service, const LinuxAddrInfo *hints,
-                                              LinuxAddrInfo **res)
+                                               const char *service, const LinuxAddrInfo *hints,
+                                               LinuxAddrInfo **res)
 {
     (void)network;
     if (!res) {
@@ -355,7 +352,8 @@ int MultinetworkManager::ResNQuery(net_handle_t network, const char *dname, int 
                 if (desc && desc->handle != INVALID_HANDLE_VALUE) {
                     DWORD written = 0;
                     WriteFile(desc->handle, query->response_payload.data(),
-                              static_cast<DWORD>(query->response_payload.size()), &written, nullptr);
+                              static_cast<DWORD>(query->response_payload.size()), &written,
+                              nullptr);
                 }
                 tbl->Close(query->write_fd);
                 query->write_fd = -1;
@@ -457,7 +455,8 @@ int MultinetworkManager::ResNSend(net_handle_t network, const uint8_t *msg, size
                 if (desc && desc->handle != INVALID_HANDLE_VALUE) {
                     DWORD written = 0;
                     WriteFile(desc->handle, query->response_payload.data(),
-                              static_cast<DWORD>(query->response_payload.size()), &written, nullptr);
+                              static_cast<DWORD>(query->response_payload.size()), &written,
+                              nullptr);
                 }
                 tbl->Close(query->write_fd);
                 query->write_fd = -1;
@@ -549,12 +548,12 @@ __attribute__((sysv_abi)) int android_getprocnetwork(net_handle_t *network)
 }
 
 __attribute__((sysv_abi)) int android_getaddrinfofornetwork(net_handle_t network, const char *node,
-                                                           const char *service,
-                                                           const struct LinuxAddrInfo *hints,
-                                                           struct LinuxAddrInfo **res)
+                                                            const char *service,
+                                                            const struct LinuxAddrInfo *hints,
+                                                            struct LinuxAddrInfo **res)
 {
-    return portage::ndk::MultinetworkManager::Instance().GetAddrInfoForNetwork(
-        network, node, service, hints, res);
+    return portage::ndk::MultinetworkManager::Instance().GetAddrInfoForNetwork(network, node,
+                                                                               service, hints, res);
 }
 
 __attribute__((sysv_abi)) void android_freeaddrinfofornetwork(struct LinuxAddrInfo *ai)
@@ -563,21 +562,21 @@ __attribute__((sysv_abi)) void android_freeaddrinfofornetwork(struct LinuxAddrIn
 }
 
 __attribute__((sysv_abi)) int android_res_nquery(net_handle_t network, const char *dname,
-                                                int ns_class, int ns_type, uint32_t flags)
+                                                 int ns_class, int ns_type, uint32_t flags)
 {
     return portage::ndk::MultinetworkManager::Instance().ResNQuery(network, dname, ns_class,
                                                                    ns_type, flags);
 }
 
 __attribute__((sysv_abi)) int android_res_nsearch(net_handle_t network, const char *dname,
-                                                 int ns_class, int ns_type, uint32_t flags)
+                                                  int ns_class, int ns_type, uint32_t flags)
 {
     return portage::ndk::MultinetworkManager::Instance().ResNSearch(network, dname, ns_class,
                                                                     ns_type, flags);
 }
 
 __attribute__((sysv_abi)) int android_res_nsend(net_handle_t network, const uint8_t *msg,
-                                               size_t msglen, uint32_t flags)
+                                                size_t msglen, uint32_t flags)
 {
     return portage::ndk::MultinetworkManager::Instance().ResNSend(network, msg, msglen, flags);
 }

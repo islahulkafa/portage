@@ -52,7 +52,8 @@ bool ResourceTable::Parse(std::span<const uint8_t> data)
     }
 
     const auto *table_hdr = reinterpret_cast<const ResTable_header *>(data.data());
-    if (table_hdr->header.type != RES_TABLE_TYPE || table_hdr->header.header_size < sizeof(ResTable_header)) {
+    if (table_hdr->header.type != RES_TABLE_TYPE ||
+        table_hdr->header.header_size < sizeof(ResTable_header)) {
         return false;
     }
 
@@ -82,7 +83,7 @@ bool ResourceTable::Parse(std::span<const uint8_t> data)
 }
 
 bool ResourceTable::ParseStringPool(std::span<const uint8_t> pool_data,
-                                   std::vector<std::string> &out_strings)
+                                    std::vector<std::string> &out_strings)
 {
     if (pool_data.size() < sizeof(ResStringPool_header)) {
         return false;
@@ -166,8 +167,7 @@ bool ResourceTable::ParseStringPool(std::span<const uint8_t> pool_data,
 
             size_t byte_len = len * sizeof(char16_t);
             if (p + byte_len <= pool_data.data() + pool_data.size()) {
-                out_strings.push_back(
-                    Utf16ToUtf8(reinterpret_cast<const char16_t *>(p), len));
+                out_strings.push_back(Utf16ToUtf8(reinterpret_cast<const char16_t *>(p), len));
             } else {
                 out_strings.emplace_back("");
             }
@@ -250,20 +250,21 @@ bool ResourceTable::ParsePackage(std::span<const uint8_t> pkg_data)
                             key_name = key_strings_[res_entry->key];
                         }
 
-                        uint32_t full_id =
-                            (package_id_ << 24) | (static_cast<uint32_t>(type_id) << 16) | entry_idx;
+                        uint32_t full_id = (package_id_ << 24) |
+                                           (static_cast<uint32_t>(type_id) << 16) | entry_idx;
 
                         if (!(res_entry->flags & RES_FLAG_COMPLEX)) {
                             size_t val_off = abs_entry_off + res_entry->size;
                             if (val_off + sizeof(Res_value) <= pkg_data.size()) {
-                                const auto *val = reinterpret_cast<const Res_value *>(
-                                    pkg_data.data() + val_off);
+                                const auto *val =
+                                    reinterpret_cast<const Res_value *>(pkg_data.data() + val_off);
 
                                 ResourceValue res_val;
                                 res_val.data_type = val->data_type;
                                 res_val.data = val->data;
 
-                                if (val->data_type == TYPE_STRING && val->data < global_strings_.size()) {
+                                if (val->data_type == TYPE_STRING &&
+                                    val->data < global_strings_.size()) {
                                     res_val.string_value = global_strings_[val->data];
                                 }
 

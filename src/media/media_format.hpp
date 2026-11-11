@@ -46,7 +46,7 @@ __attribute__((sysv_abi)) bool AMediaFormat_getSize(AMediaFormat *format, const 
                                                     size_t *out);
 
 __attribute__((sysv_abi)) bool AMediaFormat_getBuffer(AMediaFormat *format, const char *name,
-                                                     void **data, size_t *size);
+                                                      void **data, size_t *size);
 
 __attribute__((sysv_abi)) void AMediaFormat_setString(AMediaFormat *format, const char *name,
                                                       const char *value);

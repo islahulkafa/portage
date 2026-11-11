@@ -1,6 +1,7 @@
 #include "elf/link_map.hpp"
 #include "fs/fd_table.hpp"
 #include "mem/shared_memory.hpp"
+#include "ndk/android_log.hpp"
 #include "ndk/libandroid_thunks.hpp"
 #include "syscall/syscall_dispatcher.hpp"
 #include "thread/thread_manager.hpp"
@@ -29,13 +30,21 @@ __attribute__((sysv_abi)) void AtExitThunk(void *arg)
 }
 
 __attribute__((sysv_abi)) uintptr_t PortageDlRuntimeResolve(uintptr_t got_slot,
-                                                             const char *sym_name)
+                                                            const char *sym_name)
 {
     return LinkMap::Instance().ResolveLazySymbol(got_slot, sym_name);
 }
 
-__attribute__((sysv_abi)) ptrdiff_t
-PortageTlsdescDynamicResolve(const tlsdesc_dynamic_arg *arg)
+__attribute__((sysv_abi)) int64_t PortageUnresolvedTrapHandler(const char *sym_name)
+{
+    const char *safe_name = (sym_name != nullptr) ? sym_name : "<unknown>";
+    ndk::LogcatBuffer::Instance().Append(ANDROID_LOG_WARN, "portage-ld",
+                                         std::string("Called unresolved symbol: ") + safe_name);
+    std::cerr << "[WARN] Portage called unresolved symbol: " << safe_name << "\n";
+    return -1;
+}
+
+__attribute__((sysv_abi)) ptrdiff_t PortageTlsdescDynamicResolve(const tlsdesc_dynamic_arg *arg)
 {
     if (arg == nullptr) {
         return 0;
@@ -78,6 +87,8 @@ void LinkMap::Reset()
     current_pool_cap_ = 0;
     tlsdesc_return_thunk_ = 0;
     tlsdesc_dynamic_thunk_ = 0;
+    unresolved_traps_.clear();
+    unresolved_trap_names_.clear();
     lazy_resolve_count_.store(0, std::memory_order_relaxed);
     last_error_.clear();
     next_handle_ = 1;
@@ -214,6 +225,10 @@ uintptr_t LinkMap::ResolveGlobalSymbol(std::string_view name) const
             return it->second;
         }
     }
+    if (uintptr_t fallback_addr = ndk::NdkSymbolRegistry::Instance().LookupFallback(name);
+        fallback_addr != 0) {
+        return fallback_addr;
+    }
     return 0;
 }
 
@@ -281,7 +296,8 @@ void *LinkMap::GetTlsAddress(uint64_t modid, uint64_t offset)
     auto bit = mod_map.find(static_cast<size_t>(modid));
     if (bit == mod_map.end()) {
         size_t min_req = static_cast<size_t>(offset) + 64;
-        size_t block_size = has_tmpl ? std::max(tmpl.memsz, min_req) : std::max<size_t>(4096, min_req);
+        size_t block_size =
+            has_tmpl ? std::max(tmpl.memsz, min_req) : std::max<size_t>(4096, min_req);
         std::vector<uint8_t> block(block_size, 0);
         if (has_tmpl && tmpl.image_addr != 0 && tmpl.filesz > 0) {
             std::memcpy(block.data(), reinterpret_cast<const void *>(tmpl.image_addr),
@@ -382,19 +398,20 @@ void LinkMap::FinalizeAll()
     }
 }
 
-uintptr_t LinkMap::ResolveSymbolForModule(const LinkMapEntry &entry, std::string_view sym_name) const
+uintptr_t LinkMap::ResolveSymbolForModule(const LinkMapEntry &entry,
+                                          std::string_view sym_name) const
 {
     if (uintptr_t ndk_addr = ndk::NdkSymbolRegistry::Instance().Lookup(sym_name); ndk_addr != 0) {
         return ndk_addr;
     }
-    uintptr_t addr = entry.elf.FindSymbol(sym_name);
-    if (addr != 0) {
-        return addr;
+    auto it = entry.elf.symbols.find(std::string(sym_name));
+    if (it != entry.elf.symbols.end()) {
+        return it->second;
     }
     for (const auto &dep : entry.dependencies) {
-        auto it = dep->elf.symbols.find(std::string(sym_name));
-        if (it != dep->elf.symbols.end()) {
-            return it->second;
+        auto dit = dep->elf.symbols.find(std::string(sym_name));
+        if (dit != dep->elf.symbols.end()) {
+            return dit->second;
         }
     }
     return ResolveGlobalSymbol(sym_name);
@@ -410,6 +427,30 @@ std::shared_ptr<LinkMapEntry> LinkMap::LoadLibraryInternal(std::string_view libn
 
     std::string path = ResolveLibraryPath(name);
     if (path.empty()) {
+        std::string basename = std::filesystem::path(name).filename().string();
+        if (IsBuiltinSystemLibrary(basename)) {
+            if (auto existing = FindModule(basename)) {
+                return existing;
+            }
+            auto v_entry = std::make_shared<LinkMapEntry>();
+            v_entry->handle = reinterpret_cast<void *>(next_handle_++);
+            v_entry->name = name;
+            v_entry->filepath = "/system/lib64/" + basename;
+            v_entry->elf.soname = basename;
+            v_entry->flags = flags;
+            v_entry->ref_count = 1;
+            v_entry->is_virtual = true;
+            v_entry->init_called = true;
+            v_entry->fini_called = true;
+
+            modules_.push_back(v_entry);
+            modules_by_handle_[v_entry->handle] = v_entry;
+            modules_by_name_[v_entry->name] = v_entry;
+            modules_by_name_[basename] = v_entry;
+            dlpi_adds_++;
+            RebuildRawLinkMapChain();
+            return v_entry;
+        }
         last_error_ = "dlopen failed: library not found: " + name;
         return nullptr;
     }
@@ -503,6 +544,8 @@ void LinkMap::CallInit(const std::shared_ptr<LinkMapEntry> &entry)
     for (const auto &dep : deps) {
         CallInit(dep);
     }
+
+    thread::ThreadManager::Instance().EnsureCurrentThreadTcb();
 
     using SysVInitFn = __attribute__((sysv_abi)) void (*)();
     for (uintptr_t fn_addr : init_fns) {
@@ -737,10 +780,9 @@ void *LinkMap::DlOpenExt(const char *filename, int flags, const android_dlextinf
             last_error_ = "android_dlopen_ext: offset exceeds synthetic file size";
             return nullptr;
         }
-        elf_bytes.assign(
-            reinterpret_cast<const uint8_t *>(desc->synthetic_data.data() + offset),
-            reinterpret_cast<const uint8_t *>(desc->synthetic_data.data() +
-                                              desc->synthetic_data.size()));
+        elf_bytes.assign(reinterpret_cast<const uint8_t *>(desc->synthetic_data.data() + offset),
+                         reinterpret_cast<const uint8_t *>(desc->synthetic_data.data() +
+                                                           desc->synthetic_data.size()));
     } else if (desc->handle != INVALID_HANDLE_VALUE) {
         LARGE_INTEGER file_sz{};
         if (!GetFileSizeEx(desc->handle, &file_sz) || offset >= file_sz.QuadPart) {
@@ -810,8 +852,8 @@ void *LinkMap::DlOpenExt(const char *filename, int flags, const android_dlextinf
                 }
             }
         };
-        ElfLoader::SymbolResolver resolver =
-            [this, &entry](std::string_view sym_name) -> uintptr_t {
+        ElfLoader::SymbolResolver resolver = [this,
+                                              &entry](std::string_view sym_name) -> uintptr_t {
             return ResolveSymbolForModule(*entry, sym_name);
         };
 
@@ -823,7 +865,8 @@ void *LinkMap::DlOpenExt(const char *filename, int flags, const android_dlextinf
         }
 
         std::string origin_dir = std::filesystem::path(mod_path).parent_path().string();
-        auto res = loader.LoadFromMemory(elf_bytes, vfs_, resolver, dep_loader, origin_dir, options);
+        auto res =
+            loader.LoadFromMemory(elf_bytes, vfs_, resolver, dep_loader, origin_dir, options);
         if (std::holds_alternative<LoaderError>(res)) {
             last_error_ = "android_dlopen_ext failed: error loading from fd";
             return nullptr;
@@ -893,6 +936,11 @@ void *LinkMap::DlSymWithCaller(void *handle, const char *symbol, uintptr_t calle
                     last_error_.clear();
                     return reinterpret_cast<void *>(ndk_addr);
                 }
+                uintptr_t fallback_addr = ndk::NdkSymbolRegistry::Instance().LookupFallback(symbol);
+                if (fallback_addr != 0) {
+                    last_error_.clear();
+                    return reinterpret_cast<void *>(fallback_addr);
+                }
                 last_error_ = "dlsym(RTLD_NEXT): symbol not found: " + std::string(symbol);
                 return nullptr;
             }
@@ -908,6 +956,11 @@ void *LinkMap::DlSymWithCaller(void *handle, const char *symbol, uintptr_t calle
         if (ndk_addr != 0) {
             last_error_.clear();
             return reinterpret_cast<void *>(ndk_addr);
+        }
+        uintptr_t fallback_addr = ndk::NdkSymbolRegistry::Instance().LookupFallback(symbol);
+        if (fallback_addr != 0) {
+            last_error_.clear();
+            return reinterpret_cast<void *>(fallback_addr);
         }
         last_error_ = "dlsym(RTLD_NEXT): symbol not found: " + std::string(symbol);
         return nullptr;
@@ -925,6 +978,11 @@ void *LinkMap::DlSymWithCaller(void *handle, const char *symbol, uintptr_t calle
         if (ndk_addr != 0) {
             last_error_.clear();
             return reinterpret_cast<void *>(ndk_addr);
+        }
+        uintptr_t fallback_addr = ndk::NdkSymbolRegistry::Instance().LookupFallback(symbol);
+        if (fallback_addr != 0) {
+            last_error_.clear();
+            return reinterpret_cast<void *>(fallback_addr);
         }
         last_error_ = "dlsym: symbol not found: " + std::string(symbol);
         return nullptr;
@@ -955,6 +1013,11 @@ void *LinkMap::DlSymWithCaller(void *handle, const char *symbol, uintptr_t calle
     if (ndk_addr != 0) {
         last_error_.clear();
         return reinterpret_cast<void *>(ndk_addr);
+    }
+    uintptr_t fallback_addr = ndk::NdkSymbolRegistry::Instance().LookupFallback(symbol);
+    if (fallback_addr != 0) {
+        last_error_.clear();
+        return reinterpret_cast<void *>(fallback_addr);
     }
 
     last_error_ = "dlsym: symbol not found: " + std::string(symbol);
@@ -993,7 +1056,7 @@ int LinkMap::DlClose(void *handle)
         CallFini(entry_to_fini);
         if (should_unload) {
             std::lock_guard lock(mutex_);
-            if (as_ != nullptr) {
+            if (as_ != nullptr && !entry_to_fini->is_virtual) {
                 for (const auto &seg : entry_to_fini->elf.segments) {
                     if (seg.vaddr != 0 && seg.mem_size > 0) {
                         (void)as_->Munmap(reinterpret_cast<void *>(seg.vaddr), seg.mem_size);
@@ -1038,6 +1101,9 @@ int LinkMap::DlAddr(const void *addr, Dl_info *info)
     uintptr_t target = reinterpret_cast<uintptr_t>(addr);
 
     for (const auto &m : modules_) {
+        if (m->is_virtual) {
+            continue;
+        }
         bool in_module = false;
         for (const auto &seg : m->elf.segments) {
             if (target >= seg.vaddr && target < seg.vaddr + seg.mem_size) {
@@ -1086,6 +1152,9 @@ int LinkMap::IteratePhdr(PhdrCallback callback, void *data)
 
     int result = 0;
     for (const auto &m : snapshot) {
+        if (m->is_virtual) {
+            continue;
+        }
         dl_phdr_info info{};
         info.dlpi_addr = m->elf.load_bias != 0 ? m->elf.load_bias : m->elf.base_address;
         info.dlpi_name = m->filepath.empty() ? m->name.c_str() : m->filepath.c_str();
@@ -1119,7 +1188,8 @@ void LinkMap::RebuildRawLinkMapChain()
             const_cast<char *>(m->filepath.empty() ? m->name.c_str() : m->filepath.c_str());
         m->raw_link_map.l_ld = reinterpret_cast<void *>(m->elf.dynamic_vaddr);
         m->raw_link_map.l_prev = (i > 0) ? &modules_[i - 1]->raw_link_map : nullptr;
-        m->raw_link_map.l_next = (i + 1 < modules_.size()) ? &modules_[i + 1]->raw_link_map : nullptr;
+        m->raw_link_map.l_next =
+            (i + 1 < modules_.size()) ? &modules_[i + 1]->raw_link_map : nullptr;
     }
 }
 
@@ -1186,8 +1256,8 @@ void *LinkMap::AllocateExecutableCode(size_t size)
     if (current_pool_ == nullptr || (current_pool_used_ + aligned) > current_pool_cap_) {
         constexpr size_t POOL_SIZE = 65536;
         const size_t alloc_sz = std::max(POOL_SIZE, aligned);
-        void *pool = VirtualAlloc(nullptr, alloc_sz, MEM_COMMIT | MEM_RESERVE,
-                                  PAGE_EXECUTE_READWRITE);
+        void *pool =
+            VirtualAlloc(nullptr, alloc_sz, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
         if (pool == nullptr) {
             return nullptr;
         }
@@ -1239,19 +1309,28 @@ uintptr_t LinkMap::GetTlsdescDynamicThunk()
     };
 
     // Preserve caller-saved integer registers (excluding rax) and rflags (9 pushes -> 16B aligned)
-    emit_u8(0x51);                     // push rcx
-    emit_u8(0x52);                     // push rdx
-    emit_u8(0x56);                     // push rsi
-    emit_u8(0x57);                     // push rdi
-    emit_u8(0x41); emit_u8(0x50);      // push r8
-    emit_u8(0x41); emit_u8(0x51);      // push r9
-    emit_u8(0x41); emit_u8(0x52);      // push r10
-    emit_u8(0x41); emit_u8(0x53);      // push r11
-    emit_u8(0x9c);                     // pushfq
+    emit_u8(0x51); // push rcx
+    emit_u8(0x52); // push rdx
+    emit_u8(0x56); // push rsi
+    emit_u8(0x57); // push rdi
+    emit_u8(0x41);
+    emit_u8(0x50); // push r8
+    emit_u8(0x41);
+    emit_u8(0x51); // push r9
+    emit_u8(0x41);
+    emit_u8(0x52); // push r10
+    emit_u8(0x41);
+    emit_u8(0x53); // push r11
+    emit_u8(0x9c); // pushfq
 
     // Preserve xmm0..xmm7
-    emit_u8(0x48); emit_u8(0x81); emit_u8(0xec);
-    emit_u8(0x80); emit_u8(0x00); emit_u8(0x00); emit_u8(0x00); // sub rsp, 128
+    emit_u8(0x48);
+    emit_u8(0x81);
+    emit_u8(0xec);
+    emit_u8(0x80);
+    emit_u8(0x00);
+    emit_u8(0x00);
+    emit_u8(0x00); // sub rsp, 128
     for (uint8_t reg = 0; reg < 8; ++reg) {
         emit_u8(0xf3);
         emit_u8(0x0f);
@@ -1262,12 +1341,17 @@ uintptr_t LinkMap::GetTlsdescDynamicThunk()
     }
 
     // rdi = desc->arg ([rax + 8])
-    emit_u8(0x48); emit_u8(0x8b); emit_u8(0x78); emit_u8(0x08);
+    emit_u8(0x48);
+    emit_u8(0x8b);
+    emit_u8(0x78);
+    emit_u8(0x08);
     // mov rax, PortageTlsdescDynamicResolve
-    emit_u8(0x48); emit_u8(0xb8);
+    emit_u8(0x48);
+    emit_u8(0xb8);
     emit_u64(reinterpret_cast<uintptr_t>(&PortageTlsdescDynamicResolve));
     // call rax
-    emit_u8(0xff); emit_u8(0xd0);
+    emit_u8(0xff);
+    emit_u8(0xd0);
 
     // Restore xmm0..xmm7
     for (uint8_t reg = 0; reg < 8; ++reg) {
@@ -1278,20 +1362,29 @@ uintptr_t LinkMap::GetTlsdescDynamicThunk()
         emit_u8(0x24);
         emit_u8(static_cast<uint8_t>(reg * 16));
     }
-    emit_u8(0x48); emit_u8(0x81); emit_u8(0xc4);
-    emit_u8(0x80); emit_u8(0x00); emit_u8(0x00); emit_u8(0x00); // add rsp, 128
+    emit_u8(0x48);
+    emit_u8(0x81);
+    emit_u8(0xc4);
+    emit_u8(0x80);
+    emit_u8(0x00);
+    emit_u8(0x00);
+    emit_u8(0x00); // add rsp, 128
 
     // Restore rflags and registers
-    emit_u8(0x9d);                     // popfq
-    emit_u8(0x41); emit_u8(0x5b);      // pop r11
-    emit_u8(0x41); emit_u8(0x5a);      // pop r10
-    emit_u8(0x41); emit_u8(0x59);      // pop r9
-    emit_u8(0x41); emit_u8(0x58);      // pop r8
-    emit_u8(0x5f);                     // pop rdi
-    emit_u8(0x5e);                     // pop rsi
-    emit_u8(0x5a);                     // pop rdx
-    emit_u8(0x59);                     // pop rcx
-    emit_u8(0xc3);                     // ret
+    emit_u8(0x9d); // popfq
+    emit_u8(0x41);
+    emit_u8(0x5b); // pop r11
+    emit_u8(0x41);
+    emit_u8(0x5a); // pop r10
+    emit_u8(0x41);
+    emit_u8(0x59); // pop r9
+    emit_u8(0x41);
+    emit_u8(0x58); // pop r8
+    emit_u8(0x5f); // pop rdi
+    emit_u8(0x5e); // pop rsi
+    emit_u8(0x5a); // pop rdx
+    emit_u8(0x59); // pop rcx
+    emit_u8(0xc3); // ret
 
     void *mem = AllocateExecutableCode(code.size());
     if (mem == nullptr) {
@@ -1316,19 +1409,27 @@ uintptr_t LinkMap::AllocateLazyPltTrampoline(uintptr_t got_slot, const char *sym
     };
 
     // Preserve rax, rcx, rdx, rsi, rdi, r8, r9, r10, rflags (9 pushes -> 16B aligned)
-    emit_u8(0x50);                     // push rax
-    emit_u8(0x51);                     // push rcx
-    emit_u8(0x52);                     // push rdx
-    emit_u8(0x56);                     // push rsi
-    emit_u8(0x57);                     // push rdi
-    emit_u8(0x41); emit_u8(0x50);      // push r8
-    emit_u8(0x41); emit_u8(0x51);      // push r9
-    emit_u8(0x41); emit_u8(0x52);      // push r10
-    emit_u8(0x9c);                     // pushfq
+    emit_u8(0x50); // push rax
+    emit_u8(0x51); // push rcx
+    emit_u8(0x52); // push rdx
+    emit_u8(0x56); // push rsi
+    emit_u8(0x57); // push rdi
+    emit_u8(0x41);
+    emit_u8(0x50); // push r8
+    emit_u8(0x41);
+    emit_u8(0x51); // push r9
+    emit_u8(0x41);
+    emit_u8(0x52); // push r10
+    emit_u8(0x9c); // pushfq
 
     // Preserve xmm0..xmm7
-    emit_u8(0x48); emit_u8(0x81); emit_u8(0xec);
-    emit_u8(0x80); emit_u8(0x00); emit_u8(0x00); emit_u8(0x00); // sub rsp, 128
+    emit_u8(0x48);
+    emit_u8(0x81);
+    emit_u8(0xec);
+    emit_u8(0x80);
+    emit_u8(0x00);
+    emit_u8(0x00);
+    emit_u8(0x00); // sub rsp, 128
     for (uint8_t reg = 0; reg < 8; ++reg) {
         emit_u8(0xf3);
         emit_u8(0x0f);
@@ -1339,16 +1440,22 @@ uintptr_t LinkMap::AllocateLazyPltTrampoline(uintptr_t got_slot, const char *sym
     }
 
     // SysV call: PortageDlRuntimeResolve(got_slot, sym_name)
-    emit_u8(0x48); emit_u8(0xbf); // mov rdi, got_slot
+    emit_u8(0x48);
+    emit_u8(0xbf); // mov rdi, got_slot
     emit_u64(got_slot);
-    emit_u8(0x48); emit_u8(0xbe); // mov rsi, sym_name
+    emit_u8(0x48);
+    emit_u8(0xbe); // mov rsi, sym_name
     emit_u64(reinterpret_cast<uintptr_t>(sym_name));
-    emit_u8(0x48); emit_u8(0xb8); // mov rax, PortageDlRuntimeResolve
+    emit_u8(0x48);
+    emit_u8(0xb8); // mov rax, PortageDlRuntimeResolve
     emit_u64(reinterpret_cast<uintptr_t>(&PortageDlRuntimeResolve));
-    emit_u8(0xff); emit_u8(0xd0); // call rax
+    emit_u8(0xff);
+    emit_u8(0xd0); // call rax
 
     // Stash resolved address in r11 (scratch in SysV ABI)
-    emit_u8(0x49); emit_u8(0x89); emit_u8(0xc3); // mov r11, rax
+    emit_u8(0x49);
+    emit_u8(0x89);
+    emit_u8(0xc3); // mov r11, rax
 
     // Restore xmm0..xmm7
     for (uint8_t reg = 0; reg < 8; ++reg) {
@@ -1359,22 +1466,32 @@ uintptr_t LinkMap::AllocateLazyPltTrampoline(uintptr_t got_slot, const char *sym
         emit_u8(0x24);
         emit_u8(static_cast<uint8_t>(reg * 16));
     }
-    emit_u8(0x48); emit_u8(0x81); emit_u8(0xc4);
-    emit_u8(0x80); emit_u8(0x00); emit_u8(0x00); emit_u8(0x00); // add rsp, 128
+    emit_u8(0x48);
+    emit_u8(0x81);
+    emit_u8(0xc4);
+    emit_u8(0x80);
+    emit_u8(0x00);
+    emit_u8(0x00);
+    emit_u8(0x00); // add rsp, 128
 
     // Restore flags and integer registers
-    emit_u8(0x9d);                     // popfq
-    emit_u8(0x41); emit_u8(0x5a);      // pop r10
-    emit_u8(0x41); emit_u8(0x59);      // pop r9
-    emit_u8(0x41); emit_u8(0x58);      // pop r8
-    emit_u8(0x5f);                     // pop rdi
-    emit_u8(0x5e);                     // pop rsi
-    emit_u8(0x5a);                     // pop rdx
-    emit_u8(0x59);                     // pop rcx
-    emit_u8(0x58);                     // pop rax
+    emit_u8(0x9d); // popfq
+    emit_u8(0x41);
+    emit_u8(0x5a); // pop r10
+    emit_u8(0x41);
+    emit_u8(0x59); // pop r9
+    emit_u8(0x41);
+    emit_u8(0x58); // pop r8
+    emit_u8(0x5f); // pop rdi
+    emit_u8(0x5e); // pop rsi
+    emit_u8(0x5a); // pop rdx
+    emit_u8(0x59); // pop rcx
+    emit_u8(0x58); // pop rax
 
     // Jump to resolved target in r11
-    emit_u8(0x41); emit_u8(0xff); emit_u8(0xe3); // jmp r11
+    emit_u8(0x41);
+    emit_u8(0xff);
+    emit_u8(0xe3); // jmp r11
 
     void *mem = AllocateExecutableCode(code.size());
     if (mem == nullptr) {
@@ -1397,8 +1514,10 @@ uintptr_t LinkMap::ResolveLazySymbol(uintptr_t got_slot, const char *sym_name)
         std::lock_guard lock(mutex_);
         std::shared_ptr<LinkMapEntry> owner = FindModuleByAddress(got_slot);
         if (owner) {
-            target = owner->elf.FindSymbol(sym_name);
-            if (target == 0) {
+            auto it = owner->elf.symbols.find(std::string(sym_name));
+            if (it != owner->elf.symbols.end()) {
+                target = it->second;
+            } else {
                 for (const auto &dep : owner->dependencies) {
                     auto dit = dep->elf.symbols.find(sym_name);
                     if (dit != dep->elf.symbols.end()) {
@@ -1411,6 +1530,9 @@ uintptr_t LinkMap::ResolveLazySymbol(uintptr_t got_slot, const char *sym_name)
         if (target == 0) {
             target = ResolveGlobalSymbol(sym_name);
         }
+        if (target == 0) {
+            target = AllocateUnresolvedTrap(sym_name);
+        }
     }
 
     if (target != 0 && got_slot != 0) {
@@ -1418,6 +1540,108 @@ uintptr_t LinkMap::ResolveLazySymbol(uintptr_t got_slot, const char *sym_name)
         std::atomic_thread_fence(std::memory_order_release);
     }
     return target;
+}
+
+bool LinkMap::IsBuiltinSystemLibrary(std::string_view name)
+{
+    std::string base = std::filesystem::path(name).filename().string();
+    static const std::unordered_set<std::string_view> kBuiltins = {
+        "libc.so",
+        "libm.so",
+        "libdl.so",
+        "liblog.so",
+        "libz.so",
+        "libz.so.1",
+        "libandroid.so",
+        "libjnigraphics.so",
+        "libnativewindow.so",
+        "libGLESv1_CM.so",
+        "libGLESv2.so",
+        "libGLESv3.so",
+        "libEGL.so",
+        "libvulkan.so",
+        "libaaudio.so",
+        "libOpenSLES.so",
+        "libmediandk.so",
+        "libcamera2ndk.so",
+        "libbinder_ndk.so",
+        "libnativehelper.so",
+        "libc++_shared.so",
+        "libpowerndk.so",
+        "libnotificationndk.so",
+        "liblocationndk.so",
+        "libclipboardndk.so",
+        "libkeystorendk.so",
+    };
+    return kBuiltins.contains(base);
+}
+
+uintptr_t LinkMap::AllocateUnresolvedTrap(std::string_view sym_name)
+{
+    if (sym_name.empty()) {
+        return 0;
+    }
+
+    std::lock_guard lock(mutex_);
+    std::string key(sym_name);
+    if (auto it = unresolved_traps_.find(key); it != unresolved_traps_.end()) {
+        return it->second;
+    }
+
+    unresolved_trap_names_.push_back(key);
+    const char *stored_name = unresolved_trap_names_.back().c_str();
+
+    std::vector<uint8_t> code;
+    auto emit_u8 = [&](uint8_t b) { code.push_back(b); };
+    auto emit_u64 = [&](uint64_t v) {
+        for (int i = 0; i < 8; ++i) {
+            code.push_back(static_cast<uint8_t>((v >> (i * 8)) & 0xff));
+        }
+    };
+
+    emit_u8(0x48);
+    emit_u8(0x83);
+    emit_u8(0xec);
+    emit_u8(0x08); // sub rsp, 8
+    emit_u8(0x48);
+    emit_u8(0xbf); // mov rdi, stored_name
+    emit_u64(reinterpret_cast<uintptr_t>(stored_name));
+    emit_u8(0x48);
+    emit_u8(0xb8); // mov rax, PortageUnresolvedTrapHandler
+    emit_u64(reinterpret_cast<uintptr_t>(&PortageUnresolvedTrapHandler));
+    emit_u8(0xff);
+    emit_u8(0xd0); // call rax
+    emit_u8(0x48);
+    emit_u8(0x83);
+    emit_u8(0xc4);
+    emit_u8(0x08); // add rsp, 8
+    emit_u8(0xc3); // ret
+
+    void *mem = AllocateExecutableCode(code.size());
+    if (mem == nullptr) {
+        return 0;
+    }
+    std::memcpy(mem, code.data(), code.size());
+    FlushInstructionCache(GetCurrentProcess(), mem, code.size());
+    uintptr_t addr = reinterpret_cast<uintptr_t>(mem);
+    unresolved_traps_[key] = addr;
+    return addr;
+}
+
+std::vector<std::string> LinkMap::CollectUnresolvedSymbols() const
+{
+    std::lock_guard lock(mutex_);
+    std::unordered_set<std::string> unique_syms;
+    std::vector<std::string> result;
+    for (const auto &m : modules_) {
+        for (const auto &sym : m->elf.unresolved_symbols) {
+            if (unique_syms.insert(sym).second) {
+                result.push_back(sym);
+            }
+        }
+    }
+    std::sort(result.begin(), result.end());
+    return result;
 }
 
 } // namespace portage::elf
@@ -1483,13 +1707,15 @@ __attribute__((sysv_abi)) void portage_cxa_finalize(void *dso_handle) noexcept
     portage::elf::LinkMap::Instance().FinalizeCxaAtExit(dso_handle);
 }
 
-__attribute__((sysv_abi)) int portage_cxa_thread_atexit_impl(portage::elf::LinkMap::CxaAtExitFn dtor,
-                                                             void *obj, void *dso_handle) noexcept
+__attribute__((sysv_abi)) int
+portage_cxa_thread_atexit_impl(portage::elf::LinkMap::CxaAtExitFn dtor, void *obj,
+                               void *dso_handle) noexcept
 {
     return portage::thread::ThreadManager::Instance().RegisterThreadAtExit(dtor, obj, dso_handle);
 }
 
-__attribute__((sysv_abi)) int portage_guest_atexit(__attribute__((sysv_abi)) void (*func)()) noexcept
+__attribute__((sysv_abi)) int
+portage_guest_atexit(__attribute__((sysv_abi)) void (*func)()) noexcept
 {
     if (func == nullptr) {
         return -1;

@@ -1,5 +1,14 @@
+#include "ndk/jnigraphics.hpp"
 #include "package/jni_env.hpp"
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <cstring>
+#include <filesystem>
 #include <gtest/gtest.h>
+#include <vector>
+#include <zlib.h>
 
 TEST(JniEnvTest, InitializesVmAndEnvTables)
 {
@@ -295,4 +304,194 @@ TEST(JniEnvTest, HandlesRegisterNativesAndExceptions)
     env->functions->ExceptionClear(env);
     EXPECT_EQ(env->functions->ExceptionCheck(env), portage::package::JNI_FALSE);
     EXPECT_EQ(env->functions->ExceptionOccurred(env), nullptr);
+}
+
+namespace {
+
+// Minimal valid 4x4 uncompressed 24bpp Windows BMP bytes
+std::vector<uint8_t> BuildSolidBmp4x4(uint8_t r, uint8_t g, uint8_t b)
+{
+    std::vector<uint8_t> bmp(54 + 4 * 4 * 3, 0);
+    bmp[0] = 'B';
+    bmp[1] = 'M';
+    uint32_t total = static_cast<uint32_t>(bmp.size());
+    std::memcpy(bmp.data() + 2, &total, 4);
+    uint32_t off_bits = 54;
+    std::memcpy(bmp.data() + 10, &off_bits, 4);
+    uint32_t dib_sz = 40;
+    std::memcpy(bmp.data() + 14, &dib_sz, 4);
+    int32_t w = 4, h = 4;
+    std::memcpy(bmp.data() + 18, &w, 4);
+    std::memcpy(bmp.data() + 22, &h, 4);
+    uint16_t planes = 1, bpp = 24;
+    std::memcpy(bmp.data() + 26, &planes, 2);
+    std::memcpy(bmp.data() + 28, &bpp, 2);
+    for (int i = 0; i < 16; ++i) {
+        bmp[54 + i * 3 + 0] = b;
+        bmp[54 + i * 3 + 1] = g;
+        bmp[54 + i * 3 + 2] = r;
+    }
+    return bmp;
+}
+
+} // namespace
+
+TEST(JniEnvTest, BitmapFactoryBoundsAndSamplingDecode)
+{
+    auto &jni = portage::package::JniEnvironment::Instance();
+    jni.Initialize("com.portage.unit", "/data/data/com.portage.unit/files",
+                   "/data/data/com.portage.unit/cache");
+    auto *env = jni.GetJNIEnv();
+
+    auto bmp_bytes = BuildSolidBmp4x4(10, 180, 240);
+    auto jarr =
+        env->functions->NewByteArray(env, static_cast<portage::package::jsize>(bmp_bytes.size()));
+    ASSERT_NE(jarr, nullptr);
+    env->functions->SetByteArrayRegion(
+        env, jarr, 0, static_cast<portage::package::jsize>(bmp_bytes.size()),
+        reinterpret_cast<const portage::package::jbyte *>(bmp_bytes.data()));
+
+    auto opts_cls = env->functions->FindClass(env, "android/graphics/BitmapFactory$Options");
+    auto opts_ctor = env->functions->GetMethodID(env, opts_cls, "<init>", "()V");
+    auto opts = env->functions->NewObject(env, opts_cls, opts_ctor);
+    ASSERT_NE(opts, nullptr);
+
+    auto f_bounds = env->functions->GetFieldID(env, opts_cls, "inJustDecodeBounds", "Z");
+    auto f_sample = env->functions->GetFieldID(env, opts_cls, "inSampleSize", "I");
+    auto f_w = env->functions->GetFieldID(env, opts_cls, "outWidth", "I");
+    auto f_h = env->functions->GetFieldID(env, opts_cls, "outHeight", "I");
+    auto f_mime = env->functions->GetFieldID(env, opts_cls, "outMimeType", "Ljava/lang/String;");
+
+    env->functions->SetBooleanField(env, opts, f_bounds, portage::package::JNI_TRUE);
+
+    auto bf_cls = env->functions->FindClass(env, "android/graphics/BitmapFactory");
+    auto decode_mid = env->functions->GetStaticMethodID(
+        env, bf_cls, "decodeByteArray",
+        "([BIILandroid/graphics/BitmapFactory$Options;)Landroid/graphics/Bitmap;");
+
+    auto bounds_ret = env->functions->CallStaticObjectMethod(
+        env, bf_cls, decode_mid, jarr, 0, static_cast<int>(bmp_bytes.size()), opts);
+    EXPECT_EQ(bounds_ret, nullptr);
+    EXPECT_EQ(env->functions->GetIntField(env, opts, f_w), 4);
+    EXPECT_EQ(env->functions->GetIntField(env, opts, f_h), 4);
+    auto mime_jstr =
+        static_cast<portage::package::jstring>(env->functions->GetObjectField(env, opts, f_mime));
+    ASSERT_NE(mime_jstr, nullptr);
+    EXPECT_STREQ(jni.GetStringChars(mime_jstr), "image/bmp");
+
+    env->functions->SetBooleanField(env, opts, f_bounds, portage::package::JNI_FALSE);
+    env->functions->SetIntField(env, opts, f_sample, 2);
+
+    auto jbitmap = env->functions->CallStaticObjectMethod(env, bf_cls, decode_mid, jarr, 0,
+                                                          static_cast<int>(bmp_bytes.size()), opts);
+    ASSERT_NE(jbitmap, nullptr);
+
+    AndroidBitmapInfo info{};
+    ASSERT_EQ(AndroidBitmap_getInfo(env, jbitmap, &info), ANDROID_BITMAP_RESULT_SUCCESS);
+    EXPECT_EQ(info.width, 2U);
+    EXPECT_EQ(info.height, 2U);
+
+    void *pixels = nullptr;
+    ASSERT_EQ(AndroidBitmap_lockPixels(env, jbitmap, &pixels), ANDROID_BITMAP_RESULT_SUCCESS);
+    ASSERT_NE(pixels, nullptr);
+    const auto *rgba = static_cast<const uint8_t *>(pixels);
+    EXPECT_EQ(rgba[0], 10);
+    EXPECT_EQ(rgba[1], 180);
+    EXPECT_EQ(rgba[2], 240);
+    EXPECT_EQ(AndroidBitmap_unlockPixels(env, jbitmap), ANDROID_BITMAP_RESULT_SUCCESS);
+}
+
+TEST(JniEnvTest, SharedPreferencesWindowMetricsAndPackageInfo)
+{
+    auto tmp_root = std::filesystem::temp_directory_path() / "portage_jni_prefs_test";
+    std::error_code ec;
+    std::filesystem::remove_all(tmp_root, ec);
+    std::filesystem::create_directories(tmp_root / "files", ec);
+    std::filesystem::create_directories(tmp_root / "cache", ec);
+
+    auto &jni = portage::package::JniEnvironment::Instance();
+    jni.Initialize("com.portage.unit", (tmp_root / "files").string(),
+                   (tmp_root / "cache").string());
+    jni.SetDisplayMetrics(1920, 1080, 2.5f, 400);
+    auto *env = jni.GetJNIEnv();
+
+    auto ctx = jni.GetContextObject();
+    auto act_cls = env->functions->GetObjectClass(env, ctx);
+    auto get_sp =
+        env->functions->GetMethodID(env, act_cls, "getSharedPreferences",
+                                    "(Ljava/lang/String;I)Landroid/content/SharedPreferences;");
+    auto sp = env->functions->CallObjectMethod(env, ctx, get_sp, jni.CreateString("settings"), 0);
+    ASSERT_NE(sp, nullptr);
+
+    auto sp_cls = env->functions->GetObjectClass(env, sp);
+    auto edit_mid = env->functions->GetMethodID(env, sp_cls, "edit",
+                                                "()Landroid/content/SharedPreferences$Editor;");
+    auto editor = env->functions->CallObjectMethod(env, sp, edit_mid);
+    ASSERT_NE(editor, nullptr);
+
+    auto ed_cls = env->functions->GetObjectClass(env, editor);
+    auto put_str = env->functions->GetMethodID(
+        env, ed_cls, "putString",
+        "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;");
+    auto put_int = env->functions->GetMethodID(
+        env, ed_cls, "putInt", "(Ljava/lang/String;I)Landroid/content/SharedPreferences$Editor;");
+    auto commit_mid = env->functions->GetMethodID(env, ed_cls, "commit", "()Z");
+
+    env->functions->CallObjectMethod(env, editor, put_str, jni.CreateString("player"),
+                                     jni.CreateString("Ada"));
+    env->functions->CallObjectMethod(env, editor, put_int, jni.CreateString("score"), 42);
+    EXPECT_EQ(env->functions->CallBooleanMethod(env, editor, commit_mid),
+              portage::package::JNI_TRUE);
+
+    auto get_str = env->functions->GetMethodID(
+        env, sp_cls, "getString", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+    auto get_int = env->functions->GetMethodID(env, sp_cls, "getInt", "(Ljava/lang/String;I)I");
+    auto val_str = static_cast<portage::package::jstring>(env->functions->CallObjectMethod(
+        env, sp, get_str, jni.CreateString("player"), jni.CreateString("Guest")));
+    EXPECT_STREQ(jni.GetStringChars(val_str), "Ada");
+    EXPECT_EQ(env->functions->CallIntMethod(env, sp, get_int, jni.CreateString("score"), -1), 42);
+
+    // WindowManager -> getDefaultDisplay -> getMetrics
+    auto get_svc = env->functions->GetMethodID(env, act_cls, "getSystemService",
+                                               "(Ljava/lang/String;)Ljava/lang/Object;");
+    auto wm = env->functions->CallObjectMethod(env, ctx, get_svc, jni.CreateString("window"));
+    ASSERT_NE(wm, nullptr);
+    auto wm_cls = env->functions->GetObjectClass(env, wm);
+    auto get_disp =
+        env->functions->GetMethodID(env, wm_cls, "getDefaultDisplay", "()Landroid/view/Display;");
+    auto disp = env->functions->CallObjectMethod(env, wm, get_disp);
+    ASSERT_NE(disp, nullptr);
+
+    auto dm_cls = env->functions->FindClass(env, "android/util/DisplayMetrics");
+    auto dm = env->functions->NewObject(env, dm_cls,
+                                        env->functions->GetMethodID(env, dm_cls, "<init>", "()V"));
+    auto disp_cls = env->functions->GetObjectClass(env, disp);
+    auto get_metrics = env->functions->GetMethodID(env, disp_cls, "getMetrics",
+                                                   "(Landroid/util/DisplayMetrics;)V");
+    env->functions->CallVoidMethod(env, disp, get_metrics, dm);
+    EXPECT_EQ(env->functions->GetIntField(
+                  env, dm, env->functions->GetFieldID(env, dm_cls, "widthPixels", "I")),
+              1920);
+    EXPECT_EQ(env->functions->GetIntField(
+                  env, dm, env->functions->GetFieldID(env, dm_cls, "heightPixels", "I")),
+              1080);
+
+    // PackageManager -> getPackageInfo
+    auto get_pm = env->functions->GetMethodID(env, act_cls, "getPackageManager",
+                                              "()Landroid/content/pm/PackageManager;");
+    auto pm = env->functions->CallObjectMethod(env, ctx, get_pm);
+    ASSERT_NE(pm, nullptr);
+    auto pm_cls = env->functions->GetObjectClass(env, pm);
+    auto get_pi = env->functions->GetMethodID(
+        env, pm_cls, "getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;");
+    auto pi =
+        env->functions->CallObjectMethod(env, pm, get_pi, jni.CreateString("com.portage.unit"), 0);
+    ASSERT_NE(pi, nullptr);
+    auto pi_cls = env->functions->GetObjectClass(env, pi);
+    auto pkg_str = static_cast<portage::package::jstring>(env->functions->GetObjectField(
+        env, pi, env->functions->GetFieldID(env, pi_cls, "packageName", "Ljava/lang/String;")));
+    ASSERT_NE(pkg_str, nullptr);
+    EXPECT_STREQ(jni.GetStringChars(pkg_str), "com.portage.unit");
+
+    std::filesystem::remove_all(tmp_root, ec);
 }

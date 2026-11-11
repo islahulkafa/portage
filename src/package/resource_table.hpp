@@ -46,8 +46,7 @@ class ResourceTable {
     ResourceTable() = default;
 
     bool Parse(std::span<const uint8_t> data);
-    bool ParseStringPool(std::span<const uint8_t> pool_data,
-                         std::vector<std::string> &out_strings);
+    bool ParseStringPool(std::span<const uint8_t> pool_data, std::vector<std::string> &out_strings);
     bool ParsePackage(std::span<const uint8_t> pkg_data);
 
     std::string package_name_{};

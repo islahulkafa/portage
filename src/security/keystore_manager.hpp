@@ -12,7 +12,7 @@
 namespace portage::security {
 
 class KeyStoreManager {
-public:
+  public:
     static KeyStoreManager &Instance();
 
     void Initialize(const std::string &storage_path = "");
@@ -22,8 +22,8 @@ public:
                                size_t key_size_bits, uint32_t purposes, BlockMode block_mode,
                                Padding padding);
     KeyStoreStatus GenerateKeyPair(const std::string &alias, KeyAlgorithm algorithm,
-                                  size_t key_size_bits, uint32_t purposes, Digest digest,
-                                  Padding padding);
+                                   size_t key_size_bits, uint32_t purposes, Digest digest,
+                                   Padding padding);
 
     bool ContainsAlias(const std::string &alias) const;
     const KeyEntry *GetKey(const std::string &alias) const;
@@ -43,7 +43,7 @@ public:
     bool SaveToDisk();
     bool LoadFromDisk();
 
-private:
+  private:
     KeyStoreManager() = default;
     ~KeyStoreManager() = default;
     KeyStoreManager(const KeyStoreManager &) = delete;

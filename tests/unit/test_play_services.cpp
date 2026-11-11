@@ -107,15 +107,15 @@ class PlayServicesTest : public ::testing::Test {
 
 TEST_F(PlayServicesTest, LicensingServiceDispatchesVerificationCallback)
 {
-    AIBinder *lic_svc = ServiceManager::Instance().GetService(
-        "com.android.vending.licensing.ILicensingService");
+    AIBinder *lic_svc =
+        ServiceManager::Instance().GetService("com.android.vending.licensing.ILicensingService");
     ASSERT_NE(lic_svc, nullptr);
 
     CallbackResult cb_result;
 
-    AIBinder_Class *listener_class = AIBinder_Class_define(
-        "com.android.vending.licensing.ILicenseResultListener", nullptr, nullptr,
-        MockListenerTransact);
+    AIBinder_Class *listener_class =
+        AIBinder_Class_define("com.android.vending.licensing.ILicenseResultListener", nullptr,
+                              nullptr, MockListenerTransact);
     ASSERT_NE(listener_class, nullptr);
 
     AIBinder *listener = AIBinder_new(listener_class, &cb_result);
@@ -153,17 +153,17 @@ TEST_F(PlayServicesTest, LicensingServiceDispatchesVerificationCallback)
 
 TEST_F(PlayServicesTest, LicensingServiceHonorsResponseCodeOverride)
 {
-    AIBinder *lic_svc = ServiceManager::Instance().GetService(
-        "com.android.vending.licensing.ILicensingService");
+    AIBinder *lic_svc =
+        ServiceManager::Instance().GetService("com.android.vending.licensing.ILicensingService");
     ASSERT_NE(lic_svc, nullptr);
 
     PlayLicensingService::Instance().SetLicenseResponseCode(1);
 
     CallbackResult cb_result;
 
-    AIBinder_Class *listener_class = AIBinder_Class_define(
-        "com.android.vending.licensing.ILicenseResultListener2", nullptr, nullptr,
-        MockListenerTransact);
+    AIBinder_Class *listener_class =
+        AIBinder_Class_define("com.android.vending.licensing.ILicenseResultListener2", nullptr,
+                              nullptr, MockListenerTransact);
     AIBinder *listener = AIBinder_new(listener_class, &cb_result);
 
     AParcel *in = AParcel_create();
@@ -195,8 +195,8 @@ TEST_F(PlayServicesTest, LicensingServiceHonorsResponseCodeOverride)
 
 TEST_F(PlayServicesTest, BillingServiceSupportsBillingAndQueriesDetails)
 {
-    AIBinder *billing_svc = ServiceManager::Instance().GetService(
-        "com.android.vending.billing.IInAppBillingService");
+    AIBinder *billing_svc =
+        ServiceManager::Instance().GetService("com.android.vending.billing.IInAppBillingService");
     ASSERT_NE(billing_svc, nullptr);
 
     {
@@ -329,7 +329,8 @@ TEST_F(PlayServicesTest, SyntheticPlayServicesJniStubs)
     auto *env = jni.GetJNIEnv();
     ASSERT_NE(env, nullptr);
 
-    auto gapi_cls = env->functions->FindClass(env, "com/google/android/gms/common/GoogleApiAvailability");
+    auto gapi_cls =
+        env->functions->FindClass(env, "com/google/android/gms/common/GoogleApiAvailability");
     ASSERT_NE(gapi_cls, nullptr);
 
     auto get_instance_mid = env->functions->GetStaticMethodID(
@@ -339,16 +340,16 @@ TEST_F(PlayServicesTest, SyntheticPlayServicesJniStubs)
     auto gapi_inst = env->functions->CallStaticObjectMethod(env, gapi_cls, get_instance_mid);
     ASSERT_NE(gapi_inst, nullptr);
 
-    auto check_mid = env->functions->GetMethodID(
-        env, gapi_cls, "isGooglePlayServicesAvailable", "(Landroid/content/Context;)I");
+    auto check_mid = env->functions->GetMethodID(env, gapi_cls, "isGooglePlayServicesAvailable",
+                                                 "(Landroid/content/Context;)I");
     ASSERT_NE(check_mid, nullptr);
 
     package::jobject fake_ctx = reinterpret_cast<package::jobject>(0x9999);
     int res = env->functions->CallIntMethod(env, gapi_inst, check_mid, fake_ctx);
     EXPECT_EQ(res, 0);
 
-    auto review_cls = env->functions->FindClass(
-        env, "com/google/android/play/core/review/ReviewManagerFactory");
+    auto review_cls =
+        env->functions->FindClass(env, "com/google/android/play/core/review/ReviewManagerFactory");
     ASSERT_NE(review_cls, nullptr);
 
     auto rcreate_mid = env->functions->GetStaticMethodID(
@@ -356,11 +357,12 @@ TEST_F(PlayServicesTest, SyntheticPlayServicesJniStubs)
         "(Landroid/content/Context;)Lcom/google/android/play/core/review/ReviewManager;");
     ASSERT_NE(rcreate_mid, nullptr);
 
-    auto review_mgr = env->functions->CallStaticObjectMethod(env, review_cls, rcreate_mid, fake_ctx);
+    auto review_mgr =
+        env->functions->CallStaticObjectMethod(env, review_cls, rcreate_mid, fake_ctx);
     ASSERT_NE(review_mgr, nullptr);
 
-    auto req_mid = env->functions->GetMethodID(
-        env, review_cls, "requestReviewFlow", "()Lcom/google/android/gms/tasks/Task;");
+    auto req_mid = env->functions->GetMethodID(env, review_cls, "requestReviewFlow",
+                                               "()Lcom/google/android/gms/tasks/Task;");
     ASSERT_NE(req_mid, nullptr);
 
     auto task = env->functions->CallObjectMethod(env, review_mgr, req_mid);

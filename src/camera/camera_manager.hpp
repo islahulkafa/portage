@@ -19,6 +19,7 @@ namespace portage::camera {
 struct CameraDeviceInfo {
     std::string id;
     std::string name;
+    std::string symbolic_link;
     int facing{ACAMERA_LENS_FACING_BACK};
     int32_t width{1920};
     int32_t height{1080};
@@ -44,7 +45,7 @@ struct InternalImage {
 };
 
 class ImageReaderImpl {
-public:
+  public:
     ImageReaderImpl(int32_t width, int32_t height, int32_t format, int32_t max_images);
     ~ImageReaderImpl();
 
@@ -61,7 +62,7 @@ public:
     int32_t GetFormat() const { return format_; }
     int32_t GetMaxImages() const { return max_images_; }
 
-private:
+  private:
     int32_t width_{0};
     int32_t height_{0};
     int32_t format_{AIMAGE_FORMAT_RGBA_8888};
@@ -75,24 +76,57 @@ private:
 };
 
 class CameraDeviceImpl {
-public:
-    CameraDeviceImpl(std::string id, const ACameraDevice_StateCallbacks *callbacks);
+  public:
+    CameraDeviceImpl(CameraDeviceInfo info, const ACameraDevice_StateCallbacks *callbacks);
     ~CameraDeviceImpl();
 
-    const std::string &GetId() const { return id_; }
+    const std::string &GetId() const { return info_.id; }
+    const CameraDeviceInfo &GetInfo() const { return info_; }
     camera_status_t Close();
     bool IsClosed() const { return closed_.load(); }
 
     const ACameraDevice_StateCallbacks &GetCallbacks() const { return callbacks_; }
 
-private:
-    std::string id_{};
+  private:
+    CameraDeviceInfo info_{};
     ACameraDevice_StateCallbacks callbacks_{nullptr, nullptr, nullptr};
     std::atomic<bool> closed_{false};
 };
 
+class CaptureSessionImpl;
+class WmfCameraReader;
+
+void ConvertYuy2ToRgba(const uint8_t *yuy2, int32_t stride, int32_t width, int32_t height,
+                       std::vector<uint8_t> &out_rgba);
+void ConvertBgraToRgba(const uint8_t *bgra, int32_t stride, int32_t width, int32_t height,
+                       std::vector<uint8_t> &out_rgba, bool force_opaque_alpha = false);
+void ScaleRgbaFrame(const uint8_t *src_rgba, int32_t src_w, int32_t src_h, int32_t dst_w,
+                    int32_t dst_h, std::vector<uint8_t> &out_rgba);
+void ExtractYuv420PlanesFromRgba(const uint8_t *rgba, int32_t width, int32_t height,
+                                 std::vector<ImagePlaneBuffer> &out_planes);
+bool EncodeRgbaToJpeg(const uint8_t *rgba, int32_t width, int32_t height,
+                      std::vector<uint8_t> &out_jpeg, int quality_percent = 90);
+
+class WmfCameraReader {
+  public:
+    WmfCameraReader();
+    ~WmfCameraReader();
+
+    WmfCameraReader(const WmfCameraReader &) = delete;
+    WmfCameraReader &operator=(const WmfCameraReader &) = delete;
+
+    bool Open(const std::string &symbolic_link, int32_t preferred_width, int32_t preferred_height);
+    void Close();
+    bool IsOpen() const noexcept;
+    bool CaptureRgbaFrame(int32_t &out_width, int32_t &out_height, std::vector<uint8_t> &out_rgba);
+
+  private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_{};
+};
+
 class CaptureSessionImpl {
-public:
+  public:
     CaptureSessionImpl(CameraDeviceImpl *device, const std::vector<ANativeWindow *> &targets,
                        const ACameraCaptureSession_stateCallbacks *callbacks);
     ~CaptureSessionImpl();
@@ -111,7 +145,11 @@ public:
 
     void ProduceFrame();
 
-private:
+  private:
+    int64_t ProduceFrameInternal(const std::vector<ANativeWindow *> &targets,
+                                 int64_t timestamp_nanos);
+    std::vector<ANativeWindow *> CollectRequestTargets(ACaptureRequest *request) const;
+    void StopRepeatingInternal(bool aborted);
     void RepeatingWorkerLoop();
 
     CameraDeviceImpl *device_{nullptr};
@@ -125,22 +163,34 @@ private:
     std::thread worker_thread_{};
 
     int sequence_counter_{1};
-    int64_t frame_counter_{0};
+    int active_repeating_seq_{0};
+    std::atomic<int64_t> active_repeating_last_frame_{-1};
+    std::atomic<int64_t> frame_counter_{0};
     ACameraCaptureSession_captureCallbacks repeating_callbacks_{};
+    std::vector<ACaptureRequest *> repeating_request_ptrs_{};
+    std::vector<std::vector<ANativeWindow *>> repeating_request_targets_{};
+    std::mutex capture_mutex_{};
+    bool physical_open_attempted_{false};
+    std::unique_ptr<WmfCameraReader> physical_reader_{};
 };
 
 class CameraManager {
-public:
+  public:
     static CameraManager &Instance();
 
     void Initialize();
     void Shutdown();
 
-    void SetForceSynthetic(bool force) { force_synthetic_ = force; }
-    bool IsForceSynthetic() const { return force_synthetic_; }
+    void SetForceSynthetic(bool force);
+    bool IsForceSynthetic() const;
 
     std::vector<std::string> GetCameraIds();
     const CameraDeviceInfo *GetDeviceInfo(const std::string &id);
+
+    camera_status_t
+    RegisterAvailabilityCallback(const ACameraManager_AvailabilityCallbacks *callback);
+    camera_status_t
+    UnregisterAvailabilityCallback(const ACameraManager_AvailabilityCallbacks *callback);
 
     camera_status_t OpenCamera(const char *id, const ACameraDevice_StateCallbacks *callbacks,
                                ACameraDevice **out_device);
@@ -153,18 +203,26 @@ public:
     void GenerateSyntheticFrame(int32_t width, int32_t height, int32_t format, int64_t timestamp,
                                 int64_t frame_index, std::vector<ImagePlaneBuffer> &out_planes);
 
-private:
+  private:
     CameraManager();
     ~CameraManager();
     CameraManager(const CameraManager &) = delete;
     CameraManager &operator=(const CameraManager &) = delete;
 
+    struct AvailabilityListenerEntry {
+        const ACameraManager_AvailabilityCallbacks *key{nullptr};
+        ACameraManager_AvailabilityCallbacks callbacks{};
+    };
+
+    void InitializeLocked();
     void EnumeratePhysicalCameras();
 
     bool initialized_{false};
     bool force_synthetic_{false};
     mutable std::mutex mutex_{};
     std::vector<CameraDeviceInfo> devices_{};
+    std::vector<AvailabilityListenerEntry> availability_callbacks_{};
+    std::unordered_map<std::string, int> open_counts_{};
     std::unordered_map<ANativeWindow *, ImageReaderImpl *> registered_readers_{};
 };
 

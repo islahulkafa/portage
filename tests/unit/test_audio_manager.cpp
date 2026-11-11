@@ -143,4 +143,29 @@ TEST_F(AudioManagerTest, StreamingPcmDataAndFrames)
     EXPECT_EQ(stats.current_state, SNDRV_PCM_STATE_SETUP);
 }
 
+TEST_F(AudioManagerTest, LowLatencyPathSelectedOnFlag)
+{
+    auto &mgr = AudioManager::Instance();
+    mgr.ForceNullSink(true);
+
+    EXPECT_TRUE(mgr.ConfigureStream(48000, 2, SNDRV_PCM_FORMAT_S16_LE, true));
+    auto stats = mgr.GetStats();
+    EXPECT_TRUE(stats.is_low_latency);
+    EXPECT_EQ(stats.sample_rate, 48000u);
+    EXPECT_EQ(stats.channels, 2u);
+}
+
+TEST_F(AudioManagerTest, XRunCountZeroOnCleanRender)
+{
+    auto &mgr = AudioManager::Instance();
+    mgr.ForceNullSink(true);
+
+    ASSERT_TRUE(mgr.ConfigureStream(48000, 2, SNDRV_PCM_FORMAT_S16_LE, true));
+    std::vector<int16_t> samples(512 * 2, 500);
+    EXPECT_EQ(mgr.WritePcmBytes(samples.data(), samples.size() * sizeof(int16_t)),
+              static_cast<int64_t>(samples.size() * sizeof(int16_t)));
+
+    EXPECT_EQ(mgr.GetXRunCount(), 0u);
+}
+
 } // namespace portage::audio

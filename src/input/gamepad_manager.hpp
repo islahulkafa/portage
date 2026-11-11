@@ -34,8 +34,8 @@ struct GamepadState {
     float right_stick_y{0.0f}; // -1.0 to 1.0 (AXIS_RZ)
     float left_trigger{0.0f};  // 0.0 to 1.0 (AXIS_LTRIGGER)
     float right_trigger{0.0f}; // 0.0 to 1.0 (AXIS_RTRIGGER)
-    float hat_x{0.0f};          // -1.0 to 1.0 (AXIS_HAT_X)
-    float hat_y{0.0f};          // -1.0 to 1.0 (AXIS_HAT_Y)
+    float hat_x{0.0f};         // -1.0 to 1.0 (AXIS_HAT_X)
+    float hat_y{0.0f};         // -1.0 to 1.0 (AXIS_HAT_Y)
     uint32_t buttons{0};
     bool connected{false};
 };

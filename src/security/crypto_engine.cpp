@@ -47,8 +47,7 @@ bool CryptoEngine::Sha256(const uint8_t *data, size_t length, std::vector<uint8_
 {
     out_hash.resize(32);
     BCRYPT_ALG_HANDLE hAlg = nullptr;
-    NTSTATUS status =
-        BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
+    NTSTATUS status = BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
     if (NT_SUCCESS(status) && hAlg) {
         BCRYPT_HASH_HANDLE hHash = nullptr;
         status = BCryptCreateHash(hAlg, &hHash, nullptr, 0, nullptr, 0, 0);
@@ -130,14 +129,15 @@ bool CryptoEngine::EncryptAesGcm(const std::vector<uint8_t> &key, const std::vec
     BCRYPT_ALG_HANDLE hAlg = nullptr;
     NTSTATUS status = BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, nullptr, 0);
     if (NT_SUCCESS(status) && hAlg) {
-        status = BCryptSetProperty(hAlg, BCRYPT_CHAINING_MODE,
-                                   reinterpret_cast<PUCHAR>(const_cast<wchar_t *>(BCRYPT_CHAIN_MODE_GCM)),
-                                   sizeof(BCRYPT_CHAIN_MODE_GCM), 0);
+        status = BCryptSetProperty(
+            hAlg, BCRYPT_CHAINING_MODE,
+            reinterpret_cast<PUCHAR>(const_cast<wchar_t *>(BCRYPT_CHAIN_MODE_GCM)),
+            sizeof(BCRYPT_CHAIN_MODE_GCM), 0);
         if (NT_SUCCESS(status)) {
             BCRYPT_KEY_HANDLE hKey = nullptr;
-            status = BCryptGenerateSymmetricKey(hAlg, &hKey, nullptr, 0,
-                                                const_cast<PUCHAR>(key.data()),
-                                                static_cast<ULONG>(key.size()), 0);
+            status =
+                BCryptGenerateSymmetricKey(hAlg, &hKey, nullptr, 0, const_cast<PUCHAR>(key.data()),
+                                           static_cast<ULONG>(key.size()), 0);
             if (NT_SUCCESS(status) && hKey) {
                 BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO authInfo;
                 BCRYPT_INIT_AUTH_MODE_INFO(authInfo);
@@ -180,14 +180,15 @@ bool CryptoEngine::DecryptAesGcm(const std::vector<uint8_t> &key, const std::vec
     BCRYPT_ALG_HANDLE hAlg = nullptr;
     NTSTATUS status = BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, nullptr, 0);
     if (NT_SUCCESS(status) && hAlg) {
-        status = BCryptSetProperty(hAlg, BCRYPT_CHAINING_MODE,
-                                   reinterpret_cast<PUCHAR>(const_cast<wchar_t *>(BCRYPT_CHAIN_MODE_GCM)),
-                                   sizeof(BCRYPT_CHAIN_MODE_GCM), 0);
+        status = BCryptSetProperty(
+            hAlg, BCRYPT_CHAINING_MODE,
+            reinterpret_cast<PUCHAR>(const_cast<wchar_t *>(BCRYPT_CHAIN_MODE_GCM)),
+            sizeof(BCRYPT_CHAIN_MODE_GCM), 0);
         if (NT_SUCCESS(status)) {
             BCRYPT_KEY_HANDLE hKey = nullptr;
-            status = BCryptGenerateSymmetricKey(hAlg, &hKey, nullptr, 0,
-                                                const_cast<PUCHAR>(key.data()),
-                                                static_cast<ULONG>(key.size()), 0);
+            status =
+                BCryptGenerateSymmetricKey(hAlg, &hKey, nullptr, 0, const_cast<PUCHAR>(key.data()),
+                                           static_cast<ULONG>(key.size()), 0);
             if (NT_SUCCESS(status) && hKey) {
                 BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO authInfo;
                 BCRYPT_INIT_AUTH_MODE_INFO(authInfo);
@@ -236,14 +237,15 @@ bool CryptoEngine::EncryptAesCbc(const std::vector<uint8_t> &key, const std::vec
     BCRYPT_ALG_HANDLE hAlg = nullptr;
     NTSTATUS status = BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, nullptr, 0);
     if (NT_SUCCESS(status) && hAlg) {
-        status = BCryptSetProperty(hAlg, BCRYPT_CHAINING_MODE,
-                                   reinterpret_cast<PUCHAR>(const_cast<wchar_t *>(BCRYPT_CHAIN_MODE_CBC)),
-                                   sizeof(BCRYPT_CHAIN_MODE_CBC), 0);
+        status = BCryptSetProperty(
+            hAlg, BCRYPT_CHAINING_MODE,
+            reinterpret_cast<PUCHAR>(const_cast<wchar_t *>(BCRYPT_CHAIN_MODE_CBC)),
+            sizeof(BCRYPT_CHAIN_MODE_CBC), 0);
         if (NT_SUCCESS(status)) {
             BCRYPT_KEY_HANDLE hKey = nullptr;
-            status = BCryptGenerateSymmetricKey(hAlg, &hKey, nullptr, 0,
-                                                const_cast<PUCHAR>(key.data()),
-                                                static_cast<ULONG>(key.size()), 0);
+            status =
+                BCryptGenerateSymmetricKey(hAlg, &hKey, nullptr, 0, const_cast<PUCHAR>(key.data()),
+                                           static_cast<ULONG>(key.size()), 0);
             if (NT_SUCCESS(status) && hKey) {
                 ULONG cbResult = 0;
                 status = BCryptEncrypt(hKey, padded.data(), static_cast<ULONG>(padded.size()),
@@ -286,21 +288,22 @@ bool CryptoEngine::DecryptAesCbc(const std::vector<uint8_t> &key, const std::vec
     BCRYPT_ALG_HANDLE hAlg = nullptr;
     NTSTATUS status = BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, nullptr, 0);
     if (NT_SUCCESS(status) && hAlg) {
-        status = BCryptSetProperty(hAlg, BCRYPT_CHAINING_MODE,
-                                   reinterpret_cast<PUCHAR>(const_cast<wchar_t *>(BCRYPT_CHAIN_MODE_CBC)),
-                                   sizeof(BCRYPT_CHAIN_MODE_CBC), 0);
+        status = BCryptSetProperty(
+            hAlg, BCRYPT_CHAINING_MODE,
+            reinterpret_cast<PUCHAR>(const_cast<wchar_t *>(BCRYPT_CHAIN_MODE_CBC)),
+            sizeof(BCRYPT_CHAIN_MODE_CBC), 0);
         if (NT_SUCCESS(status)) {
             BCRYPT_KEY_HANDLE hKey = nullptr;
-            status = BCryptGenerateSymmetricKey(hAlg, &hKey, nullptr, 0,
-                                                const_cast<PUCHAR>(key.data()),
-                                                static_cast<ULONG>(key.size()), 0);
+            status =
+                BCryptGenerateSymmetricKey(hAlg, &hKey, nullptr, 0, const_cast<PUCHAR>(key.data()),
+                                           static_cast<ULONG>(key.size()), 0);
             if (NT_SUCCESS(status) && hKey) {
                 ULONG cbResult = 0;
-                status = BCryptDecrypt(hKey, const_cast<PUCHAR>(ciphertext.data()),
-                                       static_cast<ULONG>(ciphertext.size()), nullptr,
-                                       iv_copy.data(), static_cast<ULONG>(iv_copy.size()),
-                                       decrypted.data(), static_cast<ULONG>(decrypted.size()),
-                                       &cbResult, 0);
+                status =
+                    BCryptDecrypt(hKey, const_cast<PUCHAR>(ciphertext.data()),
+                                  static_cast<ULONG>(ciphertext.size()), nullptr, iv_copy.data(),
+                                  static_cast<ULONG>(iv_copy.size()), decrypted.data(),
+                                  static_cast<ULONG>(decrypted.size()), &cbResult, 0);
                 BCryptDestroyKey(hKey);
             }
         }
@@ -424,10 +427,10 @@ bool CryptoEngine::VerifySha256WithRsa(const std::vector<uint8_t> &pub_key,
         if (NT_SUCCESS(status) && hKey) {
             BCRYPT_PKCS1_PADDING_INFO padInfo;
             padInfo.pszAlgId = BCRYPT_SHA256_ALGORITHM;
-            status = BCryptVerifySignature(hKey, &padInfo, hash.data(),
-                                           static_cast<ULONG>(hash.size()),
-                                           const_cast<PUCHAR>(signature.data()),
-                                           static_cast<ULONG>(signature.size()), BCRYPT_PAD_PKCS1);
+            status =
+                BCryptVerifySignature(hKey, &padInfo, hash.data(), static_cast<ULONG>(hash.size()),
+                                      const_cast<PUCHAR>(signature.data()),
+                                      static_cast<ULONG>(signature.size()), BCRYPT_PAD_PKCS1);
             BCryptDestroyKey(hKey);
             BCryptCloseAlgorithmProvider(hAlg, 0);
             if (NT_SUCCESS(status)) {
@@ -446,8 +449,7 @@ bool CryptoEngine::VerifySha256WithRsa(const std::vector<uint8_t> &pub_key,
 bool CryptoEngine::GenerateEcKeyPair(std::vector<uint8_t> &out_pub, std::vector<uint8_t> &out_priv)
 {
     BCRYPT_ALG_HANDLE hAlg = nullptr;
-    NTSTATUS status =
-        BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_ECDSA_P256_ALGORITHM, nullptr, 0);
+    NTSTATUS status = BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_ECDSA_P256_ALGORITHM, nullptr, 0);
     if (NT_SUCCESS(status) && hAlg) {
         BCRYPT_KEY_HANDLE hKey = nullptr;
         status = BCryptGenerateKeyPair(hAlg, &hKey, 256, 0);
@@ -488,8 +490,7 @@ bool CryptoEngine::SignSha256WithEcdsa(const std::vector<uint8_t> &priv_key,
     Sha256(data.data(), data.size(), hash);
 
     BCRYPT_ALG_HANDLE hAlg = nullptr;
-    NTSTATUS status =
-        BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_ECDSA_P256_ALGORITHM, nullptr, 0);
+    NTSTATUS status = BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_ECDSA_P256_ALGORITHM, nullptr, 0);
     if (NT_SUCCESS(status) && hAlg) {
         BCRYPT_KEY_HANDLE hKey = nullptr;
         status = BCryptImportKeyPair(hAlg, nullptr, BCRYPT_ECCPRIVATE_BLOB, &hKey,
@@ -524,18 +525,16 @@ bool CryptoEngine::VerifySha256WithEcdsa(const std::vector<uint8_t> &pub_key,
     Sha256(data.data(), data.size(), hash);
 
     BCRYPT_ALG_HANDLE hAlg = nullptr;
-    NTSTATUS status =
-        BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_ECDSA_P256_ALGORITHM, nullptr, 0);
+    NTSTATUS status = BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_ECDSA_P256_ALGORITHM, nullptr, 0);
     if (NT_SUCCESS(status) && hAlg) {
         BCRYPT_KEY_HANDLE hKey = nullptr;
         status = BCryptImportKeyPair(hAlg, nullptr, BCRYPT_ECCPUBLIC_BLOB, &hKey,
                                      const_cast<PUCHAR>(pub_key.data()),
                                      static_cast<ULONG>(pub_key.size()), 0);
         if (NT_SUCCESS(status) && hKey) {
-            status = BCryptVerifySignature(hKey, nullptr, hash.data(),
-                                           static_cast<ULONG>(hash.size()),
-                                           const_cast<PUCHAR>(signature.data()),
-                                           static_cast<ULONG>(signature.size()), 0);
+            status = BCryptVerifySignature(
+                hKey, nullptr, hash.data(), static_cast<ULONG>(hash.size()),
+                const_cast<PUCHAR>(signature.data()), static_cast<ULONG>(signature.size()), 0);
             BCryptDestroyKey(hKey);
             BCryptCloseAlgorithmProvider(hAlg, 0);
             if (NT_SUCCESS(status)) {

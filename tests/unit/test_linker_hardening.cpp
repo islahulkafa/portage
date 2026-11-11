@@ -62,10 +62,7 @@ __attribute__((sysv_abi)) void RecordAtExitValue(void *arg)
     g_atexit_log.push_back(static_cast<int>(reinterpret_cast<intptr_t>(arg)));
 }
 
-__attribute__((sysv_abi)) void PlainAtExitCallback()
-{
-    g_atexit_log.push_back(999);
-}
+__attribute__((sysv_abi)) void PlainAtExitCallback() { g_atexit_log.push_back(999); }
 
 __attribute__((sysv_abi)) void ReentrantInitCallback()
 {
@@ -258,7 +255,10 @@ TEST_F(LinkerHardeningTest, CrossModuleTlsRelocationsResolveViaLinkMap)
         constexpr size_t tls_off = 0x800;
 
         Elf64_Ehdr ehdr{};
-        std::memcpy(ehdr.e_ident, "\x7F" "ELF", 4);
+        std::memcpy(ehdr.e_ident,
+                    "\x7F"
+                    "ELF",
+                    4);
         ehdr.e_ident[EI_CLASS] = ELFCLASS64;
         ehdr.e_ident[EI_DATA] = ELFDATA2LSB;
         ehdr.e_ident[EI_VERSION] = 1;
@@ -295,8 +295,8 @@ TEST_F(LinkerHardeningTest, CrossModuleTlsRelocationsResolveViaLinkMap)
         dyns[3] = {DT_NULL, {0}};
         mod_a.WriteBytes(dyn_off, dyns, sizeof(dyns));
 
-        Elf64_Phdr ph_dyn{PT_DYNAMIC, PF_R | PF_W, dyn_off, dyn_off, dyn_off, sizeof(dyns),
-                          sizeof(dyns), 8};
+        Elf64_Phdr ph_dyn{PT_DYNAMIC, PF_R | PF_W,  dyn_off,      dyn_off,
+                          dyn_off,    sizeof(dyns), sizeof(dyns), 8};
         mod_a.WriteAt(phdr_off + sizeof(Elf64_Phdr), ph_dyn);
 
         Elf64_Phdr ph_tls{PT_TLS, PF_R, tls_off, tls_off, tls_off, 16, 64, 16};
@@ -309,7 +309,8 @@ TEST_F(LinkerHardeningTest, CrossModuleTlsRelocationsResolveViaLinkMap)
     auto elf_a = std::get<LoadedElf>(res_a);
     LinkMap::Instance().RegisterLoadedElf(elf_a, "libmod_a.so");
 
-    // Module B has undefined STT_TLS reference to "shared_tls_var" via R_X86_64_DTPMOD64 + R_X86_64_DTPOFF64
+    // Module B has undefined STT_TLS reference to "shared_tls_var" via R_X86_64_DTPMOD64 +
+    // R_X86_64_DTPOFF64
     SyntheticElfBuilder mod_b(0x2000);
     constexpr size_t got_off = 0x700;
     {
@@ -320,7 +321,10 @@ TEST_F(LinkerHardeningTest, CrossModuleTlsRelocationsResolveViaLinkMap)
         constexpr size_t symtab_off = 0x500;
 
         Elf64_Ehdr ehdr{};
-        std::memcpy(ehdr.e_ident, "\x7F" "ELF", 4);
+        std::memcpy(ehdr.e_ident,
+                    "\x7F"
+                    "ELF",
+                    4);
         ehdr.e_ident[EI_CLASS] = ELFCLASS64;
         ehdr.e_ident[EI_DATA] = ELFDATA2LSB;
         ehdr.e_ident[EI_VERSION] = 1;
@@ -363,8 +367,8 @@ TEST_F(LinkerHardeningTest, CrossModuleTlsRelocationsResolveViaLinkMap)
         dyns[4] = {DT_NULL, {0}};
         mod_b.WriteBytes(dyn_off, dyns, sizeof(dyns));
 
-        Elf64_Phdr ph_dyn{PT_DYNAMIC, PF_R | PF_W, dyn_off, dyn_off, dyn_off, sizeof(dyns),
-                          sizeof(dyns), 8};
+        Elf64_Phdr ph_dyn{PT_DYNAMIC, PF_R | PF_W,  dyn_off,      dyn_off,
+                          dyn_off,    sizeof(dyns), sizeof(dyns), 8};
         mod_b.WriteAt(phdr_off + sizeof(Elf64_Phdr), ph_dyn);
     }
 
@@ -449,7 +453,10 @@ TEST_F(LinkerHardeningTest, PtGnuRelroMarksRegionReadOnlyAfterRelocation)
     constexpr size_t relro_page_off = 0x1000;
 
     Elf64_Ehdr ehdr{};
-    std::memcpy(ehdr.e_ident, "\x7F" "ELF", 4);
+    std::memcpy(ehdr.e_ident,
+                "\x7F"
+                "ELF",
+                4);
     ehdr.e_ident[EI_CLASS] = ELFCLASS64;
     ehdr.e_ident[EI_DATA] = ELFDATA2LSB;
     ehdr.e_ident[EI_VERSION] = 1;
@@ -477,12 +484,12 @@ TEST_F(LinkerHardeningTest, PtGnuRelroMarksRegionReadOnlyAfterRelocation)
     dyns[2] = {DT_NULL, {0}};
     builder.WriteBytes(dyn_off, dyns, sizeof(dyns));
 
-    Elf64_Phdr ph_dyn{PT_DYNAMIC, PF_R | PF_W, dyn_off, dyn_off, dyn_off, sizeof(dyns),
-                      sizeof(dyns), 8};
+    Elf64_Phdr ph_dyn{PT_DYNAMIC, PF_R | PF_W,  dyn_off,      dyn_off,
+                      dyn_off,    sizeof(dyns), sizeof(dyns), 8};
     builder.WriteAt(phdr_off + sizeof(Elf64_Phdr), ph_dyn);
 
-    Elf64_Phdr ph_relro{PT_GNU_RELRO, PF_R, relro_page_off, relro_page_off, relro_page_off, 0x1000,
-                        0x1000, 0x1000};
+    Elf64_Phdr ph_relro{PT_GNU_RELRO,   PF_R,   relro_page_off, relro_page_off,
+                        relro_page_off, 0x1000, 0x1000,         0x1000};
     builder.WriteAt(phdr_off + 2 * sizeof(Elf64_Phdr), ph_relro);
 
     ElfLoader loader(address_space_.get());
@@ -509,7 +516,8 @@ TEST_F(LinkerHardeningTest, DtRunpathAndOriginResolveNestedDependency)
     stdfs::path nested_dep = sub_dir / "libnested_dep.so";
     stdfs::copy_file(math_src, nested_dep, stdfs::copy_options::overwrite_existing);
 
-    // Build parent library with DT_RUNPATH = "$ORIGIN/nested_deps" and DT_NEEDED = "libnested_dep.so"
+    // Build parent library with DT_RUNPATH = "$ORIGIN/nested_deps" and DT_NEEDED =
+    // "libnested_dep.so"
     SyntheticElfBuilder parent(0x2000);
     {
         constexpr size_t phdr_off = sizeof(Elf64_Ehdr);
@@ -517,7 +525,10 @@ TEST_F(LinkerHardeningTest, DtRunpathAndOriginResolveNestedDependency)
         constexpr size_t strtab_off = 0x400;
 
         Elf64_Ehdr ehdr{};
-        std::memcpy(ehdr.e_ident, "\x7F" "ELF", 4);
+        std::memcpy(ehdr.e_ident,
+                    "\x7F"
+                    "ELF",
+                    4);
         ehdr.e_ident[EI_CLASS] = ELFCLASS64;
         ehdr.e_ident[EI_DATA] = ELFDATA2LSB;
         ehdr.e_ident[EI_VERSION] = 1;
@@ -543,8 +554,8 @@ TEST_F(LinkerHardeningTest, DtRunpathAndOriginResolveNestedDependency)
         dyns[3] = {DT_NULL, {0}};
         parent.WriteBytes(dyn_off, dyns, sizeof(dyns));
 
-        Elf64_Phdr ph_dyn{PT_DYNAMIC, PF_R | PF_W, dyn_off, dyn_off, dyn_off, sizeof(dyns),
-                          sizeof(dyns), 8};
+        Elf64_Phdr ph_dyn{PT_DYNAMIC, PF_R | PF_W,  dyn_off,      dyn_off,
+                          dyn_off,    sizeof(dyns), sizeof(dyns), 8};
         parent.WriteAt(phdr_off + sizeof(Elf64_Phdr), ph_dyn);
     }
 
@@ -583,7 +594,8 @@ TEST_F(LinkerHardeningTest, CopyRelocationAndRtldNextResolution)
     LinkMap::Instance().RegisterLoadedElf(second_mod, "libsecond.so");
 
     // Verify RTLD_NEXT from caller inside libfirst.so resolves libsecond.so's symbol
-    void *default_sym = LinkMap::Instance().DlSymWithCaller(RTLD_DEFAULT, "interposed_sym", 0x100050);
+    void *default_sym =
+        LinkMap::Instance().DlSymWithCaller(RTLD_DEFAULT, "interposed_sym", 0x100050);
     void *next_sym = LinkMap::Instance().DlSymWithCaller(RTLD_NEXT, "interposed_sym", 0x100050);
     EXPECT_EQ(default_sym, reinterpret_cast<void *>(0x100100));
     EXPECT_EQ(next_sym, reinterpret_cast<void *>(0x200200));
@@ -599,7 +611,10 @@ TEST_F(LinkerHardeningTest, CopyRelocationAndRtldNextResolution)
         constexpr size_t symtab_off = 0x500;
 
         Elf64_Ehdr ehdr{};
-        std::memcpy(ehdr.e_ident, "\x7F" "ELF", 4);
+        std::memcpy(ehdr.e_ident,
+                    "\x7F"
+                    "ELF",
+                    4);
         ehdr.e_ident[EI_CLASS] = ELFCLASS64;
         ehdr.e_ident[EI_DATA] = ELFDATA2LSB;
         ehdr.e_ident[EI_VERSION] = 1;
@@ -640,8 +655,8 @@ TEST_F(LinkerHardeningTest, CopyRelocationAndRtldNextResolution)
         dyns[4] = {DT_NULL, {0}};
         copy_mod.WriteBytes(dyn_off, dyns, sizeof(dyns));
 
-        Elf64_Phdr ph_dyn{PT_DYNAMIC, PF_R | PF_W, dyn_off, dyn_off, dyn_off, sizeof(dyns),
-                          sizeof(dyns), 8};
+        Elf64_Phdr ph_dyn{PT_DYNAMIC, PF_R | PF_W,  dyn_off,      dyn_off,
+                          dyn_off,    sizeof(dyns), sizeof(dyns), 8};
         copy_mod.WriteAt(phdr_off + sizeof(Elf64_Phdr), ph_dyn);
     }
 

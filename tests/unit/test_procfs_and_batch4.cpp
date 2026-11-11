@@ -81,8 +81,8 @@ TEST_F(ProcFsAndBatch4Test, ProcFsMapsAttribution)
 
 TEST_F(ProcFsAndBatch4Test, ProcFsIntrospection)
 {
-    SyscallDispatcher::Dispatch(157, LINUX_PR_SET_NAME,
-                                reinterpret_cast<uint64_t>("worker_thread"), 0, 0, 0, 0);
+    SyscallDispatcher::Dispatch(157, LINUX_PR_SET_NAME, reinterpret_cast<uint64_t>("worker_thread"),
+                                0, 0, 0, 0);
     std::string comm = portage::fs::ProcFs::Generate("/proc/self/comm");
     EXPECT_EQ(comm, "worker_thread\n");
 
@@ -153,7 +153,8 @@ TEST_F(ProcFsAndBatch4Test, ProcFsListDir)
     EXPECT_TRUE(found_task);
 
     int pipefds[2];
-    int64_t pr = SyscallDispatcher::Dispatch(293, reinterpret_cast<uint64_t>(pipefds), 0, 0, 0, 0, 0);
+    int64_t pr =
+        SyscallDispatcher::Dispatch(293, reinterpret_cast<uint64_t>(pipefds), 0, 0, 0, 0, 0);
     ASSERT_EQ(pr, 0);
 
     auto fd_entries = portage::fs::ProcFs::ListDir("/proc/self/fd", &fd_table_);
@@ -199,7 +200,8 @@ TEST_F(ProcFsAndBatch4Test, ReadlinkProcSelfFd)
     EXPECT_STREQ(buf, "C:/portage/bin/portage.exe");
 
     int pipefds[2];
-    int64_t pr = SyscallDispatcher::Dispatch(293, reinterpret_cast<uint64_t>(pipefds), 0, 0, 0, 0, 0);
+    int64_t pr =
+        SyscallDispatcher::Dispatch(293, reinterpret_cast<uint64_t>(pipefds), 0, 0, 0, 0, 0);
     ASSERT_EQ(pr, 0);
 
     std::string link_path = "/proc/self/fd/" + std::to_string(pipefds[0]);
@@ -233,9 +235,9 @@ TEST_F(ProcFsAndBatch4Test, MremapFixedAndDontUnmap)
     EXPECT_STREQ(static_cast<char *>(fixed), "mremap_magic");
 
     // DONTUNMAP move
-    void *dup_addr = reinterpret_cast<void *>(SyscallDispatcher::Dispatch(
-        25, reinterpret_cast<uint64_t>(fixed), 8192, 8192,
-        LINUX_MREMAP_MAYMOVE | LINUX_MREMAP_DONTUNMAP, 0, 0));
+    void *dup_addr = reinterpret_cast<void *>(
+        SyscallDispatcher::Dispatch(25, reinterpret_cast<uint64_t>(fixed), 8192, 8192,
+                                    LINUX_MREMAP_MAYMOVE | LINUX_MREMAP_DONTUNMAP, 0, 0));
     ASSERT_TRUE(dup_addr != nullptr);
     EXPECT_NE(dup_addr, fixed);
     EXPECT_STREQ(static_cast<char *>(dup_addr), "mremap_magic");
@@ -256,8 +258,8 @@ TEST_F(ProcFsAndBatch4Test, MincoreTracking)
     EXPECT_EQ(vec[1], 1);
 
     unsigned char vec_err[1] = {0};
-    int64_t r_err = SyscallDispatcher::Dispatch(27, 0x1000, 4096,
-                                                reinterpret_cast<uint64_t>(vec_err), 0, 0, 0);
+    int64_t r_err =
+        SyscallDispatcher::Dispatch(27, 0x1000, 4096, reinterpret_cast<uint64_t>(vec_err), 0, 0, 0);
     EXPECT_EQ(r_err, LINUX_ENOMEM);
 }
 
@@ -276,7 +278,8 @@ TEST_F(ProcFsAndBatch4Test, SendfileAndSpliceAndCopyFileRange)
     ASSERT_GE(in_fd, 0);
 
     int pipefds[2];
-    int64_t pr = SyscallDispatcher::Dispatch(293, reinterpret_cast<uint64_t>(pipefds), 0, 0, 0, 0, 0);
+    int64_t pr =
+        SyscallDispatcher::Dispatch(293, reinterpret_cast<uint64_t>(pipefds), 0, 0, 0, 0, 0);
     ASSERT_EQ(pr, 0);
 
     // Test sendfile: from file to pipe
@@ -302,7 +305,8 @@ TEST_F(ProcFsAndBatch4Test, SendfileAndSpliceAndCopyFileRange)
 
     // Write to pipe first
     const char *splice_data = "SPLICE_PAYLOAD";
-    SyscallDispatcher::Dispatch(1, pipefds[1], reinterpret_cast<uint64_t>(splice_data), 14, 0, 0, 0);
+    SyscallDispatcher::Dispatch(1, pipefds[1], reinterpret_cast<uint64_t>(splice_data), 14, 0, 0,
+                                0);
 
     int64_t spliced = SyscallDispatcher::Dispatch(275, pipefds[0], 0, out_fd, 0, 14, 0);
     EXPECT_EQ(spliced, 14);
@@ -310,8 +314,9 @@ TEST_F(ProcFsAndBatch4Test, SendfileAndSpliceAndCopyFileRange)
     // Test copy_file_range: copy 10 bytes from in_fd to out_fd
     int64_t off_in = 5;
     int64_t off_out = 14;
-    int64_t copied = SyscallDispatcher::Dispatch(326, in_fd, reinterpret_cast<uint64_t>(&off_in),
-                                                 out_fd, reinterpret_cast<uint64_t>(&off_out), 10, 0);
+    int64_t copied =
+        SyscallDispatcher::Dispatch(326, in_fd, reinterpret_cast<uint64_t>(&off_in), out_fd,
+                                    reinterpret_cast<uint64_t>(&off_out), 10, 0);
     EXPECT_EQ(copied, 10);
     EXPECT_EQ(off_in, 15);
     EXPECT_EQ(off_out, 24);
@@ -357,12 +362,10 @@ TEST_F(ProcFsAndBatch4Test, RecvmmsgSendmmsgAndFaccessat2AndEpollPwait2)
     EXPECT_EQ(w, 0); // Timeout, 0 events
 
     // Test sendmmsg and recvmmsg over UDP socket pair
-    int s1 = static_cast<int>(
-        SyscallDispatcher::Dispatch(41, portage::net::LINUX_AF_INET,
-                                    portage::net::LINUX_SOCK_DGRAM, 0, 0, 0, 0));
-    int s2 = static_cast<int>(
-        SyscallDispatcher::Dispatch(41, portage::net::LINUX_AF_INET,
-                                    portage::net::LINUX_SOCK_DGRAM, 0, 0, 0, 0));
+    int s1 = static_cast<int>(SyscallDispatcher::Dispatch(
+        41, portage::net::LINUX_AF_INET, portage::net::LINUX_SOCK_DGRAM, 0, 0, 0, 0));
+    int s2 = static_cast<int>(SyscallDispatcher::Dispatch(
+        41, portage::net::LINUX_AF_INET, portage::net::LINUX_SOCK_DGRAM, 0, 0, 0, 0));
     ASSERT_GE(s1, 0);
     ASSERT_GE(s2, 0);
 
@@ -370,8 +373,8 @@ TEST_F(ProcFsAndBatch4Test, RecvmmsgSendmmsgAndFaccessat2AndEpollPwait2)
     sin.sin_family = portage::net::LINUX_AF_INET;
     sin.sin_port = htons(0);
     sin.sin_addr.addr = htonl(0x7F000001); // 127.0.0.1
-    int64_t br = SyscallDispatcher::Dispatch(49, s2, reinterpret_cast<uint64_t>(&sin), sizeof(sin),
-                                             0, 0, 0);
+    int64_t br =
+        SyscallDispatcher::Dispatch(49, s2, reinterpret_cast<uint64_t>(&sin), sizeof(sin), 0, 0, 0);
     ASSERT_EQ(br, 0);
 
     uint32_t slen = sizeof(sin);
@@ -397,8 +400,8 @@ TEST_F(ProcFsAndBatch4Test, RecvmmsgSendmmsgAndFaccessat2AndEpollPwait2)
     send_mmsg[1].msg_hdr.msg_iov = &iov[1];
     send_mmsg[1].msg_hdr.msg_iovlen = 1;
 
-    int64_t sent_msgs = SyscallDispatcher::Dispatch(
-        307, s1, reinterpret_cast<uint64_t>(send_mmsg), 2, 0, 0, 0);
+    int64_t sent_msgs =
+        SyscallDispatcher::Dispatch(307, s1, reinterpret_cast<uint64_t>(send_mmsg), 2, 0, 0, 0);
     EXPECT_EQ(sent_msgs, 2);
     EXPECT_EQ(send_mmsg[0].msg_len, sizeof(msg1));
     EXPECT_EQ(send_mmsg[1].msg_len, sizeof(msg2));
@@ -417,8 +420,8 @@ TEST_F(ProcFsAndBatch4Test, RecvmmsgSendmmsgAndFaccessat2AndEpollPwait2)
     recv_mmsg[1].msg_hdr.msg_iov = &r_iov[1];
     recv_mmsg[1].msg_hdr.msg_iovlen = 1;
 
-    int64_t recv_msgs = SyscallDispatcher::Dispatch(
-        299, s2, reinterpret_cast<uint64_t>(recv_mmsg), 2, 0, 0, 0);
+    int64_t recv_msgs =
+        SyscallDispatcher::Dispatch(299, s2, reinterpret_cast<uint64_t>(recv_mmsg), 2, 0, 0, 0);
     EXPECT_EQ(recv_msgs, 2);
     EXPECT_STREQ(recv_buf1, "HelloBatch4_1");
     EXPECT_STREQ(recv_buf2, "HelloBatch4_2");

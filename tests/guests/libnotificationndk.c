@@ -30,7 +30,8 @@ ANotificationChannel_create(const char *id, const char *name, int32_t importance
     return (ANotificationChannel *)0;
 }
 
-__attribute__((visibility("default"))) void ANotificationChannel_destroy(ANotificationChannel *channel)
+__attribute__((visibility("default"))) void
+ANotificationChannel_destroy(ANotificationChannel *channel)
 {
     (void)channel;
 }
@@ -49,9 +50,8 @@ ANotificationChannel_getImportance(ANotificationChannel *channel)
     return 0;
 }
 
-__attribute__((visibility("default"))) int32_t
-ANotificationManager_createNotificationChannel(ANotificationManager *mgr,
-                                               ANotificationChannel *channel)
+__attribute__((visibility("default"))) int32_t ANotificationManager_createNotificationChannel(
+    ANotificationManager *mgr, ANotificationChannel *channel)
 {
     (void)mgr;
     (void)channel;
@@ -86,21 +86,22 @@ __attribute__((visibility("default"))) void ANotification_destroy(ANotification 
 }
 
 __attribute__((visibility("default"))) void ANotification_setTitle(ANotification *notification,
-                                                      const char *title)
+                                                                   const char *title)
 {
     (void)notification;
     (void)title;
 }
 
 __attribute__((visibility("default"))) void ANotification_setText(ANotification *notification,
-                                                     const char *text)
+                                                                  const char *text)
 {
     (void)notification;
     (void)text;
 }
 
-__attribute__((visibility("default"))) void ANotification_setProgress(ANotification *notification, int32_t max,
-                                                         int32_t progress, int32_t indeterminate)
+__attribute__((visibility("default"))) void ANotification_setProgress(ANotification *notification,
+                                                                      int32_t max, int32_t progress,
+                                                                      int32_t indeterminate)
 {
     (void)notification;
     (void)max;
@@ -109,15 +110,14 @@ __attribute__((visibility("default"))) void ANotification_setProgress(ANotificat
 }
 
 __attribute__((visibility("default"))) void ANotification_setOngoing(ANotification *notification,
-                                                        int32_t ongoing)
+                                                                     int32_t ongoing)
 {
     (void)notification;
     (void)ongoing;
 }
 
-__attribute__((visibility("default"))) int32_t ANotificationManager_notify(ANotificationManager *mgr,
-                                                              const char *tag, int32_t id,
-                                                              ANotification *notification)
+__attribute__((visibility("default"))) int32_t ANotificationManager_notify(
+    ANotificationManager *mgr, const char *tag, int32_t id, ANotification *notification)
 {
     (void)mgr;
     (void)tag;
@@ -126,8 +126,8 @@ __attribute__((visibility("default"))) int32_t ANotificationManager_notify(ANoti
     return -1;
 }
 
-__attribute__((visibility("default"))) int32_t ANotificationManager_cancel(ANotificationManager *mgr,
-                                                              const char *tag, int32_t id)
+__attribute__((visibility("default"))) int32_t
+ANotificationManager_cancel(ANotificationManager *mgr, const char *tag, int32_t id)
 {
     (void)mgr;
     (void)tag;
@@ -135,7 +135,8 @@ __attribute__((visibility("default"))) int32_t ANotificationManager_cancel(ANoti
     return -1;
 }
 
-__attribute__((visibility("default"))) void ANotificationManager_cancelAll(ANotificationManager *mgr)
+__attribute__((visibility("default"))) void
+ANotificationManager_cancelAll(ANotificationManager *mgr)
 {
     (void)mgr;
 }

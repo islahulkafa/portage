@@ -106,26 +106,26 @@ class MultinetworkManager {
 
 } // namespace portage::ndk
 
-using portage::ndk::NETWORK_UNSPECIFIED;
+using portage::ndk::NET_HANDLE_CELLULAR;
 using portage::ndk::NET_HANDLE_DEFAULT;
 using portage::ndk::NET_HANDLE_WIFI;
-using portage::ndk::NET_HANDLE_CELLULAR;
+using portage::ndk::NETWORK_UNSPECIFIED;
 
 extern "C" {
 __attribute__((sysv_abi)) int android_setsocknetwork(net_handle_t network, int fd);
 __attribute__((sysv_abi)) int android_setprocnetwork(net_handle_t network);
 __attribute__((sysv_abi)) int android_getprocnetwork(net_handle_t *network);
 __attribute__((sysv_abi)) int android_getaddrinfofornetwork(net_handle_t network, const char *node,
-                                                           const char *service,
-                                                           const struct LinuxAddrInfo *hints,
-                                                           struct LinuxAddrInfo **res);
+                                                            const char *service,
+                                                            const struct LinuxAddrInfo *hints,
+                                                            struct LinuxAddrInfo **res);
 __attribute__((sysv_abi)) void android_freeaddrinfofornetwork(struct LinuxAddrInfo *ai);
 __attribute__((sysv_abi)) int android_res_nquery(net_handle_t network, const char *dname,
-                                                int ns_class, int ns_type, uint32_t flags);
-__attribute__((sysv_abi)) int android_res_nsearch(net_handle_t network, const char *dname,
                                                  int ns_class, int ns_type, uint32_t flags);
+__attribute__((sysv_abi)) int android_res_nsearch(net_handle_t network, const char *dname,
+                                                  int ns_class, int ns_type, uint32_t flags);
 __attribute__((sysv_abi)) int android_res_nsend(net_handle_t network, const uint8_t *msg,
-                                               size_t msglen, uint32_t flags);
+                                                size_t msglen, uint32_t flags);
 __attribute__((sysv_abi)) int android_res_nresult(int fd, int *rcode);
 __attribute__((sysv_abi)) void android_res_cancel(int nsend_fd);
 __attribute__((sysv_abi)) void android_freeaddrinfo(struct LinuxAddrInfo *ai);

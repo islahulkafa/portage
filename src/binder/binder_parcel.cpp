@@ -8,13 +8,9 @@
 
 namespace {
 
-inline size_t Pad4(size_t size) noexcept
-{
-    return (size + 3u) & ~3u;
-}
+inline size_t Pad4(size_t size) noexcept { return (size + 3u) & ~3u; }
 
-template <typename T>
-binder_status_t WriteAligned(AParcel *parcel, const T &val)
+template <typename T> binder_status_t WriteAligned(AParcel *parcel, const T &val)
 {
     if (!parcel) {
         return STATUS_BAD_VALUE;
@@ -33,8 +29,7 @@ binder_status_t WriteAligned(AParcel *parcel, const T &val)
     return STATUS_OK;
 }
 
-template <typename T>
-binder_status_t ReadAligned(const AParcel *parcel, T *out)
+template <typename T> binder_status_t ReadAligned(const AParcel *parcel, T *out)
 {
     if (!parcel || !out) {
         return STATUS_BAD_VALUE;
@@ -53,10 +48,7 @@ binder_status_t ReadAligned(const AParcel *parcel, T *out)
 
 extern "C" {
 
-__attribute__((sysv_abi)) AParcel *AParcel_create()
-{
-    return new AParcel();
-}
+__attribute__((sysv_abi)) AParcel *AParcel_create() { return new AParcel(); }
 
 __attribute__((sysv_abi)) void AParcel_delete(AParcel *parcel)
 {
@@ -92,8 +84,8 @@ __attribute__((sysv_abi)) void AParcel_reset(AParcel *parcel)
     parcel->data_pos = 0;
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_setDataPosition(const AParcel *parcel, int32_t position)
+__attribute__((sysv_abi)) binder_status_t AParcel_setDataPosition(const AParcel *parcel,
+                                                                  int32_t position)
 {
     if (!parcel || position < 0 || static_cast<size_t>(position) > parcel->buffer.size()) {
         return STATUS_BAD_VALUE;
@@ -166,8 +158,8 @@ __attribute__((sysv_abi)) binder_status_t AParcel_writeChar(AParcel *parcel, cha
     return WriteAligned(parcel, c);
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_writeString(AParcel *parcel, const char *string, int32_t length)
+__attribute__((sysv_abi)) binder_status_t AParcel_writeString(AParcel *parcel, const char *string,
+                                                              int32_t length)
 {
     if (!parcel) {
         return STATUS_BAD_VALUE;
@@ -198,8 +190,9 @@ AParcel_writeString(AParcel *parcel, const char *string, int32_t length)
     return STATUS_OK;
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_writeByteArray(AParcel *parcel, const int8_t *arrayData, int32_t length)
+__attribute__((sysv_abi)) binder_status_t AParcel_writeByteArray(AParcel *parcel,
+                                                                 const int8_t *arrayData,
+                                                                 int32_t length)
 {
     if (!parcel) {
         return STATUS_BAD_VALUE;
@@ -228,8 +221,7 @@ AParcel_writeByteArray(AParcel *parcel, const int8_t *arrayData, int32_t length)
     return STATUS_OK;
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_writeParcelFileDescriptor(AParcel *parcel, int fd)
+__attribute__((sysv_abi)) binder_status_t AParcel_writeParcelFileDescriptor(AParcel *parcel, int fd)
 {
     if (!parcel) {
         return STATUS_BAD_VALUE;
@@ -256,44 +248,37 @@ AParcel_writeParcelFileDescriptor(AParcel *parcel, int fd)
     return WriteAligned(parcel, dup_fd);
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_readInt32(const AParcel *parcel, int32_t *out)
+__attribute__((sysv_abi)) binder_status_t AParcel_readInt32(const AParcel *parcel, int32_t *out)
 {
     return ReadAligned(parcel, out);
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_readUint32(const AParcel *parcel, uint32_t *out)
+__attribute__((sysv_abi)) binder_status_t AParcel_readUint32(const AParcel *parcel, uint32_t *out)
 {
     return ReadAligned(parcel, out);
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_readInt64(const AParcel *parcel, int64_t *out)
+__attribute__((sysv_abi)) binder_status_t AParcel_readInt64(const AParcel *parcel, int64_t *out)
 {
     return ReadAligned(parcel, out);
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_readUint64(const AParcel *parcel, uint64_t *out)
+__attribute__((sysv_abi)) binder_status_t AParcel_readUint64(const AParcel *parcel, uint64_t *out)
 {
     return ReadAligned(parcel, out);
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_readFloat(const AParcel *parcel, float *out)
+__attribute__((sysv_abi)) binder_status_t AParcel_readFloat(const AParcel *parcel, float *out)
 {
     return ReadAligned(parcel, out);
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_readDouble(const AParcel *parcel, double *out)
+__attribute__((sysv_abi)) binder_status_t AParcel_readDouble(const AParcel *parcel, double *out)
 {
     return ReadAligned(parcel, out);
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_readBool(const AParcel *parcel, bool *out)
+__attribute__((sysv_abi)) binder_status_t AParcel_readBool(const AParcel *parcel, bool *out)
 {
     int32_t b = 0;
     binder_status_t s = ReadAligned(parcel, &b);
@@ -303,8 +288,7 @@ AParcel_readBool(const AParcel *parcel, bool *out)
     return s;
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_readChar(const AParcel *parcel, char16_t *out)
+__attribute__((sysv_abi)) binder_status_t AParcel_readChar(const AParcel *parcel, char16_t *out)
 {
     int32_t c = 0;
     binder_status_t s = ReadAligned(parcel, &c);
@@ -314,8 +298,9 @@ AParcel_readChar(const AParcel *parcel, char16_t *out)
     return s;
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_readString(const AParcel *parcel, void *stringData, AParcel_stringAllocator allocator)
+__attribute__((sysv_abi)) binder_status_t AParcel_readString(const AParcel *parcel,
+                                                             void *stringData,
+                                                             AParcel_stringAllocator allocator)
 {
     if (!parcel || !allocator) {
         return STATUS_BAD_VALUE;
@@ -380,8 +365,8 @@ AParcel_readByteArray(const AParcel *parcel, void *arrayData, AParcel_byteArrayA
     return STATUS_OK;
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_readParcelFileDescriptor(const AParcel *parcel, int *outFd)
+__attribute__((sysv_abi)) binder_status_t AParcel_readParcelFileDescriptor(const AParcel *parcel,
+                                                                           int *outFd)
 {
     if (!parcel || !outFd) {
         return STATUS_BAD_VALUE;
@@ -411,8 +396,8 @@ AParcel_readParcelFileDescriptor(const AParcel *parcel, int *outFd)
     return STATUS_OK;
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_writeStrongBinder(AParcel *parcel, AIBinder *binder)
+__attribute__((sysv_abi)) binder_status_t AParcel_writeStrongBinder(AParcel *parcel,
+                                                                    AIBinder *binder)
 {
     if (!parcel) {
         return STATUS_BAD_VALUE;
@@ -425,8 +410,8 @@ AParcel_writeStrongBinder(AParcel *parcel, AIBinder *binder)
     return s;
 }
 
-__attribute__((sysv_abi)) binder_status_t
-AParcel_readStrongBinder(const AParcel *parcel, AIBinder **binder)
+__attribute__((sysv_abi)) binder_status_t AParcel_readStrongBinder(const AParcel *parcel,
+                                                                   AIBinder **binder)
 {
     if (!parcel || !binder) {
         return STATUS_BAD_VALUE;

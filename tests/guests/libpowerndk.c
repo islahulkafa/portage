@@ -16,10 +16,7 @@ __attribute__((visibility("default"))) APowerManager *APowerManager_create(void)
     return (APowerManager *)0;
 }
 
-__attribute__((visibility("default"))) void APowerManager_destroy(APowerManager *mgr)
-{
-    (void)mgr;
-}
+__attribute__((visibility("default"))) void APowerManager_destroy(APowerManager *mgr) { (void)mgr; }
 
 __attribute__((visibility("default"))) int32_t APowerManager_isInteractive(APowerManager *mgr)
 {
@@ -61,10 +58,7 @@ __attribute__((visibility("default"))) int32_t AWakeLock_isHeld(AWakeLock *lock)
     return 0;
 }
 
-__attribute__((visibility("default"))) void AWakeLock_destroy(AWakeLock *lock)
-{
-    (void)lock;
-}
+__attribute__((visibility("default"))) void AWakeLock_destroy(AWakeLock *lock) { (void)lock; }
 
 __attribute__((visibility("default"))) ABatteryManager *ABatteryManager_create(void)
 {

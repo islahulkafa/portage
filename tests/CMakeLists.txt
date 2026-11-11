@@ -71,6 +71,14 @@ set(UNIT_TEST_SOURCES
     unit/test_modern_gles_and_sync.cpp
     unit/test_vulkan_pipeline.cpp
     unit/test_linker_extensions.cpp
+    unit/bench_aaudio_latency.cpp
+    unit/test_audio_concurrent.cpp
+    unit/test_media_pipeline.cpp
+    unit/test_image_decoder.cpp
+    unit/test_bionic_thunks.cpp
+    unit/test_bionic_stdio.cpp
+    unit/test_bionic_posix.cpp
+    unit/test_bionic_locale.cpp
 )
 
 set(INTEGRATION_TEST_SOURCES
@@ -88,6 +96,10 @@ set(INTEGRATION_TEST_SOURCES
     integration/test_game_engine_execution.cpp
     integration/test_gles_execution.cpp
     integration/test_bionic_runtime.cpp
+    integration/test_media_execution.cpp
+    integration/test_camera_execution.cpp
+    integration/test_ndk_compat_execution.cpp
+    integration/test_ndk_cpp_execution.cpp
 )
 
 add_executable(unit_tests ${UNIT_TEST_SOURCES})
@@ -112,6 +124,9 @@ target_link_libraries(integration_tests
 )
 target_include_directories(integration_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
 add_dependencies(integration_tests build_guest_binaries)
+if(TARGET sample_ndk_cpp_showcase_apk)
+    add_dependencies(integration_tests sample_ndk_cpp_showcase_apk)
+endif()
 
 gtest_discover_tests(unit_tests
     PROPERTIES

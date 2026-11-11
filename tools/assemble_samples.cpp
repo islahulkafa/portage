@@ -1,9 +1,11 @@
+#include <cstring>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
+#include <zlib.h>
 
 namespace stdfs = std::filesystem;
 
@@ -37,26 +39,25 @@ static uint32_t CalculateCrc32(const uint8_t *data, size_t length)
 
 std::vector<uint8_t> BuildManifest(const std::string &pkg_name, const std::string &lib_name)
 {
-    std::vector<std::string> string_pool = {
-        "manifest",
-        "package",
-        pkg_name,
-        "versionCode",
-        "versionName",
-        "1.0.0",
-        "uses-sdk",
-        "minSdkVersion",
-        "targetSdkVersion",
-        "application",
-        "hasCode",
-        "activity",
-        "name",
-        "android.app.NativeActivity",
-        "meta-data",
-        "android.app.lib_name",
-        lib_name,
-        "http://schemas.android.com/apk/res/android"
-    };
+    std::vector<std::string> string_pool = {"manifest",
+                                            "package",
+                                            pkg_name,
+                                            "versionCode",
+                                            "versionName",
+                                            "1.0.0",
+                                            "uses-sdk",
+                                            "minSdkVersion",
+                                            "targetSdkVersion",
+                                            "application",
+                                            "hasCode",
+                                            "activity",
+                                            "name",
+                                            "android.app.NativeActivity",
+                                            "meta-data",
+                                            "android.app.lib_name",
+                                            "value",
+                                            lib_name,
+                                            "http://schemas.android.com/apk/res/android"};
 
     std::vector<uint8_t> sp_chunk;
     uint32_t sp_hdr_size = 28;
@@ -114,7 +115,7 @@ std::vector<uint8_t> BuildManifest(const std::string &pkg_name, const std::strin
         WriteU16(body, 0);
 
         for (const auto &attr : attrs) {
-            WriteU32(body, 17);
+            WriteU32(body, 18);
             WriteU32(body, attr.first);
             WriteU32(body, attr.second);
             WriteU16(body, 8);
@@ -143,7 +144,7 @@ std::vector<uint8_t> BuildManifest(const std::string &pkg_name, const std::strin
 
     write_start_elem(11, {{12, 13}});
 
-    write_start_elem(14, {{12, 15}, {16, 16}});
+    write_start_elem(14, {{12, 15}, {16, 17}});
     write_end_elem(14);
 
     write_end_elem(11);
@@ -221,13 +222,14 @@ std::vector<uint8_t> BuildStringPool(const std::vector<std::string> &strings, bo
     return pool;
 }
 
-std::vector<uint8_t> BuildResourceTable(const std::string &pkg_name)
+std::vector<uint8_t> BuildResourceTable(const std::string &pkg_name,
+                                        const std::string &second_string = "Welcome to Portage!")
 {
     std::vector<uint8_t> table;
 
     std::vector<std::string> global_strings = {
         "Portage Game Engine",
-        "Welcome to Portage!",
+        second_string,
     };
     auto global_pool = BuildStringPool(global_strings, true);
 
@@ -370,10 +372,10 @@ std::vector<uint8_t> BuildResourceTable(const std::string &pkg_name)
     uint32_t pkg_hdr_size = 288;
     uint32_t type_strings_offset = pkg_hdr_size;
     uint32_t key_strings_offset = type_strings_offset + static_cast<uint32_t>(type_pool.size());
-    uint32_t pkg_total_size = key_strings_offset + static_cast<uint32_t>(key_pool.size()) +
-                              static_cast<uint32_t>(type1_spec.size() + type1_type.size() +
-                                                   type2_spec.size() + type2_type.size() +
-                                                   type3_spec.size() + type3_type.size());
+    uint32_t pkg_total_size =
+        key_strings_offset + static_cast<uint32_t>(key_pool.size()) +
+        static_cast<uint32_t>(type1_spec.size() + type1_type.size() + type2_spec.size() +
+                              type2_type.size() + type3_spec.size() + type3_type.size());
 
     std::vector<uint8_t> pkg;
     WriteU16(pkg, 0x0200);
@@ -416,39 +418,150 @@ std::vector<uint8_t> BuildResourceTable(const std::string &pkg_name)
     return table;
 }
 
-std::vector<uint8_t>
-AssembleZip(const std::vector<std::pair<std::string, std::vector<uint8_t>>> &files)
+namespace {
+
+void WriteU32BE(std::vector<uint8_t> &buf, uint32_t v)
+{
+    buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+    buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+    buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+    buf.push_back(static_cast<uint8_t>(v & 0xFF));
+}
+
+void AppendPngChunk(std::vector<uint8_t> &png, const char *type4, const std::vector<uint8_t> &body)
+{
+    WriteU32BE(png, static_cast<uint32_t>(body.size()));
+    std::vector<uint8_t> crc_input(4 + body.size());
+    std::memcpy(crc_input.data(), type4, 4);
+    if (!body.empty()) {
+        std::memcpy(crc_input.data() + 4, body.data(), body.size());
+    }
+    png.insert(png.end(), crc_input.begin(), crc_input.end());
+    WriteU32BE(png, CalculateCrc32(crc_input.data(), crc_input.size()));
+}
+
+std::vector<uint8_t> BuildShowcasePng4x4()
+{
+    std::vector<uint8_t> png = {137, 80, 78, 71, 13, 10, 26, 10};
+    std::vector<uint8_t> ihdr;
+    WriteU32BE(ihdr, 4);
+    WriteU32BE(ihdr, 4);
+    ihdr.push_back(8);
+    ihdr.push_back(6);
+    ihdr.push_back(0);
+    ihdr.push_back(0);
+    ihdr.push_back(0);
+    AppendPngChunk(png, "IHDR", ihdr);
+
+    std::vector<uint8_t> scanlines(4 * (1 + 4 * 4), 0);
+    for (int y = 0; y < 4; ++y) {
+        size_t row_off = static_cast<size_t>(y) * 17;
+        scanlines[row_off] = 0;
+        for (int x = 0; x < 4; ++x) {
+            size_t px = row_off + 1 + static_cast<size_t>(x) * 4;
+            scanlines[px + 0] = (x < 2) ? 255 : 40;
+            scanlines[px + 1] = (y < 2) ? 200 : 120;
+            scanlines[px + 2] = 60;
+            scanlines[px + 3] = 255;
+        }
+    }
+
+    uLongf comp_cap = compressBound(static_cast<uLong>(scanlines.size()));
+    std::vector<uint8_t> idat(comp_cap);
+    compress2(idat.data(), &comp_cap, scanlines.data(), static_cast<uLong>(scanlines.size()),
+              Z_DEFAULT_COMPRESSION);
+    idat.resize(comp_cap);
+    AppendPngChunk(png, "IDAT", idat);
+    AppendPngChunk(png, "IEND", {});
+    return png;
+}
+
+std::vector<uint8_t> BuildShowcaseGif2x2()
+{
+    static const uint8_t kGif[] = {
+        'G',  'I',  'F',  '8',  '9',  'a',  0x02, 0x00, 0x02, 0x00, 0x80, 0x00, 0x00, 0xFF, 0x00,
+        0x00, 0x00, 0x00, 0xFF, 0x21, 0xFF, 0x0B, 'N',  'E',  'T',  'S',  'C',  'A',  'P',  'E',
+        '2',  '.',  '0',  0x03, 0x01, 0x02, 0x00, 0x00, 0x21, 0xF9, 0x04, 0x04, 0x0C, 0x00, 0x00,
+        0x00, 0x2C, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x02, 0x00, 0x00, 0x02, 0x02, 0x84, 0x51,
+        0x00, 0x21, 0xF9, 0x04, 0x04, 0x0C, 0x00, 0x00, 0x00, 0x2C, 0x00, 0x00, 0x00, 0x00, 0x02,
+        0x00, 0x02, 0x00, 0x00, 0x02, 0x02, 0x8C, 0x53, 0x00, 0x3B};
+    return std::vector<uint8_t>(std::begin(kGif), std::end(kGif));
+}
+
+std::vector<uint8_t> DeflateRaw(const std::vector<uint8_t> &src)
+{
+    z_stream zs{};
+    if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY) !=
+        Z_OK) {
+        return {};
+    }
+    std::vector<uint8_t> out(deflateBound(&zs, static_cast<uLong>(src.size())) + 16);
+    zs.next_in = const_cast<Bytef *>(src.data());
+    zs.avail_in = static_cast<uInt>(src.size());
+    zs.next_out = out.data();
+    zs.avail_out = static_cast<uInt>(out.size());
+    deflate(&zs, Z_FINISH);
+    out.resize(zs.total_out);
+    deflateEnd(&zs);
+    return out;
+}
+
+} // namespace
+
+struct ZipInputEntry {
+    std::string name;
+    std::vector<uint8_t> data;
+    bool deflate_compress{false};
+};
+
+std::vector<uint8_t> AssembleZipEntries(const std::vector<ZipInputEntry> &inputs)
 {
     struct FileEntry {
         std::string name;
-        std::vector<uint8_t> data;
+        std::vector<uint8_t> payload;
+        uint16_t method{0};
+        uint32_t uncomp_size{0};
         uint32_t crc{0};
         uint32_t offset{0};
     };
 
     std::vector<FileEntry> entries;
-    for (const auto &[name, data] : files) {
-        entries.push_back({name, data, 0, 0});
+    for (const auto &in : inputs) {
+        FileEntry fe{};
+        fe.name = in.name;
+        fe.uncomp_size = static_cast<uint32_t>(in.data.size());
+        fe.crc = CalculateCrc32(in.data.data(), in.data.size());
+        if (in.deflate_compress) {
+            auto comp = DeflateRaw(in.data);
+            if (!comp.empty()) {
+                fe.method = 8;
+                fe.payload = std::move(comp);
+            }
+        }
+        if (fe.payload.empty()) {
+            fe.method = 0;
+            fe.payload = in.data;
+        }
+        entries.push_back(std::move(fe));
     }
 
     std::vector<uint8_t> zip;
     for (auto &e : entries) {
-        e.crc = CalculateCrc32(e.data.data(), e.data.size());
         e.offset = static_cast<uint32_t>(zip.size());
 
         WriteU32(zip, 0x04034b50);
         WriteU16(zip, 20);
         WriteU16(zip, 0);
-        WriteU16(zip, 0);
+        WriteU16(zip, e.method);
         WriteU16(zip, 0);
         WriteU16(zip, 0);
         WriteU32(zip, e.crc);
-        WriteU32(zip, static_cast<uint32_t>(e.data.size()));
-        WriteU32(zip, static_cast<uint32_t>(e.data.size()));
+        WriteU32(zip, static_cast<uint32_t>(e.payload.size()));
+        WriteU32(zip, e.uncomp_size);
         WriteU16(zip, static_cast<uint16_t>(e.name.size()));
         WriteU16(zip, 0);
         zip.insert(zip.end(), e.name.begin(), e.name.end());
-        zip.insert(zip.end(), e.data.begin(), e.data.end());
+        zip.insert(zip.end(), e.payload.begin(), e.payload.end());
     }
 
     uint32_t cd_offset = static_cast<uint32_t>(zip.size());
@@ -457,12 +570,12 @@ AssembleZip(const std::vector<std::pair<std::string, std::vector<uint8_t>>> &fil
         WriteU16(zip, 20);
         WriteU16(zip, 20);
         WriteU16(zip, 0);
-        WriteU16(zip, 0);
+        WriteU16(zip, e.method);
         WriteU16(zip, 0);
         WriteU16(zip, 0);
         WriteU32(zip, e.crc);
-        WriteU32(zip, static_cast<uint32_t>(e.data.size()));
-        WriteU32(zip, static_cast<uint32_t>(e.data.size()));
+        WriteU32(zip, static_cast<uint32_t>(e.payload.size()));
+        WriteU32(zip, e.uncomp_size);
         WriteU16(zip, static_cast<uint16_t>(e.name.size()));
         WriteU16(zip, 0);
         WriteU16(zip, 0);
@@ -487,6 +600,17 @@ AssembleZip(const std::vector<std::pair<std::string, std::vector<uint8_t>>> &fil
 }
 
 std::vector<uint8_t>
+AssembleZip(const std::vector<std::pair<std::string, std::vector<uint8_t>>> &files)
+{
+    std::vector<ZipInputEntry> inputs;
+    inputs.reserve(files.size());
+    for (const auto &[name, data] : files) {
+        inputs.push_back({name, data, false});
+    }
+    return AssembleZipEntries(inputs);
+}
+
+std::vector<uint8_t>
 AssembleApk(const std::vector<uint8_t> &manifest, const std::vector<uint8_t> &resources,
             const std::vector<std::pair<std::string, std::vector<uint8_t>>> &assets,
             const std::vector<std::pair<std::string, std::vector<uint8_t>>> &libs)
@@ -505,18 +629,25 @@ AssembleApk(const std::vector<uint8_t> &manifest, const std::vector<uint8_t> &re
 
 int main(int argc, char *argv[])
 {
-    if (argc < 5) {
-        std::cerr << "Usage: assemble_samples <out_apk> <pkg_name> <lib_name> <so_path> "
-                     "[extra_so_paths...]\n";
+    bool showcase = false;
+    int arg_idx = 1;
+    if (argc >= 2 && std::string(argv[1]) == "--showcase") {
+        showcase = true;
+        arg_idx = 2;
+    }
+
+    if (argc - arg_idx < 4) {
+        std::cerr << "Usage: assemble_samples [--showcase] <out_apk> <pkg_name> <lib_name> "
+                     "<so_path> [extra_so_paths...]\n";
         return 1;
     }
 
-    std::string out_apk = argv[1];
-    std::string pkg_name = argv[2];
-    std::string lib_name = argv[3];
+    std::string out_apk = argv[arg_idx++];
+    std::string pkg_name = argv[arg_idx++];
+    std::string lib_name = argv[arg_idx++];
 
     std::vector<std::pair<std::string, std::vector<uint8_t>>> libs;
-    for (int i = 4; i < argc; ++i) {
+    for (int i = arg_idx; i < argc; ++i) {
         std::string so_path = argv[i];
         std::ifstream so_in(so_path, std::ios::binary);
         if (!so_in) {
@@ -530,6 +661,31 @@ int main(int argc, char *argv[])
     }
 
     auto manifest = BuildManifest(pkg_name, lib_name);
+
+    if (showcase) {
+        auto resources = BuildResourceTable(pkg_name, "res/drawable/sample_logo.png");
+        auto png_bytes = BuildShowcasePng4x4();
+        auto gif_bytes = BuildShowcaseGif2x2();
+
+        std::vector<ZipInputEntry> entries = {
+            {"AndroidManifest.xml", manifest, false},
+            {"resources.arsc", resources, false},
+            {"assets/test.png", png_bytes, true},
+            {"assets/anim.gif", gif_bytes, true},
+            {"res/drawable/sample_logo.png", png_bytes, false},
+        };
+        for (const auto &lib : libs) {
+            entries.push_back({"lib/x86_64/" + lib.first, lib.second, false});
+        }
+        auto apk_bytes = AssembleZipEntries(entries);
+        std::ofstream apk_out(out_apk, std::ios::binary);
+        apk_out.write(reinterpret_cast<const char *>(apk_bytes.data()),
+                      static_cast<std::streamsize>(apk_bytes.size()));
+        std::cout << "Successfully assembled showcase APK: " << out_apk << " (" << apk_bytes.size()
+                  << " bytes)\n";
+        return 0;
+    }
+
     auto resources = BuildResourceTable(pkg_name);
 
     std::string vert_shader =

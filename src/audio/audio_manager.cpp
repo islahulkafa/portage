@@ -39,6 +39,7 @@ constexpr int64_t LINUX_EBADFD = -77;
 } // namespace
 
 struct AudioManager::Impl {
+    mutable std::mutex lifecycle_mutex{};
     mutable std::mutex mutex{};
     std::condition_variable cv{};
     std::condition_variable cv_write{};
@@ -61,6 +62,8 @@ struct AudioManager::Impl {
     // Statistics
     std::atomic<uint64_t> total_frames_written{0};
     std::atomic<uint64_t> total_frames_rendered{0};
+    std::atomic<uint32_t> xrun_count{0};
+    std::atomic<bool> device_invalidated{false};
 
     // Threading & playback engine
     std::atomic<bool> is_running{false};
@@ -71,10 +74,14 @@ struct AudioManager::Impl {
     bool com_initialized{false};
     bool is_null_sink{false};
     bool force_null_sink{false};
+    bool is_low_latency{false};
+    bool wasapi_is_low_latency{false};
     IMMDeviceEnumerator *enumerator{nullptr};
     IMMDevice *device{nullptr};
     IAudioClient *audio_client{nullptr};
     IAudioRenderClient *render_client{nullptr};
+    IAudioClock *audio_clock{nullptr};
+    HANDLE render_event{nullptr};
     WAVEFORMATEX *mix_format{nullptr};
     UINT32 buffer_frame_count{0};
     bool host_is_float{true};
@@ -140,7 +147,12 @@ struct AudioManager::Impl {
         }
 
         if (audio_client) {
-            return;
+            if (device_invalidated.load() || wasapi_is_low_latency != is_low_latency) {
+                CleanupWasapi();
+                device_invalidated = false;
+            } else {
+                return;
+            }
         }
 
         HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -152,12 +164,14 @@ struct AudioManager::Impl {
             CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
                              __uuidof(IMMDeviceEnumerator), reinterpret_cast<void **>(&enumerator));
         if (FAILED(hr) || !enumerator) {
+            CleanupWasapi();
             is_null_sink = true;
             return;
         }
 
         hr = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
         if (FAILED(hr) || !device) {
+            CleanupWasapi();
             is_null_sink = true;
             return;
         }
@@ -165,12 +179,14 @@ struct AudioManager::Impl {
         hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
                               reinterpret_cast<void **>(&audio_client));
         if (FAILED(hr) || !audio_client) {
+            CleanupWasapi();
             is_null_sink = true;
             return;
         }
 
         hr = audio_client->GetMixFormat(&mix_format);
         if (FAILED(hr) || !mix_format) {
+            CleanupWasapi();
             is_null_sink = true;
             return;
         }
@@ -188,16 +204,34 @@ struct AudioManager::Impl {
             host_is_float = false;
         }
 
-        REFERENCE_TIME duration = 500000; // 50ms in 100ns units
-        hr =
-            audio_client->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, duration, 0, mix_format, nullptr);
+        REFERENCE_TIME duration = is_low_latency ? 0 : 500000;
+        DWORD stream_flags = is_low_latency ? AUDCLNT_STREAMFLAGS_EVENTCALLBACK : 0;
+        hr = audio_client->Initialize(AUDCLNT_SHAREMODE_SHARED, stream_flags, duration, 0,
+                                      mix_format, nullptr);
         if (FAILED(hr)) {
+            CleanupWasapi();
             is_null_sink = true;
             return;
         }
 
+        if (is_low_latency) {
+            render_event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+            if (!render_event) {
+                CleanupWasapi();
+                is_null_sink = true;
+                return;
+            }
+            hr = audio_client->SetEventHandle(render_event);
+            if (FAILED(hr)) {
+                CleanupWasapi();
+                is_null_sink = true;
+                return;
+            }
+        }
+
         hr = audio_client->GetBufferSize(&buffer_frame_count);
         if (FAILED(hr)) {
+            CleanupWasapi();
             is_null_sink = true;
             return;
         }
@@ -205,15 +239,27 @@ struct AudioManager::Impl {
         hr = audio_client->GetService(__uuidof(IAudioRenderClient),
                                       reinterpret_cast<void **>(&render_client));
         if (FAILED(hr) || !render_client) {
+            CleanupWasapi();
             is_null_sink = true;
             return;
         }
 
+        audio_client->GetService(__uuidof(IAudioClock), reinterpret_cast<void **>(&audio_clock));
+        wasapi_is_low_latency = is_low_latency;
+        device_invalidated = false;
         is_null_sink = false;
     }
 
     void CleanupWasapi()
     {
+        if (audio_clock) {
+            audio_clock->Release();
+            audio_clock = nullptr;
+        }
+        if (render_event) {
+            CloseHandle(render_event);
+            render_event = nullptr;
+        }
         if (render_client) {
             render_client->Release();
             render_client = nullptr;
@@ -234,6 +280,7 @@ struct AudioManager::Impl {
             enumerator->Release();
             enumerator = nullptr;
         }
+        wasapi_is_low_latency = false;
         if (com_initialized) {
             CoUninitialize();
             com_initialized = false;
@@ -246,12 +293,28 @@ struct AudioManager::Impl {
             return;
         }
 
+        if (worker_thread.joinable() && worker_thread.get_id() != std::this_thread::get_id()) {
+            worker_thread.join();
+        }
+
         InitWasapi();
 
         stop_requested = false;
         is_running = true;
 
         if (!is_null_sink && audio_client) {
+            if (wasapi_is_low_latency && render_client && buffer_frame_count > 0) {
+                UINT32 padding = 0;
+                if (SUCCEEDED(audio_client->GetCurrentPadding(&padding)) &&
+                    buffer_frame_count > padding) {
+                    UINT32 prefill = buffer_frame_count - padding;
+                    BYTE *data = nullptr;
+                    if (SUCCEEDED(render_client->GetBuffer(prefill, &data))) {
+                        RenderFrames(data, prefill);
+                        render_client->ReleaseBuffer(prefill, 0);
+                    }
+                }
+            }
             audio_client->Start();
         }
 
@@ -260,13 +323,16 @@ struct AudioManager::Impl {
 
     void StopPlayback()
     {
-        if (!is_running) {
+        if (!is_running && !worker_thread.joinable()) {
             return;
         }
 
         stop_requested = true;
         cv.notify_all();
         cv_write.notify_all();
+        if (render_event) {
+            SetEvent(render_event);
+        }
 
         if (worker_thread.joinable()) {
             if (worker_thread.get_id() != std::this_thread::get_id()) {
@@ -293,17 +359,19 @@ struct AudioManager::Impl {
     {
         while (!stop_requested) {
             if (is_null_sink) {
-                // Drain ring buffer paced to guest sample rate
                 std::unique_lock<std::mutex> lock(mutex);
-                cv.wait_for(lock, std::chrono::milliseconds(10),
-                            [this] { return stop_requested.load(); });
+                auto period =
+                    is_low_latency ? std::chrono::milliseconds(5) : std::chrono::milliseconds(10);
+                cv.wait_for(lock, period, [this] { return stop_requested.load(); });
                 if (stop_requested) {
                     break;
                 }
 
-                size_t drain_frames = (guest_rate * 10) / 1000;
-                if (drain_frames == 0)
+                uint32_t period_ms = is_low_latency ? 5u : 10u;
+                size_t drain_frames = (guest_rate * period_ms) / 1000;
+                if (drain_frames == 0) {
                     drain_frames = 1;
+                }
                 size_t drain_bytes = drain_frames * guest_frame_size;
                 size_t to_drain = std::min(drain_bytes, ring_available);
 
@@ -314,26 +382,58 @@ struct AudioManager::Impl {
                     cv_write.notify_all();
                 }
             } else {
-                // WASAPI shared mode render loop
+                if (wasapi_is_low_latency && render_event) {
+                    DWORD wait_res = WaitForSingleObject(render_event, 50);
+                    if (stop_requested) {
+                        break;
+                    }
+                    if (wait_res == WAIT_TIMEOUT) {
+                        xrun_count.fetch_add(1, std::memory_order_relaxed);
+                        continue;
+                    }
+                }
+
                 UINT32 padding = 0;
                 HRESULT hr = audio_client->GetCurrentPadding(&padding);
                 if (FAILED(hr)) {
+                    if (hr == AUDCLNT_E_DEVICE_INVALIDATED) {
+                        device_invalidated.store(true, std::memory_order_relaxed);
+                    }
                     break;
                 }
 
-                UINT32 frames_needed = buffer_frame_count - padding;
+                UINT32 frames_needed =
+                    (buffer_frame_count > padding) ? (buffer_frame_count - padding) : 0;
                 if (frames_needed > 0) {
                     BYTE *pData = nullptr;
                     hr = render_client->GetBuffer(frames_needed, &pData);
                     if (SUCCEEDED(hr)) {
                         RenderFrames(pData, frames_needed);
                         render_client->ReleaseBuffer(frames_needed, 0);
+
+                        UINT32 post_padding = 0;
+                        if (SUCCEEDED(audio_client->GetCurrentPadding(&post_padding)) &&
+                            post_padding == 0) {
+                            PcmState cur_state = SNDRV_PCM_STATE_OPEN;
+                            {
+                                std::lock_guard<std::mutex> lock(mutex);
+                                cur_state = state;
+                            }
+                            if (cur_state == SNDRV_PCM_STATE_RUNNING) {
+                                xrun_count.fetch_add(1, std::memory_order_relaxed);
+                            }
+                        }
+                    } else if (hr == AUDCLNT_E_DEVICE_INVALIDATED) {
+                        device_invalidated.store(true, std::memory_order_relaxed);
+                        break;
                     }
                 }
 
-                std::unique_lock<std::mutex> lock(mutex);
-                cv.wait_for(lock, std::chrono::milliseconds(5),
-                            [this] { return stop_requested.load(); });
+                if (!wasapi_is_low_latency || !render_event) {
+                    std::unique_lock<std::mutex> lock(mutex);
+                    cv.wait_for(lock, std::chrono::milliseconds(5),
+                                [this] { return stop_requested.load(); });
+                }
             }
         }
     }
@@ -677,19 +777,19 @@ struct AudioManager::Impl {
                             float sample = 0.0f;
                             if (!(flags & AUDCLNT_BUFFERFLAGS_SILENT) && pData) {
                                 if (cap_host_is_float) {
-                                    const auto *f_in =
-                                        reinterpret_cast<const float *>(pData) + (f * cap_host_channels);
+                                    const auto *f_in = reinterpret_cast<const float *>(pData) +
+                                                       (f * cap_host_channels);
                                     sample = f_in[0];
                                 } else {
-                                    const auto *s_in =
-                                        reinterpret_cast<const int16_t *>(pData) + (f * cap_host_channels);
+                                    const auto *s_in = reinterpret_cast<const int16_t *>(pData) +
+                                                       (f * cap_host_channels);
                                     sample = static_cast<float>(s_in[0]) / 32768.0f;
                                 }
                             }
 
                             if (cap_guest_format == SNDRV_PCM_FORMAT_S16_LE) {
-                                int16_t s16 =
-                                    static_cast<int16_t>(std::clamp(sample, -1.0f, 1.0f) * 32767.0f);
+                                int16_t s16 = static_cast<int16_t>(std::clamp(sample, -1.0f, 1.0f) *
+                                                                   32767.0f);
                                 for (uint32_t c = 0; c < cap_guest_channels; ++c) {
                                     size_t offset = (f * cap_guest_frame_size) + (c * 2);
                                     std::memcpy(&converted_bytes[offset], &s16, sizeof(int16_t));
@@ -758,11 +858,10 @@ struct AudioManager::Impl {
 
         if (cap_ring_available < bytes_needed && cap_is_running) {
             if (timeout_nanos > 0) {
-                cap_cv_read.wait_for(lock, std::chrono::nanoseconds(timeout_nanos),
-                                     [this, bytes_needed] {
-                                         return cap_ring_available >= bytes_needed ||
-                                                !cap_is_running;
-                                     });
+                cap_cv_read.wait_for(
+                    lock, std::chrono::nanoseconds(timeout_nanos), [this, bytes_needed] {
+                        return cap_ring_available >= bytes_needed || !cap_is_running;
+                    });
             } else if (timeout_nanos < 0) {
                 cap_cv_read.wait(lock, [this, bytes_needed] {
                     return cap_ring_available >= bytes_needed || !cap_is_running;
@@ -807,8 +906,10 @@ void AudioManager::ForceNullSink(bool enable)
     }
 }
 
-bool AudioManager::ConfigureStream(uint32_t sample_rate, uint32_t channels, int32_t format)
+bool AudioManager::ConfigureStream(uint32_t sample_rate, uint32_t channels, int32_t format,
+                                   bool low_latency)
 {
+    std::lock_guard<std::mutex> lifecycle_lock(m_impl->lifecycle_mutex);
     m_impl->StopPlayback();
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     m_impl->guest_rate = (sample_rate > 0) ? sample_rate : 48000;
@@ -816,13 +917,23 @@ bool AudioManager::ConfigureStream(uint32_t sample_rate, uint32_t channels, int3
     m_impl->guest_format = format;
     uint32_t sample_bytes = (format == SNDRV_PCM_FORMAT_S16_LE) ? 2 : 4;
     m_impl->guest_frame_size = m_impl->guest_channels * sample_bytes;
+    m_impl->is_low_latency = low_latency;
+    m_impl->xrun_count = 0;
     m_impl->ResetRingBuffer();
     m_impl->state = SNDRV_PCM_STATE_SETUP;
     return true;
 }
 
+void AudioManager::FlushStream()
+{
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
+    m_impl->ResetRingBuffer();
+    m_impl->cv_write.notify_all();
+}
+
 void AudioManager::CloseStream()
 {
+    std::lock_guard<std::mutex> lifecycle_lock(m_impl->lifecycle_mutex);
     m_impl->StopPlayback();
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     m_impl->state = SNDRV_PCM_STATE_OPEN;
@@ -830,6 +941,7 @@ void AudioManager::CloseStream()
 
 void AudioManager::Reset()
 {
+    std::lock_guard<std::mutex> lifecycle_lock(m_impl->lifecycle_mutex);
     m_impl->StopPlayback();
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     m_impl->ResetRingBuffer();
@@ -839,8 +951,11 @@ void AudioManager::Reset()
     m_impl->guest_period_size = 1024;
     m_impl->guest_periods = 4;
     m_impl->guest_frame_size = 4;
+    m_impl->is_low_latency = false;
     m_impl->total_frames_written = 0;
     m_impl->total_frames_rendered = 0;
+    m_impl->xrun_count = 0;
+    m_impl->device_invalidated = false;
     m_impl->state = SNDRV_PCM_STATE_OPEN;
 }
 
@@ -854,7 +969,46 @@ AudioStats AudioManager::GetStats() const
                       .format = m_impl->guest_format,
                       .current_state = m_impl->state,
                       .is_null_sink = m_impl->is_null_sink,
-                      .is_running = m_impl->is_running.load()};
+                      .is_running = m_impl->is_running.load(),
+                      .is_low_latency = m_impl->is_low_latency};
+}
+
+uint32_t AudioManager::GetXRunCount() const { return m_impl->xrun_count.load(); }
+
+bool AudioManager::IsDeviceInvalidated() const { return m_impl->device_invalidated.load(); }
+
+IAudioClock *AudioManager::GetAudioClock() const
+{
+    std::lock_guard<std::mutex> lifecycle_lock(m_impl->lifecycle_mutex);
+    return m_impl->audio_clock;
+}
+
+bool AudioManager::GetHardwareClockPosition(uint64_t *position, uint64_t *frequency,
+                                            uint64_t *qpc_100ns) const
+{
+    if (!position || !frequency || !qpc_100ns) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lifecycle_lock(m_impl->lifecycle_mutex);
+    if (!m_impl->audio_clock || m_impl->is_null_sink) {
+        return false;
+    }
+
+    UINT64 freq = 0;
+    UINT64 pos = 0;
+    UINT64 qpc = 0;
+    if (FAILED(m_impl->audio_clock->GetFrequency(&freq)) || freq == 0) {
+        return false;
+    }
+    if (FAILED(m_impl->audio_clock->GetPosition(&pos, &qpc))) {
+        return false;
+    }
+
+    *position = pos;
+    *frequency = freq;
+    *qpc_100ns = qpc;
+    return true;
 }
 
 int64_t AudioManager::WritePcmBytes(const void *buf, size_t count)
@@ -863,12 +1017,15 @@ int64_t AudioManager::WritePcmBytes(const void *buf, size_t count)
         return LINUX_EFAULT;
     }
 
+    std::lock_guard<std::mutex> lifecycle_lock(m_impl->lifecycle_mutex);
     std::unique_lock<std::mutex> lock(m_impl->mutex);
 
     if (m_impl->state == SNDRV_PCM_STATE_PREPARED || m_impl->state == SNDRV_PCM_STATE_SETUP ||
         m_impl->state == SNDRV_PCM_STATE_OPEN) {
         m_impl->state = SNDRV_PCM_STATE_RUNNING;
+        lock.unlock();
         m_impl->StartPlayback();
+        lock.lock();
     } else if (m_impl->state != SNDRV_PCM_STATE_RUNNING) {
         return LINUX_EBADFD;
     }
@@ -1075,13 +1232,17 @@ int64_t AudioManager::HandlePcmIoctl(uint32_t cmd, void *arg)
     }
 
     if (cmd == SNDRV_PCM_IOCTL_START || nr == 0x42) {
-        std::lock_guard<std::mutex> lock(m_impl->mutex);
-        m_impl->state = SNDRV_PCM_STATE_RUNNING;
+        std::lock_guard<std::mutex> lifecycle_lock(m_impl->lifecycle_mutex);
+        {
+            std::lock_guard<std::mutex> lock(m_impl->mutex);
+            m_impl->state = SNDRV_PCM_STATE_RUNNING;
+        }
         m_impl->StartPlayback();
         return 0;
     }
 
     if (cmd == SNDRV_PCM_IOCTL_DROP || nr == 0x43) {
+        std::lock_guard<std::mutex> lifecycle_lock(m_impl->lifecycle_mutex);
         m_impl->StopPlayback();
         std::lock_guard<std::mutex> lock(m_impl->mutex);
         m_impl->ResetRingBuffer();
@@ -1090,6 +1251,7 @@ int64_t AudioManager::HandlePcmIoctl(uint32_t cmd, void *arg)
     }
 
     if (cmd == SNDRV_PCM_IOCTL_DRAIN || nr == 0x44) {
+        std::lock_guard<std::mutex> lifecycle_lock(m_impl->lifecycle_mutex);
         {
             std::unique_lock<std::mutex> lock(m_impl->mutex);
             if (m_impl->state == SNDRV_PCM_STATE_RUNNING) {
@@ -1181,10 +1343,7 @@ bool AudioManager::StartCapture()
     return true;
 }
 
-void AudioManager::StopCapture()
-{
-    m_impl->StopCapture();
-}
+void AudioManager::StopCapture() { m_impl->StopCapture(); }
 
 void AudioManager::CloseCaptureStream()
 {

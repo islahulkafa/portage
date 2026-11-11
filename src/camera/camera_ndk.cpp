@@ -18,13 +18,10 @@ __attribute__((sysv_abi)) ACameraManager *ACameraManager_create()
     return manager;
 }
 
-__attribute__((sysv_abi)) void ACameraManager_delete(ACameraManager *manager)
-{
-    delete manager;
-}
+__attribute__((sysv_abi)) void ACameraManager_delete(ACameraManager *manager) { delete manager; }
 
-__attribute__((sysv_abi)) camera_status_t ACameraManager_getCameraIdList(ACameraManager *manager,
-                                                                         ACameraIdList **cameraIdList)
+__attribute__((sysv_abi)) camera_status_t
+ACameraManager_getCameraIdList(ACameraManager *manager, ACameraIdList **cameraIdList)
 {
     if (!manager || !cameraIdList) {
         return ACAMERA_ERROR_INVALID_PARAMETER;
@@ -71,9 +68,8 @@ __attribute__((sysv_abi)) void ACameraManager_deleteCameraIdList(ACameraIdList *
     delete cameraIdList;
 }
 
-__attribute__((sysv_abi)) camera_status_t
-ACameraManager_getCameraCharacteristics(ACameraManager *manager, const char *cameraId,
-                                        ACameraMetadata **characteristics)
+__attribute__((sysv_abi)) camera_status_t ACameraManager_getCameraCharacteristics(
+    ACameraManager *manager, const char *cameraId, ACameraMetadata **characteristics)
 {
     if (!manager || !cameraId || !characteristics) {
         return ACAMERA_ERROR_INVALID_PARAMETER;
@@ -109,26 +105,31 @@ ACameraManager_openCamera(ACameraManager *manager, const char *cameraId,
     return CameraManager::Instance().OpenCamera(cameraId, callback, device);
 }
 
-__attribute__((sysv_abi)) camera_status_t
-ACameraManager_registerAvailabilityCallback(ACameraManager *manager, const void *callback)
+__attribute__((sysv_abi)) camera_status_t ACameraManager_registerAvailabilityCallback(
+    ACameraManager *manager, const ACameraManager_AvailabilityCallbacks *callback)
 {
-    (void)manager;
-    (void)callback;
-    return ACAMERA_OK;
+    if (!manager || !manager->mgr || !callback) {
+        return ACAMERA_ERROR_INVALID_PARAMETER;
+    }
+    return manager->mgr->RegisterAvailabilityCallback(callback);
 }
 
-__attribute__((sysv_abi)) camera_status_t
-ACameraManager_unregisterAvailabilityCallback(ACameraManager *manager, const void *callback)
+__attribute__((sysv_abi)) camera_status_t ACameraManager_unregisterAvailabilityCallback(
+    ACameraManager *manager, const ACameraManager_AvailabilityCallbacks *callback)
 {
-    (void)manager;
-    (void)callback;
-    return ACAMERA_OK;
+    if (!manager || !manager->mgr || !callback) {
+        return ACAMERA_ERROR_INVALID_PARAMETER;
+    }
+    return manager->mgr->UnregisterAvailabilityCallback(callback);
 }
 
 __attribute__((sysv_abi)) camera_status_t ACameraDevice_close(ACameraDevice *device)
 {
     if (!device) {
         return ACAMERA_ERROR_INVALID_PARAMETER;
+    }
+    if (device->impl) {
+        portage::camera::CameraManager::Instance().CloseCamera(device->impl.get());
     }
     delete device;
     return ACAMERA_OK;
@@ -142,10 +143,9 @@ __attribute__((sysv_abi)) const char *ACameraDevice_getId(const ACameraDevice *d
     return device->impl->GetId().c_str();
 }
 
-__attribute__((sysv_abi)) camera_status_t
-ACameraDevice_createCaptureRequest(const ACameraDevice *device,
-                                   ACameraDevice_request_template templateId,
-                                   ACaptureRequest **request)
+__attribute__((sysv_abi)) camera_status_t ACameraDevice_createCaptureRequest(
+    const ACameraDevice *device, ACameraDevice_request_template templateId,
+    ACaptureRequest **request)
 {
     if (!device || !request) {
         return ACAMERA_ERROR_INVALID_PARAMETER;
@@ -159,11 +159,9 @@ ACameraDevice_createCaptureRequest(const ACameraDevice *device,
     return ACAMERA_OK;
 }
 
-__attribute__((sysv_abi)) camera_status_t
-ACameraDevice_createCaptureSession(ACameraDevice *device,
-                                   const ACaptureSessionOutputContainer *outputs,
-                                   const ACameraCaptureSession_stateCallbacks *callbacks,
-                                   ACameraCaptureSession **session)
+__attribute__((sysv_abi)) camera_status_t ACameraDevice_createCaptureSession(
+    ACameraDevice *device, const ACaptureSessionOutputContainer *outputs,
+    const ACameraCaptureSession_stateCallbacks *callbacks, ACameraCaptureSession **session)
 {
     if (!device || !device->impl || !outputs || !session) {
         return ACAMERA_ERROR_INVALID_PARAMETER;
@@ -177,31 +175,26 @@ ACameraDevice_createCaptureSession(ACameraDevice *device,
         }
     }
 
-    auto sess_impl =
-        std::make_unique<CaptureSessionImpl>(device->impl.get(), targets, callbacks);
+    auto sess_impl = std::make_unique<CaptureSessionImpl>(device->impl.get(), targets, callbacks);
     auto sess_wrapper = std::make_unique<ACameraCaptureSession>();
     sess_wrapper->impl = std::move(sess_impl);
     *session = sess_wrapper.release();
     return ACAMERA_OK;
 }
 
-__attribute__((sysv_abi)) camera_status_t
-ACameraDevice_createCaptureSessionWithSessionParameters(
+__attribute__((sysv_abi)) camera_status_t ACameraDevice_createCaptureSessionWithSessionParameters(
     ACameraDevice *device, const ACaptureSessionOutputContainer *outputs,
-    const ACameraMetadata *sessionParameters,
-    const ACameraCaptureSession_stateCallbacks *callbacks, ACameraCaptureSession **session)
+    const ACameraMetadata *sessionParameters, const ACameraCaptureSession_stateCallbacks *callbacks,
+    ACameraCaptureSession **session)
 {
     (void)sessionParameters;
     return ACameraDevice_createCaptureSession(device, outputs, callbacks, session);
 }
 
-__attribute__((sysv_abi)) void ACaptureRequest_free(ACaptureRequest *request)
-{
-    delete request;
-}
+__attribute__((sysv_abi)) void ACaptureRequest_free(ACaptureRequest *request) { delete request; }
 
-__attribute__((sysv_abi)) camera_status_t ACaptureRequest_addTarget(ACaptureRequest *request,
-                                                                    const ACameraOutputTarget *target)
+__attribute__((sysv_abi)) camera_status_t
+ACaptureRequest_addTarget(ACaptureRequest *request, const ACameraOutputTarget *target)
 {
     if (!request || !target) {
         return ACAMERA_ERROR_INVALID_PARAMETER;
@@ -278,7 +271,8 @@ __attribute__((sysv_abi)) camera_status_t ACaptureRequest_setEntry_float(ACaptur
     return ACAMERA_OK;
 }
 
-__attribute__((sysv_abi)) camera_status_t ACameraCaptureSession_close(ACameraCaptureSession *session)
+__attribute__((sysv_abi)) camera_status_t
+ACameraCaptureSession_close(ACameraCaptureSession *session)
 {
     if (!session) {
         return ACAMERA_ERROR_INVALID_PARAMETER;
@@ -307,10 +301,9 @@ __attribute__((sysv_abi)) camera_status_t ACameraCaptureSession_setRepeatingRequ
     return session->impl->SetRepeatingRequest(callbacks, numRequests, requests, captureSequenceId);
 }
 
-__attribute__((sysv_abi)) camera_status_t
-ACameraCaptureSession_capture(ACameraCaptureSession *session,
-                              ACameraCaptureSession_captureCallbacks *callbacks, int numRequests,
-                              ACaptureRequest **requests, int *captureSequenceId)
+__attribute__((sysv_abi)) camera_status_t ACameraCaptureSession_capture(
+    ACameraCaptureSession *session, ACameraCaptureSession_captureCallbacks *callbacks,
+    int numRequests, ACaptureRequest **requests, int *captureSequenceId)
 {
     if (!session || !session->impl) {
         return ACAMERA_ERROR_INVALID_PARAMETER;
@@ -396,9 +389,8 @@ ACaptureSessionOutputContainer_free(ACaptureSessionOutputContainer *container)
     delete container;
 }
 
-__attribute__((sysv_abi)) camera_status_t
-ACaptureSessionOutputContainer_add(ACaptureSessionOutputContainer *container,
-                                   const ACaptureSessionOutput *output)
+__attribute__((sysv_abi)) camera_status_t ACaptureSessionOutputContainer_add(
+    ACaptureSessionOutputContainer *container, const ACaptureSessionOutput *output)
 {
     if (!container || !output) {
         return ACAMERA_ERROR_INVALID_PARAMETER;
@@ -407,9 +399,8 @@ ACaptureSessionOutputContainer_add(ACaptureSessionOutputContainer *container,
     return ACAMERA_OK;
 }
 
-__attribute__((sysv_abi)) camera_status_t
-ACaptureSessionOutputContainer_remove(ACaptureSessionOutputContainer *container,
-                                      const ACaptureSessionOutput *output)
+__attribute__((sysv_abi)) camera_status_t ACaptureSessionOutputContainer_remove(
+    ACaptureSessionOutputContainer *container, const ACaptureSessionOutput *output)
 {
     if (!container || !output) {
         return ACAMERA_ERROR_INVALID_PARAMETER;
@@ -423,14 +414,10 @@ ACaptureSessionOutputContainer_remove(ACaptureSessionOutputContainer *container,
     return ACAMERA_OK;
 }
 
-__attribute__((sysv_abi)) void ACameraMetadata_free(ACameraMetadata *metadata)
-{
-    delete metadata;
-}
+__attribute__((sysv_abi)) void ACameraMetadata_free(ACameraMetadata *metadata) { delete metadata; }
 
-__attribute__((sysv_abi)) camera_status_t
-ACameraMetadata_getConstEntry(const ACameraMetadata *metadata, uint32_t tag,
-                              ACameraMetadata_const_entry *entry)
+__attribute__((sysv_abi)) camera_status_t ACameraMetadata_getConstEntry(
+    const ACameraMetadata *metadata, uint32_t tag, ACameraMetadata_const_entry *entry)
 {
     if (!metadata || !entry) {
         return ACAMERA_ERROR_INVALID_PARAMETER;
@@ -486,10 +473,7 @@ __attribute__((sysv_abi)) media_status_t AImageReader_newWithUsage(int32_t width
     return AImageReader_new(width, height, format, maxImages, reader);
 }
 
-__attribute__((sysv_abi)) void AImageReader_delete(AImageReader *reader)
-{
-    delete reader;
-}
+__attribute__((sysv_abi)) void AImageReader_delete(AImageReader *reader) { delete reader; }
 
 __attribute__((sysv_abi)) media_status_t AImageReader_getWindow(AImageReader *reader,
                                                                 ANativeWindow **window)

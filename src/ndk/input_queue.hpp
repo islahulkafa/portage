@@ -266,21 +266,21 @@ __attribute__((sysv_abi)) float AMotionEvent_getHistoricalPressure(const AInputE
 __attribute__((sysv_abi)) float AMotionEvent_getHistoricalSize(const AInputEvent *motion_event,
                                                                size_t pointer_index,
                                                                size_t history_index);
-__attribute__((sysv_abi)) float AMotionEvent_getHistoricalTouchMajor(const AInputEvent *motion_event,
-                                                                     size_t pointer_index,
-                                                                     size_t history_index);
-__attribute__((sysv_abi)) float AMotionEvent_getHistoricalTouchMinor(const AInputEvent *motion_event,
-                                                                     size_t pointer_index,
-                                                                     size_t history_index);
+__attribute__((sysv_abi)) float
+AMotionEvent_getHistoricalTouchMajor(const AInputEvent *motion_event, size_t pointer_index,
+                                     size_t history_index);
+__attribute__((sysv_abi)) float
+AMotionEvent_getHistoricalTouchMinor(const AInputEvent *motion_event, size_t pointer_index,
+                                     size_t history_index);
 __attribute__((sysv_abi)) float AMotionEvent_getHistoricalToolMajor(const AInputEvent *motion_event,
                                                                     size_t pointer_index,
                                                                     size_t history_index);
 __attribute__((sysv_abi)) float AMotionEvent_getHistoricalToolMinor(const AInputEvent *motion_event,
                                                                     size_t pointer_index,
                                                                     size_t history_index);
-__attribute__((sysv_abi)) float AMotionEvent_getHistoricalOrientation(const AInputEvent *motion_event,
-                                                                      size_t pointer_index,
-                                                                      size_t history_index);
+__attribute__((sysv_abi)) float
+AMotionEvent_getHistoricalOrientation(const AInputEvent *motion_event, size_t pointer_index,
+                                      size_t history_index);
 __attribute__((sysv_abi)) float AMotionEvent_getHistoricalAxisValue(const AInputEvent *motion_event,
                                                                     int32_t axis,
                                                                     size_t pointer_index,

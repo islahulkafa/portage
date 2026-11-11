@@ -136,7 +136,7 @@ __attribute__((sysv_abi)) void glDeleteSamplers(GLsizei count, const GLuint *sam
 
 // Buffer Mapping & Pixel Store (GLES 3.0)
 __attribute__((sysv_abi)) void *glMapBufferRange(GLenum target, GLintptr offset, GLsizeiptr length,
-                                                  GLbitfield access);
+                                                 GLbitfield access);
 __attribute__((sysv_abi)) GLboolean glUnmapBuffer(GLenum target);
 __attribute__((sysv_abi)) void glFlushMappedBufferRange(GLenum target, GLintptr offset,
                                                         GLsizeiptr length);

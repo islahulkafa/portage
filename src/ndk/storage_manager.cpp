@@ -174,8 +174,7 @@ void StorageManagerImpl::MountObb(const char *filename, const char *,
     std::string hash = ComputeMountHash(canonical);
     std::string guest_mount = "/storage/obb/" + hash;
 
-    std::filesystem::path host_mount_base =
-        package::PackageManager::Instance().GetObbMountBase();
+    std::filesystem::path host_mount_base = package::PackageManager::Instance().GetObbMountBase();
     if (host_mount_base.empty()) {
         host_mount_base = std::filesystem::temp_directory_path() / "portage" / "obb_mounts";
     }
@@ -207,14 +206,14 @@ void StorageManagerImpl::MountObb(const char *filename, const char *,
     lock.unlock();
 
     if (cb) {
-        std::thread(
-            [cb, fn = canonical, data]() { cb(fn.c_str(), AOBB_STATE_MOUNTED, data); })
-            .detach();
+        std::thread([cb, fn = canonical, data]() {
+            cb(fn.c_str(), AOBB_STATE_MOUNTED, data);
+        }).detach();
     }
 }
 
-void StorageManagerImpl::UnmountObb(const char *filename, int,
-                                    AStorageManager_obbCallbackFunc cb, void *data)
+void StorageManagerImpl::UnmountObb(const char *filename, int, AStorageManager_obbCallbackFunc cb,
+                                    void *data)
 {
     if (!filename || filename[0] == '\0') {
         if (cb) {
@@ -250,9 +249,9 @@ void StorageManagerImpl::UnmountObb(const char *filename, int,
     std::filesystem::remove_all(host_mount, ec);
 
     if (cb) {
-        std::thread(
-            [cb, fn = canonical, data]() { cb(fn.c_str(), AOBB_STATE_UNMOUNTED, data); })
-            .detach();
+        std::thread([cb, fn = canonical, data]() {
+            cb(fn.c_str(), AOBB_STATE_UNMOUNTED, data);
+        }).detach();
     }
 }
 
@@ -285,20 +284,14 @@ const char *StorageManagerImpl::GetMountedObbPath(const char *filename) const
 
 extern "C" {
 
-__attribute__((sysv_abi)) AStorageManager *AStorageManager_new()
-{
-    return new AStorageManager();
-}
+__attribute__((sysv_abi)) AStorageManager *AStorageManager_new() { return new AStorageManager(); }
 
-__attribute__((sysv_abi)) void AStorageManager_delete(AStorageManager *mgr)
-{
-    delete mgr;
-}
+__attribute__((sysv_abi)) void AStorageManager_delete(AStorageManager *mgr) { delete mgr; }
 
 __attribute__((sysv_abi)) void AStorageManager_mountObb(AStorageManager *mgr, const char *filename,
-                                                      const char *key,
-                                                      AStorageManager_obbCallbackFunc cb,
-                                                      void *data)
+                                                        const char *key,
+                                                        AStorageManager_obbCallbackFunc cb,
+                                                        void *data)
 {
     if (mgr) {
         mgr->MountObb(filename, key, cb, data);
@@ -306,9 +299,9 @@ __attribute__((sysv_abi)) void AStorageManager_mountObb(AStorageManager *mgr, co
 }
 
 __attribute__((sysv_abi)) void AStorageManager_unmountObb(AStorageManager *mgr,
-                                                        const char *filename, int force,
-                                                        AStorageManager_obbCallbackFunc cb,
-                                                        void *data)
+                                                          const char *filename, int force,
+                                                          AStorageManager_obbCallbackFunc cb,
+                                                          void *data)
 {
     if (mgr) {
         mgr->UnmountObb(filename, force, cb, data);
@@ -316,13 +309,13 @@ __attribute__((sysv_abi)) void AStorageManager_unmountObb(AStorageManager *mgr,
 }
 
 __attribute__((sysv_abi)) int AStorageManager_isObbMounted(AStorageManager *mgr,
-                                                          const char *filename)
+                                                           const char *filename)
 {
     return (mgr && mgr->IsObbMounted(filename)) ? 1 : 0;
 }
 
 __attribute__((sysv_abi)) const char *AStorageManager_getMountedObbPath(AStorageManager *mgr,
-                                                                      const char *filename)
+                                                                        const char *filename)
 {
     return mgr ? mgr->GetMountedObbPath(filename) : nullptr;
 }

@@ -9,7 +9,7 @@
 namespace portage::security {
 
 class CryptoEngine {
-public:
+  public:
     static CryptoEngine &Instance();
 
     std::vector<uint8_t> GenerateRandomBytes(size_t length);
@@ -29,8 +29,7 @@ public:
     bool EncryptAesCbc(const std::vector<uint8_t> &key, const std::vector<uint8_t> &iv,
                        const std::vector<uint8_t> &plaintext, std::vector<uint8_t> &out_ciphertext);
     bool DecryptAesCbc(const std::vector<uint8_t> &key, const std::vector<uint8_t> &iv,
-                       const std::vector<uint8_t> &ciphertext,
-                       std::vector<uint8_t> &out_plaintext);
+                       const std::vector<uint8_t> &ciphertext, std::vector<uint8_t> &out_plaintext);
 
     bool GenerateRsaKeyPair(size_t key_bits, std::vector<uint8_t> &out_pub,
                             std::vector<uint8_t> &out_priv);
@@ -40,14 +39,13 @@ public:
                              const std::vector<uint8_t> &signature);
 
     bool GenerateEcKeyPair(std::vector<uint8_t> &out_pub, std::vector<uint8_t> &out_priv);
-    bool SignSha256WithEcdsa(const std::vector<uint8_t> &priv_key,
-                             const std::vector<uint8_t> &data,
+    bool SignSha256WithEcdsa(const std::vector<uint8_t> &priv_key, const std::vector<uint8_t> &data,
                              std::vector<uint8_t> &out_signature);
     bool VerifySha256WithEcdsa(const std::vector<uint8_t> &pub_key,
                                const std::vector<uint8_t> &data,
                                const std::vector<uint8_t> &signature);
 
-private:
+  private:
     CryptoEngine() = default;
     ~CryptoEngine() = default;
     CryptoEngine(const CryptoEngine &) = delete;

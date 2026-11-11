@@ -17,8 +17,8 @@ TEST(KeyStoreTest, KeyStoreManagerAesGcmLifecycle)
     mgr.Reset();
 
     KeyStoreStatus status =
-        mgr.GenerateKey("test_aes_gcm", KeyAlgorithm::Aes, 256,
-                        PurposeEncrypt | PurposeDecrypt, BlockMode::Gcm, Padding::None);
+        mgr.GenerateKey("test_aes_gcm", KeyAlgorithm::Aes, 256, PurposeEncrypt | PurposeDecrypt,
+                        BlockMode::Gcm, Padding::None);
     EXPECT_EQ(status, KeyStoreStatus::Success);
     EXPECT_TRUE(mgr.ContainsAlias("test_aes_gcm"));
 
@@ -43,8 +43,8 @@ TEST(KeyStoreTest, KeyStoreManagerAesCbcLifecycle)
     mgr.Reset();
 
     KeyStoreStatus status =
-        mgr.GenerateKey("test_aes_cbc", KeyAlgorithm::Aes, 128,
-                        PurposeEncrypt | PurposeDecrypt, BlockMode::Cbc, Padding::Pkcs7);
+        mgr.GenerateKey("test_aes_cbc", KeyAlgorithm::Aes, 128, PurposeEncrypt | PurposeDecrypt,
+                        BlockMode::Cbc, Padding::Pkcs7);
     EXPECT_EQ(status, KeyStoreStatus::Success);
 
     const std::string message = "CBC Padded Secret Data";
@@ -82,8 +82,8 @@ TEST(KeyStoreTest, KeyStoreManagerRsaSigningAndVerification)
     mgr.Reset();
 
     KeyStoreStatus status =
-        mgr.GenerateKeyPair("test_rsa_key", KeyAlgorithm::Rsa, 2048,
-                            PurposeSign | PurposeVerify, Digest::Sha256, Padding::Pkcs1);
+        mgr.GenerateKeyPair("test_rsa_key", KeyAlgorithm::Rsa, 2048, PurposeSign | PurposeVerify,
+                            Digest::Sha256, Padding::Pkcs1);
     EXPECT_EQ(status, KeyStoreStatus::Success);
     EXPECT_TRUE(mgr.ContainsAlias("test_rsa_key"));
 
@@ -110,8 +110,8 @@ TEST(KeyStoreTest, KeyStoreManagerEcdsaSigningAndVerification)
     mgr.Reset();
 
     KeyStoreStatus status =
-        mgr.GenerateKeyPair("test_ec_key", KeyAlgorithm::Ec, 256,
-                            PurposeSign | PurposeVerify, Digest::Sha256, Padding::None);
+        mgr.GenerateKeyPair("test_ec_key", KeyAlgorithm::Ec, 256, PurposeSign | PurposeVerify,
+                            Digest::Sha256, Padding::None);
     EXPECT_EQ(status, KeyStoreStatus::Success);
     EXPECT_TRUE(mgr.ContainsAlias("test_ec_key"));
 
@@ -142,8 +142,8 @@ TEST(KeyStoreTest, KeyStoreManagerVfsPersistence)
 
     mgr.Initialize(test_path);
     KeyStoreStatus status =
-        mgr.GenerateKey("persistent_key", KeyAlgorithm::Aes, 256,
-                        PurposeEncrypt | PurposeDecrypt, BlockMode::Gcm, Padding::None);
+        mgr.GenerateKey("persistent_key", KeyAlgorithm::Aes, 256, PurposeEncrypt | PurposeDecrypt,
+                        BlockMode::Gcm, Padding::None);
     EXPECT_EQ(status, KeyStoreStatus::Success);
     EXPECT_TRUE(mgr.ContainsAlias("persistent_key"));
 
@@ -175,8 +175,8 @@ TEST(KeyStoreTest, SyntheticKeyStoreJni)
 
     jclass kg_class = reinterpret_cast<jclass>(const_cast<char *>("javax/crypto/KeyGenerator"));
     jstring aes_str = jenv->functions->NewStringUTF(jenv, "AES");
-    jobject kg_obj =
-        jenv->functions->CallStaticObjectMethod(jenv, kg_class, get_instance_mid, aes_str, provider_str);
+    jobject kg_obj = jenv->functions->CallStaticObjectMethod(jenv, kg_class, get_instance_mid,
+                                                             aes_str, provider_str);
     ASSERT_NE(kg_obj, nullptr);
 
     jmethodID gen_key_mid = reinterpret_cast<jmethodID>(const_cast<char *>("generateKey"));
@@ -213,10 +213,11 @@ TEST(KeyStoreTest, SyntheticKeyStoreJni)
     ASSERT_NE(iv_syn, nullptr);
     EXPECT_FALSE(iv_syn->byte_data.empty());
 
-    jclass kpg_class = reinterpret_cast<jclass>(const_cast<char *>("java/security/KeyPairGenerator"));
+    jclass kpg_class =
+        reinterpret_cast<jclass>(const_cast<char *>("java/security/KeyPairGenerator"));
     jstring rsa_str = jenv->functions->NewStringUTF(jenv, "RSA");
-    jobject kpg_obj =
-        jenv->functions->CallStaticObjectMethod(jenv, kpg_class, get_instance_mid, rsa_str, provider_str);
+    jobject kpg_obj = jenv->functions->CallStaticObjectMethod(jenv, kpg_class, get_instance_mid,
+                                                              rsa_str, provider_str);
     ASSERT_NE(kpg_obj, nullptr);
 
     jmethodID gen_kp_mid = reinterpret_cast<jmethodID>(const_cast<char *>("generateKeyPair"));

@@ -22,7 +22,10 @@ class VulkanBridge {
     [[nodiscard]] void *GetModule() const noexcept { return m_module; }
 
     void SetFdTable(fs::FileDescriptorTable *fd_table) noexcept { m_fd_table_override = fd_table; }
-    [[nodiscard]] fs::FileDescriptorTable *GetFdTable() const noexcept { return m_fd_table_override; }
+    [[nodiscard]] fs::FileDescriptorTable *GetFdTable() const noexcept
+    {
+        return m_fd_table_override;
+    }
 
   private:
     VulkanBridge() = default;

@@ -619,10 +619,9 @@ vkGetAndroidHardwareBufferPropertiesANDROID(VkDevice device, const struct AHardw
     return g_dispatch->vkGetAndroidHardwareBufferPropertiesANDROID(device, buffer, pProperties);
 }
 
-__attribute__((visibility("default"))) VkResult
-vkGetMemoryAndroidHardwareBufferANDROID(VkDevice device,
-                                        const VkMemoryGetAndroidHardwareBufferInfoANDROID *pInfo,
-                                        struct AHardwareBuffer **pBuffer)
+__attribute__((visibility("default"))) VkResult vkGetMemoryAndroidHardwareBufferANDROID(
+    VkDevice device, const VkMemoryGetAndroidHardwareBufferInfoANDROID *pInfo,
+    struct AHardwareBuffer **pBuffer)
 {
     if (ensure_init() != 0 || !g_dispatch || !g_dispatch->vkGetMemoryAndroidHardwareBufferANDROID)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -681,9 +680,8 @@ vkDestroyPipelineCache(VkDevice device, VkPipelineCache pipelineCache,
         g_dispatch->vkDestroyPipelineCache(device, pipelineCache, pAllocator);
 }
 
-__attribute__((visibility("default"))) VkResult
-vkGetPipelineCacheData(VkDevice device, VkPipelineCache pipelineCache, size_t *pDataSize,
-                       void *pData)
+__attribute__((visibility("default"))) VkResult vkGetPipelineCacheData(
+    VkDevice device, VkPipelineCache pipelineCache, size_t *pDataSize, void *pData)
 {
     if (ensure_init() != 0 || !g_dispatch || !g_dispatch->vkGetPipelineCacheData)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -778,7 +776,7 @@ __attribute__((visibility("default"))) void vkCmdEndRenderPass(VkCommandBuffer c
 }
 
 __attribute__((visibility("default"))) void vkCmdNextSubpass(VkCommandBuffer commandBuffer,
-                                                            VkSubpassContents contents)
+                                                             VkSubpassContents contents)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkCmdNextSubpass)
         g_dispatch->vkCmdNextSubpass(commandBuffer, contents);
@@ -807,8 +805,8 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
     return g_dispatch->vkCreateImage(device, pCreateInfo, pAllocator, pImage);
 }
 
-__attribute__((visibility("default"))) void
-vkDestroyImage(VkDevice device, VkImage image, const VkAllocationCallbacks *pAllocator)
+__attribute__((visibility("default"))) void vkDestroyImage(VkDevice device, VkImage image,
+                                                           const VkAllocationCallbacks *pAllocator)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkDestroyImage)
         g_dispatch->vkDestroyImage(device, image, pAllocator);
@@ -830,8 +828,9 @@ vkGetImageMemoryRequirements2(VkDevice device, const VkImageMemoryRequirementsIn
         g_dispatch->vkGetImageMemoryRequirements2(device, pInfo, pMemoryRequirements);
 }
 
-__attribute__((visibility("default"))) VkResult
-vkBindImageMemory(VkDevice device, VkImage image, VkDeviceMemory memory, VkDeviceSize memoryOffset)
+__attribute__((visibility("default"))) VkResult vkBindImageMemory(VkDevice device, VkImage image,
+                                                                  VkDeviceMemory memory,
+                                                                  VkDeviceSize memoryOffset)
 {
     if (ensure_init() != 0 || !g_dispatch || !g_dispatch->vkBindImageMemory)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -846,8 +845,8 @@ vkBindImageMemory2(VkDevice device, uint32_t bindInfoCount, const VkBindImageMem
     return g_dispatch->vkBindImageMemory2(device, bindInfoCount, pBindInfos);
 }
 
-__attribute__((visibility("default"))) VkResult
-vkBindBufferMemory2(VkDevice device, uint32_t bindInfoCount, const VkBindBufferMemoryInfo *pBindInfos)
+__attribute__((visibility("default"))) VkResult vkBindBufferMemory2(
+    VkDevice device, uint32_t bindInfoCount, const VkBindBufferMemoryInfo *pBindInfos)
 {
     if (ensure_init() != 0 || !g_dispatch || !g_dispatch->vkBindBufferMemory2)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -887,10 +886,9 @@ vkDestroySampler(VkDevice device, VkSampler sampler, const VkAllocationCallbacks
 }
 
 // Descriptors & Push Constants
-__attribute__((visibility("default"))) VkResult
-vkCreateDescriptorSetLayout(VkDevice device, const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
-                            const VkAllocationCallbacks *pAllocator,
-                            VkDescriptorSetLayout *pSetLayout)
+__attribute__((visibility("default"))) VkResult vkCreateDescriptorSetLayout(
+    VkDevice device, const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
+    const VkAllocationCallbacks *pAllocator, VkDescriptorSetLayout *pSetLayout)
 {
     if (ensure_init() != 0 || !g_dispatch || !g_dispatch->vkCreateDescriptorSetLayout)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -922,9 +920,8 @@ vkDestroyDescriptorPool(VkDevice device, VkDescriptorPool descriptorPool,
         g_dispatch->vkDestroyDescriptorPool(device, descriptorPool, pAllocator);
 }
 
-__attribute__((visibility("default"))) VkResult
-vkResetDescriptorPool(VkDevice device, VkDescriptorPool descriptorPool,
-                      VkDescriptorPoolResetFlags flags)
+__attribute__((visibility("default"))) VkResult vkResetDescriptorPool(
+    VkDevice device, VkDescriptorPool descriptorPool, VkDescriptorPoolResetFlags flags)
 {
     if (ensure_init() != 0 || !g_dispatch || !g_dispatch->vkResetDescriptorPool)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -972,10 +969,11 @@ vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipel
                                             pDynamicOffsets);
 }
 
-__attribute__((visibility("default"))) void
-vkCmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineLayout layout,
-                   VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size,
-                   const void *pValues)
+__attribute__((visibility("default"))) void vkCmdPushConstants(VkCommandBuffer commandBuffer,
+                                                               VkPipelineLayout layout,
+                                                               VkShaderStageFlags stageFlags,
+                                                               uint32_t offset, uint32_t size,
+                                                               const void *pValues)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkCmdPushConstants)
         g_dispatch->vkCmdPushConstants(commandBuffer, layout, stageFlags, offset, size, pValues);
@@ -991,32 +989,32 @@ vkCreateFence(VkDevice device, const VkFenceCreateInfo *pCreateInfo,
     return g_dispatch->vkCreateFence(device, pCreateInfo, pAllocator, pFence);
 }
 
-__attribute__((visibility("default"))) void
-vkDestroyFence(VkDevice device, VkFence fence, const VkAllocationCallbacks *pAllocator)
+__attribute__((visibility("default"))) void vkDestroyFence(VkDevice device, VkFence fence,
+                                                           const VkAllocationCallbacks *pAllocator)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkDestroyFence)
         g_dispatch->vkDestroyFence(device, fence, pAllocator);
 }
 
-__attribute__((visibility("default"))) VkResult
-vkResetFences(VkDevice device, uint32_t fenceCount, const VkFence *pFences)
+__attribute__((visibility("default"))) VkResult vkResetFences(VkDevice device, uint32_t fenceCount,
+                                                              const VkFence *pFences)
 {
     if (ensure_init() != 0 || !g_dispatch || !g_dispatch->vkResetFences)
         return VK_ERROR_INITIALIZATION_FAILED;
     return g_dispatch->vkResetFences(device, fenceCount, pFences);
 }
 
-__attribute__((visibility("default"))) VkResult
-vkGetFenceStatus(VkDevice device, VkFence fence)
+__attribute__((visibility("default"))) VkResult vkGetFenceStatus(VkDevice device, VkFence fence)
 {
     if (ensure_init() != 0 || !g_dispatch || !g_dispatch->vkGetFenceStatus)
         return VK_ERROR_INITIALIZATION_FAILED;
     return g_dispatch->vkGetFenceStatus(device, fence);
 }
 
-__attribute__((visibility("default"))) VkResult
-vkWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence *pFences, VkBool32 waitAll,
-                uint64_t timeout)
+__attribute__((visibility("default"))) VkResult vkWaitForFences(VkDevice device,
+                                                                uint32_t fenceCount,
+                                                                const VkFence *pFences,
+                                                                VkBool32 waitAll, uint64_t timeout)
 {
     if (ensure_init() != 0 || !g_dispatch || !g_dispatch->vkWaitForFences)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -1039,8 +1037,9 @@ vkDestroySemaphore(VkDevice device, VkSemaphore semaphore, const VkAllocationCal
         g_dispatch->vkDestroySemaphore(device, semaphore, pAllocator);
 }
 
-__attribute__((visibility("default"))) VkResult
-vkGetSemaphoreCounterValue(VkDevice device, VkSemaphore semaphore, uint64_t *pValue)
+__attribute__((visibility("default"))) VkResult vkGetSemaphoreCounterValue(VkDevice device,
+                                                                           VkSemaphore semaphore,
+                                                                           uint64_t *pValue)
 {
     if (ensure_init() != 0 || !g_dispatch || !g_dispatch->vkGetSemaphoreCounterValue)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -1072,8 +1071,8 @@ vkCreateEvent(VkDevice device, const VkEventCreateInfo *pCreateInfo,
     return g_dispatch->vkCreateEvent(device, pCreateInfo, pAllocator, pEvent);
 }
 
-__attribute__((visibility("default"))) void
-vkDestroyEvent(VkDevice device, VkEvent event, const VkAllocationCallbacks *pAllocator)
+__attribute__((visibility("default"))) void vkDestroyEvent(VkDevice device, VkEvent event,
+                                                           const VkAllocationCallbacks *pAllocator)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkDestroyEvent)
         g_dispatch->vkDestroyEvent(device, event, pAllocator);
@@ -1101,8 +1100,9 @@ __attribute__((visibility("default"))) VkResult vkResetEvent(VkDevice device, Vk
 }
 
 // Command Buffer Recording
-__attribute__((visibility("default"))) VkResult
-vkResetCommandPool(VkDevice device, VkCommandPool commandPool, VkCommandPoolResetFlags flags)
+__attribute__((visibility("default"))) VkResult vkResetCommandPool(VkDevice device,
+                                                                   VkCommandPool commandPool,
+                                                                   VkCommandPoolResetFlags flags)
 {
     if (ensure_init() != 0 || !g_dispatch || !g_dispatch->vkResetCommandPool)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -1117,25 +1117,27 @@ vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags fl
     return g_dispatch->vkResetCommandBuffer(commandBuffer, flags);
 }
 
-__attribute__((visibility("default"))) void
-vkCmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
-                  VkPipeline pipeline)
+__attribute__((visibility("default"))) void vkCmdBindPipeline(VkCommandBuffer commandBuffer,
+                                                              VkPipelineBindPoint pipelineBindPoint,
+                                                              VkPipeline pipeline)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkCmdBindPipeline)
         g_dispatch->vkCmdBindPipeline(commandBuffer, pipelineBindPoint, pipeline);
 }
 
-__attribute__((visibility("default"))) void
-vkCmdSetViewport(VkCommandBuffer commandBuffer, uint32_t firstViewport, uint32_t viewportCount,
-                 const VkViewport *pViewports)
+__attribute__((visibility("default"))) void vkCmdSetViewport(VkCommandBuffer commandBuffer,
+                                                             uint32_t firstViewport,
+                                                             uint32_t viewportCount,
+                                                             const VkViewport *pViewports)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkCmdSetViewport)
         g_dispatch->vkCmdSetViewport(commandBuffer, firstViewport, viewportCount, pViewports);
 }
 
-__attribute__((visibility("default"))) void
-vkCmdSetScissor(VkCommandBuffer commandBuffer, uint32_t firstScissor, uint32_t scissorCount,
-                const VkRect2D *pScissors)
+__attribute__((visibility("default"))) void vkCmdSetScissor(VkCommandBuffer commandBuffer,
+                                                            uint32_t firstScissor,
+                                                            uint32_t scissorCount,
+                                                            const VkRect2D *pScissors)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkCmdSetScissor)
         g_dispatch->vkCmdSetScissor(commandBuffer, firstScissor, scissorCount, pScissors);
@@ -1150,17 +1152,18 @@ vkCmdBindVertexBuffers(VkCommandBuffer commandBuffer, uint32_t firstBinding, uin
                                            pOffsets);
 }
 
-__attribute__((visibility("default"))) void
-vkCmdBindIndexBuffer(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
-                     VkIndexType indexType)
+__attribute__((visibility("default"))) void vkCmdBindIndexBuffer(VkCommandBuffer commandBuffer,
+                                                                 VkBuffer buffer,
+                                                                 VkDeviceSize offset,
+                                                                 VkIndexType indexType)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkCmdBindIndexBuffer)
         g_dispatch->vkCmdBindIndexBuffer(commandBuffer, buffer, offset, indexType);
 }
 
-__attribute__((visibility("default"))) void
-vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount,
-          uint32_t firstVertex, uint32_t firstInstance)
+__attribute__((visibility("default"))) void vkCmdDraw(VkCommandBuffer commandBuffer,
+                                                      uint32_t vertexCount, uint32_t instanceCount,
+                                                      uint32_t firstVertex, uint32_t firstInstance)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkCmdDraw)
         g_dispatch->vkCmdDraw(commandBuffer, vertexCount, instanceCount, firstVertex,
@@ -1176,9 +1179,9 @@ vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32_t in
                                      vertexOffset, firstInstance);
 }
 
-__attribute__((visibility("default"))) void
-vkCmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
-                  uint32_t drawCount, uint32_t stride)
+__attribute__((visibility("default"))) void vkCmdDrawIndirect(VkCommandBuffer commandBuffer,
+                                                              VkBuffer buffer, VkDeviceSize offset,
+                                                              uint32_t drawCount, uint32_t stride)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkCmdDrawIndirect)
         g_dispatch->vkCmdDrawIndirect(commandBuffer, buffer, offset, drawCount, stride);
@@ -1192,9 +1195,10 @@ vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDevic
         g_dispatch->vkCmdDrawIndexedIndirect(commandBuffer, buffer, offset, drawCount, stride);
 }
 
-__attribute__((visibility("default"))) void
-vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY,
-              uint32_t groupCountZ)
+__attribute__((visibility("default"))) void vkCmdDispatch(VkCommandBuffer commandBuffer,
+                                                          uint32_t groupCountX,
+                                                          uint32_t groupCountY,
+                                                          uint32_t groupCountZ)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkCmdDispatch)
         g_dispatch->vkCmdDispatch(commandBuffer, groupCountX, groupCountY, groupCountZ);
@@ -1207,9 +1211,10 @@ vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSi
         g_dispatch->vkCmdDispatchIndirect(commandBuffer, buffer, offset);
 }
 
-__attribute__((visibility("default"))) void
-vkCmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer,
-                uint32_t regionCount, const VkBufferCopy *pRegions)
+__attribute__((visibility("default"))) void vkCmdCopyBuffer(VkCommandBuffer commandBuffer,
+                                                            VkBuffer srcBuffer, VkBuffer dstBuffer,
+                                                            uint32_t regionCount,
+                                                            const VkBufferCopy *pRegions)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkCmdCopyBuffer)
         g_dispatch->vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, regionCount, pRegions);
@@ -1255,18 +1260,16 @@ vkCmdBlitImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout sr
                                    dstImageLayout, regionCount, pRegions, filter);
 }
 
-__attribute__((visibility("default"))) void
-vkCmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags srcStageMask,
-                     VkPipelineStageFlags dstStageMask, VkDependencyFlags dependencyFlags,
-                     uint32_t memoryBarrierCount, const VkMemoryBarrier *pMemoryBarriers,
-                     uint32_t bufferMemoryBarrierCount,
-                     const VkBufferMemoryBarrier *pBufferMemoryBarriers,
-                     uint32_t imageMemoryBarrierCount,
-                     const VkImageMemoryBarrier *pImageMemoryBarriers)
+__attribute__((visibility("default"))) void vkCmdPipelineBarrier(
+    VkCommandBuffer commandBuffer, VkPipelineStageFlags srcStageMask,
+    VkPipelineStageFlags dstStageMask, VkDependencyFlags dependencyFlags,
+    uint32_t memoryBarrierCount, const VkMemoryBarrier *pMemoryBarriers,
+    uint32_t bufferMemoryBarrierCount, const VkBufferMemoryBarrier *pBufferMemoryBarriers,
+    uint32_t imageMemoryBarrierCount, const VkImageMemoryBarrier *pImageMemoryBarriers)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkCmdPipelineBarrier)
-        g_dispatch->vkCmdPipelineBarrier(commandBuffer, srcStageMask, dstStageMask,
-                                         dependencyFlags, memoryBarrierCount, pMemoryBarriers,
+        g_dispatch->vkCmdPipelineBarrier(commandBuffer, srcStageMask, dstStageMask, dependencyFlags,
+                                         memoryBarrierCount, pMemoryBarriers,
                                          bufferMemoryBarrierCount, pBufferMemoryBarriers,
                                          imageMemoryBarrierCount, pImageMemoryBarriers);
 }
@@ -1298,9 +1301,10 @@ vkCmdClearAttachments(VkCommandBuffer commandBuffer, uint32_t attachmentCount,
                                           pRects);
 }
 
-__attribute__((visibility("default"))) void
-vkCmdFillBuffer(VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkDeviceSize dstOffset,
-                VkDeviceSize size, uint32_t data)
+__attribute__((visibility("default"))) void vkCmdFillBuffer(VkCommandBuffer commandBuffer,
+                                                            VkBuffer dstBuffer,
+                                                            VkDeviceSize dstOffset,
+                                                            VkDeviceSize size, uint32_t data)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkCmdFillBuffer)
         g_dispatch->vkCmdFillBuffer(commandBuffer, dstBuffer, dstOffset, size, data);
@@ -1361,9 +1365,10 @@ vkGetPhysicalDeviceMemoryProperties2(VkPhysicalDevice physicalDevice,
         g_dispatch->vkGetPhysicalDeviceMemoryProperties2(physicalDevice, pMemoryProperties);
 }
 
-__attribute__((visibility("default"))) void vkGetPhysicalDeviceQueueFamilyProperties2(
-    VkPhysicalDevice physicalDevice, uint32_t *pQueueFamilyPropertyCount,
-    VkQueueFamilyProperties2 *pQueueFamilyProperties)
+__attribute__((visibility("default"))) void
+vkGetPhysicalDeviceQueueFamilyProperties2(VkPhysicalDevice physicalDevice,
+                                          uint32_t *pQueueFamilyPropertyCount,
+                                          VkQueueFamilyProperties2 *pQueueFamilyProperties)
 {
     if (ensure_init() == 0 && g_dispatch && g_dispatch->vkGetPhysicalDeviceQueueFamilyProperties2)
         g_dispatch->vkGetPhysicalDeviceQueueFamilyProperties2(
@@ -1385,18 +1390,16 @@ vkGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2 *pQueueInfo, VkQueue
         g_dispatch->vkGetDeviceQueue2(device, pQueueInfo, pQueue);
 }
 
-__attribute__((visibility("default"))) VkResult
-vkFlushMappedMemoryRanges(VkDevice device, uint32_t memoryRangeCount,
-                          const VkMappedMemoryRange *pMemoryRanges)
+__attribute__((visibility("default"))) VkResult vkFlushMappedMemoryRanges(
+    VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange *pMemoryRanges)
 {
     if (ensure_init() != 0 || !g_dispatch || !g_dispatch->vkFlushMappedMemoryRanges)
         return VK_ERROR_INITIALIZATION_FAILED;
     return g_dispatch->vkFlushMappedMemoryRanges(device, memoryRangeCount, pMemoryRanges);
 }
 
-__attribute__((visibility("default"))) VkResult
-vkInvalidateMappedMemoryRanges(VkDevice device, uint32_t memoryRangeCount,
-                               const VkMappedMemoryRange *pMemoryRanges)
+__attribute__((visibility("default"))) VkResult vkInvalidateMappedMemoryRanges(
+    VkDevice device, uint32_t memoryRangeCount, const VkMappedMemoryRange *pMemoryRanges)
 {
     if (ensure_init() != 0 || !g_dispatch || !g_dispatch->vkInvalidateMappedMemoryRanges)
         return VK_ERROR_INITIALIZATION_FAILED;

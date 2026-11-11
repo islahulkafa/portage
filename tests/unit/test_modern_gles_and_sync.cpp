@@ -92,9 +92,9 @@ TEST_F(ModernGlesAndSyncTest, EglSyncFenceLifecycle)
     EGLSyncKHR sync_khr = eglCreateSyncKHR(display_, EGL_SYNC_FENCE_KHR, nullptr);
     ASSERT_NE(sync_khr, EGL_NO_SYNC_KHR);
     EXPECT_EQ(eglWaitSyncKHR(display_, sync_khr, 0), EGL_TRUE);
-    EXPECT_EQ(eglClientWaitSyncKHR(display_, sync_khr, EGL_SYNC_FLUSH_COMMANDS_BIT_KHR,
-                                   EGL_FOREVER_KHR),
-              EGL_CONDITION_SATISFIED_KHR);
+    EXPECT_EQ(
+        eglClientWaitSyncKHR(display_, sync_khr, EGL_SYNC_FLUSH_COMMANDS_BIT_KHR, EGL_FOREVER_KHR),
+        EGL_CONDITION_SATISFIED_KHR);
     EGLint khr_status = 0;
     EXPECT_EQ(eglGetSyncAttribKHR(display_, sync_khr, EGL_SYNC_STATUS_KHR, &khr_status), EGL_TRUE);
     EXPECT_EQ(khr_status, EGL_SIGNALED_KHR);
@@ -124,9 +124,8 @@ TEST_F(ModernGlesAndSyncTest, EglDupNativeFenceFdAndEpoll)
     poll::LinuxEpollEvent ev{};
     ev.events = poll::LINUX_EPOLLIN;
     ev.data = static_cast<uint64_t>(fence_fd);
-    ASSERT_EQ(poll::EpollManager::Instance().Ctl(epoll_id, poll::LINUX_EPOLL_CTL_ADD, fence_fd,
-                                                   &ev),
-              0);
+    ASSERT_EQ(
+        poll::EpollManager::Instance().Ctl(epoll_id, poll::LINUX_EPOLL_CTL_ADD, fence_fd, &ev), 0);
 
     poll::LinuxEpollEvent out_ev{};
     int ready = poll::EpollManager::Instance().Wait(epoll_id, &out_ev, 1, 50, &fd_table);
@@ -139,8 +138,7 @@ TEST_F(ModernGlesAndSyncTest, EglDupNativeFenceFdAndEpoll)
     EXPECT_NE(pfd.revents & poll::LINUX_POLLIN, 0);
 
     const EGLint import_attribs[] = {EGL_SYNC_NATIVE_FENCE_FD_ANDROID, fence_fd, EGL_NONE};
-    EGLSyncKHR imported =
-        eglCreateSyncKHR(display_, EGL_SYNC_NATIVE_FENCE_ANDROID, import_attribs);
+    EGLSyncKHR imported = eglCreateSyncKHR(display_, EGL_SYNC_NATIVE_FENCE_ANDROID, import_attribs);
     ASSERT_NE(imported, EGL_NO_SYNC_KHR);
     EGLint imported_status = 0;
     EXPECT_EQ(eglGetSyncAttribKHR(display_, imported, EGL_SYNC_STATUS_KHR, &imported_status),
@@ -238,8 +236,8 @@ TEST_F(ModernGlesAndSyncTest, MapBufferRangeLifecycle)
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, 64, nullptr, GL_DYNAMIC_DRAW);
 
-    void *mapped = glMapBufferRange(GL_ARRAY_BUFFER, 0, 64,
-                                    GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT);
+    void *mapped =
+        glMapBufferRange(GL_ARRAY_BUFFER, 0, 64, GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT);
     if (mapped) {
         auto *fdata = static_cast<float *>(mapped);
         fdata[0] = 0.25f;
@@ -334,8 +332,8 @@ TEST_F(ModernGlesAndSyncTest, HardwareBufferEglImageTextureBinding)
     EGLClientBuffer client_buf = eglGetNativeClientBufferANDROID(ahb);
     ASSERT_NE(client_buf, nullptr);
 
-    EGLImageKHR image = eglCreateImageKHR(display_, EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_ANDROID,
-                                          client_buf, nullptr);
+    EGLImageKHR image =
+        eglCreateImageKHR(display_, EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_ANDROID, client_buf, nullptr);
     ASSERT_NE(image, EGL_NO_IMAGE_KHR);
     ASSERT_NE(EglDispatcher::Instance().FindImage(image), nullptr);
 

@@ -22,8 +22,9 @@ enum {
 
 struct AStorageManager;
 
-using AStorageManager_obbCallbackFunc =
-    void (__attribute__((sysv_abi)) *)(const char *filename, const int32_t state, void *data);
+using AStorageManager_obbCallbackFunc = void(__attribute__((sysv_abi)) *)(const char *filename,
+                                                                          const int32_t state,
+                                                                          void *data);
 
 namespace portage::ndk {
 
@@ -75,15 +76,15 @@ extern "C" {
 __attribute__((sysv_abi)) AStorageManager *AStorageManager_new();
 __attribute__((sysv_abi)) void AStorageManager_delete(AStorageManager *mgr);
 __attribute__((sysv_abi)) void AStorageManager_mountObb(AStorageManager *mgr, const char *filename,
-                                                      const char *key,
-                                                      AStorageManager_obbCallbackFunc cb,
-                                                      void *data);
-__attribute__((sysv_abi)) void AStorageManager_unmountObb(AStorageManager *mgr, const char *filename,
-                                                        int force,
+                                                        const char *key,
                                                         AStorageManager_obbCallbackFunc cb,
                                                         void *data);
+__attribute__((sysv_abi)) void AStorageManager_unmountObb(AStorageManager *mgr,
+                                                          const char *filename, int force,
+                                                          AStorageManager_obbCallbackFunc cb,
+                                                          void *data);
 __attribute__((sysv_abi)) int AStorageManager_isObbMounted(AStorageManager *mgr,
-                                                          const char *filename);
+                                                           const char *filename);
 __attribute__((sysv_abi)) const char *AStorageManager_getMountedObbPath(AStorageManager *mgr,
-                                                                      const char *filename);
+                                                                        const char *filename);
 }

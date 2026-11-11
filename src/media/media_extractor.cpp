@@ -3,10 +3,7 @@
 
 extern "C" {
 
-__attribute__((sysv_abi)) AMediaExtractor *AMediaExtractor_new()
-{
-    return new AMediaExtractor();
-}
+__attribute__((sysv_abi)) AMediaExtractor *AMediaExtractor_new() { return new AMediaExtractor(); }
 
 __attribute__((sysv_abi)) media_status_t AMediaExtractor_delete(AMediaExtractor *extractor)
 {
@@ -17,14 +14,16 @@ __attribute__((sysv_abi)) media_status_t AMediaExtractor_delete(AMediaExtractor 
     return AMEDIA_OK;
 }
 
-__attribute__((sysv_abi)) media_status_t
-AMediaExtractor_setDataSourceFd(AMediaExtractor *extractor, int fd, int64_t offset,
-                               int64_t length)
+__attribute__((sysv_abi)) media_status_t AMediaExtractor_setDataSourceFd(AMediaExtractor *extractor,
+                                                                         int fd, int64_t offset,
+                                                                         int64_t length)
 {
-    (void)offset;
-    (void)length;
-    if (!extractor || fd < 0) {
+    if (!extractor || fd < 0 || offset < 0) {
         return AMEDIA_ERROR_INVALID_PARAMETER;
+    }
+
+    if (extractor->reader && extractor->reader->OpenFd(fd, offset, length)) {
+        return AMEDIA_OK;
     }
 
     auto *fd_table = portage::syscall::SyscallDispatcher::GetFdTable();
@@ -44,8 +43,8 @@ AMediaExtractor_setDataSourceFd(AMediaExtractor *extractor, int fd, int64_t offs
     return AMEDIA_ERROR_IO;
 }
 
-__attribute__((sysv_abi)) media_status_t
-AMediaExtractor_setDataSource(AMediaExtractor *extractor, const char *location)
+__attribute__((sysv_abi)) media_status_t AMediaExtractor_setDataSource(AMediaExtractor *extractor,
+                                                                       const char *location)
 {
     if (!extractor || !location) {
         return AMEDIA_ERROR_INVALID_PARAMETER;
@@ -71,7 +70,7 @@ __attribute__((sysv_abi)) size_t AMediaExtractor_getTrackCount(AMediaExtractor *
 }
 
 __attribute__((sysv_abi)) AMediaFormat *AMediaExtractor_getTrackFormat(AMediaExtractor *extractor,
-                                                                      size_t idx)
+                                                                       size_t idx)
 {
     if (!extractor || !extractor->reader) {
         return nullptr;
@@ -124,8 +123,7 @@ __attribute__((sysv_abi)) media_status_t AMediaExtractor_unselectTrack(AMediaExt
 }
 
 __attribute__((sysv_abi)) int64_t AMediaExtractor_readSampleData(AMediaExtractor *extractor,
-                                                                uint8_t *buffer,
-                                                                size_t capacity)
+                                                                 uint8_t *buffer, size_t capacity)
 {
     if (!extractor || !extractor->reader || !buffer || capacity == 0) {
         return -1;
@@ -178,7 +176,7 @@ __attribute__((sysv_abi)) bool AMediaExtractor_advance(AMediaExtractor *extracto
 }
 
 __attribute__((sysv_abi)) media_status_t AMediaExtractor_seekTo(AMediaExtractor *extractor,
-                                                               int64_t timeUs, int mode)
+                                                                int64_t timeUs, int mode)
 {
     (void)mode;
     if (!extractor || !extractor->reader) {

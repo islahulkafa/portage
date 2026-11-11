@@ -22,22 +22,22 @@ All source code resides in `src/`, with subsystems structured as follows:
 | Directory | Subsystem Description |
 | :--- | :--- |
 | `src/arch/` | Guest CPU state, stack frame allocation, registers, and execution dispatch |
-| `src/audio/` | WASAPI audio backend, AAudio stream dispatcher, and OpenSL ES engine |
+| `src/audio/` | WASAPI polling and event-driven low-latency backend (`AUDCLNT_STREAMFLAGS_EVENTCALLBACK`, `IAudioClock`, XRun detection), AAudio dispatcher (`requestFlush`, `waitForStateChange`, `getFramesWritten`/`Read`, `getTimestamp`, `getXRunCount`, usage/content-type/input-preset hints, `getPerformanceMode`/`SharingMode`/`DeviceId`), and OpenSL ES engine (`SLMuteSoloItf`, `SLAndroidConfigurationItf`) |
 | `src/binder/` | Android IPC Binder driver emulation and ioctl handlers |
-| `src/camera/` | Camera2 NDK (`ACameraManager`, `ACameraDevice`) and Windows Media Foundation video capture |
+| `src/camera/` | Camera2 NDK (`ACameraManager` availability callbacks, `ACameraDevice`, SysV capture/sequence callbacks, `AImageReader` with WIC JPEG encoding, direct `ANativeWindow` preview blitting, and live WMF `IMFSourceReader` capture with synthetic color-bar fallback) |
 | `src/clipboard/` | Clipboard manager (`ClipboardManager`), MIME clip data, and Win32 OLE clipboard integration |
-| `src/elf/` | ELF64 parsing, segment loading, `R_X86_64_TLSDESC`, lazy PLT trampolines, `android_dlopen_ext`, `dlinfo`, `dlclose` unmapping, and `LinkMap` management |
+| `src/elf/` | ELF64 parsing, segment loading, `R_X86_64_TLSDESC`, lazy PLT trampolines, `android_dlopen_ext`, `dlinfo`, `dlclose` unmapping, virtual system library fallback (`libz`, `libm`, `libc++_shared`, NDK libs), unresolved symbol tracking/trap stubs, and `LinkMap` management |
 | `src/fs/` | Virtual File System (VFS), `/proc`, `/sys`, `/dev`, file descriptor tables, `SyncFence`, and pipes |
 | `src/gles/` | OpenGL ES 2.0–3.2 passthrough, EGL 1.5 dispatcher, and WGL bridge |
 | `src/input/` | Evdev input translation, Win32 mouse/keyboard to Android touch/key mapping |
-| `src/launcher/` | CLI runner (`portage.exe`), argument parsing, APK installation, and execution |
+| `src/launcher/` | CLI runner (`portage.exe`), argument parsing, `--check-apk` symbol audit, APK installation, and execution |
 | `src/location/` | Android location provider (`LocationManager`), GPS/network emulation, and Windows Location API |
-| `src/media/` | MediaCodec / MediaExtractor NDK and Windows Media Foundation decoding bridge |
+| `src/media/` | MediaCodec (`IMFTransform` H.264/HEVC/AAC encode/decode, async notify callbacks, input/output `ANativeWindow` NV12/RGBA surfaces), byte-range MediaExtractor (`PortageMfByteStream`), and MediaMuxer (`IMFSinkWriter` MP4/3GP) over a dedicated Windows Media Foundation COM MTA host worker |
 | `src/mem/` | Virtual memory manager, address space mappings (`mmap`/`mprotect`), and page tracking |
-| `src/ndk/` | Android NDK runtime libraries (`libandroid`, `ALooper`, `AInputQueue`, `AConfiguration`, `liblog`, `AChoreographer`) |
+| `src/ndk/` | Android NDK runtime libraries (`libandroid`, `ALooper`, `AInputQueue`, `AConfiguration`, `liblog`, `AChoreographer`, WIC-backed `AImageDecoder`, LP64 `GuestZStream` `libz`, `libm`, Bionic stdio/POSIX/locale/UTF-32 wchar runtime, fortify/`pthread_create`, and C++ fallback stubs) |
 | `src/net/` | Socket manager, BSD/Linux socket emulation, and loopback networking |
 | `src/notification/` | Notification & Toast subsystem (`NotificationManager`, `NotificationChannel`), and Win32 `Shell_NotifyIconW` |
-| `src/package/` | APK ZIP archive extractor, binary XML parser, `resources.arsc` table, `AAssetManager`, `JNIEnv`, and `ANativeActivity` |
+| `src/package/` | APK ZIP archive extractor, binary XML parser, `resources.arsc` table, `AAssetManager`, `JNIEnv` (WIC `BitmapFactory`, `SharedPreferences`, `DisplayMetrics`, `PackageManager`, `Build`), and `ANativeActivity` |
 | `src/poll/` | Linux `epoll`, `eventfd`, `timerfd`, and waitable `SyncFence` event polling |
 | `src/power/` | Power management (`PowerManager`, `WakeLock`), Win32 `SetThreadExecutionState`, and battery status |
 | `src/process/` | Guest process lifecycle, process tree, and PID tracking |
@@ -120,7 +120,10 @@ Portage operates across two distinct 64-bit calling conventions on x86_64:
 2. **JNI Function Pointers**: Every function pointer inside `JNINativeInterface` and `JNIInvokeInterface` must use `__attribute__((sysv_abi))`. Mismatches cause catastrophic stack corruption and silent crash regressions.
 3. **Thunk Symbol Registration & Lookup Precedence**:
    - All SysV NDK and Bionic thunks implemented in `src/ndk/` or subsystem directories (`src/elf/`, `src/notification/`, `src/power/`, `src/clipboard/`, `src/location/`, `src/camera/`, `src/security/`, `src/media/`) must be registered in `NdkSymbolRegistry` in `src/ndk/libandroid_thunks.cpp`.
-   - `LinkMap::ResolveGlobalSymbol`, `LinkMap::ResolveSymbolForModule`, and `LinkMap::ResolveLazySymbol` check `NdkSymbolRegistry` before loaded guest `.so` modules so no-op guest stub libraries (`libc.so`, `libdl.so`, `libandroid.so`) never shadow real host SysV thunks.
+   - Dual-tier resolution: `NdkSymbolRegistry` maintains primary thunks and secondary C++ fallback stubs (`RegisterCppFallback()`). `LinkMap` symbol lookup precedence is:
+     1. Primary host SysV thunks in `NdkSymbolRegistry` (preventing no-op guest stub libraries such as `libc.so`, `libdl.so`, `libandroid.so` from shadowing real host implementations).
+     2. Loaded physical ELF modules (e.g. real `libc++_shared.so` bundled with APKs).
+     3. Secondary C++ fallback stubs in `NdkSymbolRegistry` (e.g. `_Znwm`, `_ZdlPv` when no C++ STL `.so` is bundled).
    - The corresponding symbol stubs must be exported in guest stub libraries under `tests/guests/` (e.g. `libc.c`, `libdl.c`, `libandroid.c`, `libvulkan.c`, `libEGL.c`, `libGLESv2.c`, `libnotificationndk.c`, `libpowerndk.c`, `liblocationndk.c`, `libclipboardndk.c`, `libcamera2ndk.c`, `libkeystorendk.c`, `libmediandk.c`) to permit guest link-time resolution.
 4. **Host/Guest ABI Layout & Symbol Isolation**:
    - Bionic ABI constants (`ANDROID_DLEXT_*` bitmasks, `RTLD_DI_*` requests, `BionicPthreadAttr` 56-byte LP64 layout) must match official Android NDK / AOSP definitions verbatim for unmodified APK compatibility.

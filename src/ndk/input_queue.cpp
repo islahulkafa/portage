@@ -595,9 +595,9 @@ __attribute__((sysv_abi)) float AMotionEvent_getHistoricalSize(const AInputEvent
     return hist[history_index].pointers[pointer_index].size;
 }
 
-__attribute__((sysv_abi)) float AMotionEvent_getHistoricalTouchMajor(const AInputEvent *motion_event,
-                                                                     size_t pointer_index,
-                                                                     size_t history_index)
+__attribute__((sysv_abi)) float
+AMotionEvent_getHistoricalTouchMajor(const AInputEvent *motion_event, size_t pointer_index,
+                                     size_t history_index)
 {
     if (!motion_event)
         return 0.0f;
@@ -608,9 +608,9 @@ __attribute__((sysv_abi)) float AMotionEvent_getHistoricalTouchMajor(const AInpu
     return hist[history_index].pointers[pointer_index].touch_major;
 }
 
-__attribute__((sysv_abi)) float AMotionEvent_getHistoricalTouchMinor(const AInputEvent *motion_event,
-                                                                     size_t pointer_index,
-                                                                     size_t history_index)
+__attribute__((sysv_abi)) float
+AMotionEvent_getHistoricalTouchMinor(const AInputEvent *motion_event, size_t pointer_index,
+                                     size_t history_index)
 {
     if (!motion_event)
         return 0.0f;
@@ -647,9 +647,9 @@ __attribute__((sysv_abi)) float AMotionEvent_getHistoricalToolMinor(const AInput
     return hist[history_index].pointers[pointer_index].tool_minor;
 }
 
-__attribute__((sysv_abi)) float AMotionEvent_getHistoricalOrientation(const AInputEvent *motion_event,
-                                                                      size_t pointer_index,
-                                                                      size_t history_index)
+__attribute__((sysv_abi)) float
+AMotionEvent_getHistoricalOrientation(const AInputEvent *motion_event, size_t pointer_index,
+                                      size_t history_index)
 {
     if (!motion_event)
         return 0.0f;

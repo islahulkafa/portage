@@ -13,14 +13,9 @@ static AClipboard g_default_clipboard;
 
 extern "C" {
 
-__attribute__((sysv_abi)) AClipboard *AClipboard_create()
-{
-    return &g_default_clipboard;
-}
+__attribute__((sysv_abi)) AClipboard *AClipboard_create() { return &g_default_clipboard; }
 
-__attribute__((sysv_abi)) void AClipboard_destroy(AClipboard *)
-{
-}
+__attribute__((sysv_abi)) void AClipboard_destroy(AClipboard *) {}
 
 __attribute__((sysv_abi)) int AClipboard_hasText(AClipboard *)
 {
@@ -69,8 +64,9 @@ __attribute__((sysv_abi)) int AClipboard_addPrimaryClipChangedListener(
     return 0;
 }
 
-__attribute__((sysv_abi)) int AClipboard_removePrimaryClipChangedListener(
-    AClipboard *, AClipboard_OnPrimaryClipChangedListener callback)
+__attribute__((sysv_abi)) int
+AClipboard_removePrimaryClipChangedListener(AClipboard *,
+                                            AClipboard_OnPrimaryClipChangedListener callback)
 {
     if (!callback) {
         return -1;
@@ -80,7 +76,7 @@ __attribute__((sysv_abi)) int AClipboard_removePrimaryClipChangedListener(
 }
 
 __attribute__((sysv_abi)) int ADragDrop_registerDropListener(ADragDrop_OnDropListener callback,
-                                                            void *context)
+                                                             void *context)
 {
     if (!callback) {
         return -1;

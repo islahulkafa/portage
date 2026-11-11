@@ -40,8 +40,8 @@ class ServiceManager {
 
 extern "C" {
 
-__attribute__((sysv_abi)) binder_status_t
-AServiceManager_addService(AIBinder *binder, const char *instance);
+__attribute__((sysv_abi)) binder_status_t AServiceManager_addService(AIBinder *binder,
+                                                                     const char *instance);
 
 __attribute__((sysv_abi)) AIBinder *AServiceManager_checkService(const char *instance);
 

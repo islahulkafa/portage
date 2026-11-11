@@ -37,9 +37,9 @@ __attribute__((sysv_abi)) AIBinder *AIBinder_new(const AIBinder_Class *clazz, vo
 }
 
 __attribute__((sysv_abi)) binder_status_t AIBinder_transact(AIBinder *binder,
-                                                           transaction_code_t code,
-                                                           const AParcel *in, AParcel *out,
-                                                           binder_flags_t flags)
+                                                            transaction_code_t code,
+                                                            const AParcel *in, AParcel *out,
+                                                            binder_flags_t flags)
 {
     (void)flags;
     if (!binder || !in) {
@@ -88,15 +88,9 @@ __attribute__((sysv_abi)) void AIBinder_decStrong(AIBinder *binder)
     }
 }
 
-__attribute__((sysv_abi)) int32_t AIBinder_getCallingPid(void)
-{
-    return 1000;
-}
+__attribute__((sysv_abi)) int32_t AIBinder_getCallingPid(void) { return 1000; }
 
-__attribute__((sysv_abi)) int32_t AIBinder_getCallingUid(void)
-{
-    return 10000;
-}
+__attribute__((sysv_abi)) int32_t AIBinder_getCallingUid(void) { return 10000; }
 
 __attribute__((sysv_abi)) bool AIBinder_isAlive(const AIBinder *binder)
 {
@@ -113,14 +107,13 @@ __attribute__((sysv_abi)) void *AIBinder_getUserData(AIBinder *binder)
     return binder ? binder->user_data : nullptr;
 }
 
-__attribute__((sysv_abi)) const char *
-AIBinder_Class_getDescriptor(const AIBinder_Class *clazz)
+__attribute__((sysv_abi)) const char *AIBinder_Class_getDescriptor(const AIBinder_Class *clazz)
 {
     return clazz ? clazz->descriptor.c_str() : "";
 }
 
 __attribute__((sysv_abi)) bool AIBinder_associateClass(AIBinder *binder,
-                                                      const AIBinder_Class *clazz)
+                                                       const AIBinder_Class *clazz)
 {
     if (!binder || !clazz) {
         return false;

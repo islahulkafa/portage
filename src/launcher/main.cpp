@@ -23,7 +23,8 @@ int main(int argc, char *argv[])
 {
     if (argc < 2) {
         std::cerr
-            << "Usage: portage [--verbose] [--headless] [--location <lat>,<lon>] [--battery <level>,<charging>] [--rootfs <path>] <elf_binary | app.apk> [args...]\n"
+            << "Usage: portage [--verbose] [--headless] [--check-apk] [--location <lat>,<lon>] "
+               "[--battery <level>,<charging>] [--rootfs <path>] <elf_binary | app.apk> [args...]\n"
             << "       portage run <app.apk>\n"
             << "       portage logcat\n";
         return 1;
@@ -36,6 +37,7 @@ int main(int argc, char *argv[])
 
     bool verbose = false;
     bool headless = false;
+    bool check_apk = false;
     if (const char *env_hl = std::getenv("PORTAGE_HEADLESS"); env_hl && *env_hl != '0') {
         headless = true;
     }
@@ -50,6 +52,9 @@ int main(int argc, char *argv[])
         } else if (arg == "--verbose") {
             verbose = true;
         } else if (arg == "--headless") {
+            headless = true;
+        } else if (arg == "--check-apk") {
+            check_apk = true;
             headless = true;
         } else if (arg == "--interactive") {
             headless = false;
@@ -110,6 +115,8 @@ int main(int argc, char *argv[])
 
     ANativeWindow default_window{1280, 720, 1, 1, nullptr};
     std::string elf_path = target_path;
+    portage::thread::ThreadManager::Instance().EnsureCurrentThreadTcb();
+
     if (is_apk) {
         portage::package::PackageManager::Instance().Initialize(
             rootfs_path.empty() ? "" : (rootfs_path / "sandbox"));
@@ -147,8 +154,6 @@ int main(int argc, char *argv[])
         portage::package::NativeActivityRunner::Instance().SetupActivity(pkg, &default_window);
     }
 
-
-
     std::vector<std::string> guest_env = {"PATH=/system/bin:/system/xbin", "ANDROID_DATA=/data",
                                           "ANDROID_ROOT=/system", "TMPDIR=/data/local/tmp"};
 
@@ -165,6 +170,8 @@ int main(int argc, char *argv[])
     portage::elf::LinkMap::Instance().SetAddressSpace(&address_space);
     portage::elf::LinkMap::Instance().SetVfs(&vfs);
     portage::elf::LinkMap::Instance().AddSearchPath("/system/lib64");
+    portage::thread::ThreadManager::Instance().EnsureCurrentThreadTcb();
+
     if (is_apk) {
         const auto *pkg_ptr = portage::package::PackageManager::Instance().GetActivePackage();
         if (pkg_ptr) {
@@ -194,6 +201,33 @@ int main(int argc, char *argv[])
 
     const auto &loaded_elf = std::get<portage::elf::LoadedElf>(load_result);
     portage::elf::LinkMap::Instance().RegisterLoadedElf(loaded_elf, elf_path);
+    if (check_apk) {
+        const auto *pkg_ptr = portage::package::PackageManager::Instance().GetActivePackage();
+        if (pkg_ptr) {
+            std::cout << "[check-apk] Package: " << pkg_ptr->manifest.package_name
+                      << " (targetSdk=" << pkg_ptr->manifest.target_sdk_version << ")\n";
+        }
+        std::cout << "[check-apk] Primary ELF: "
+                  << std::filesystem::path(elf_path).filename().string() << "\n";
+        for (const auto &dep : loaded_elf.needed_libraries) {
+            auto mod = portage::elf::LinkMap::Instance().FindModule(dep);
+            if (!mod) {
+                std::cout << "  DT_NEEDED " << dep << ": [MISSING]\n";
+            } else if (mod->is_virtual) {
+                std::cout << "  DT_NEEDED " << dep << ": [VIRTUAL]\n";
+            } else {
+                std::cout << "  DT_NEEDED " << dep << ": [LOADED] " << mod->filepath << "\n";
+            }
+        }
+        auto unresolved = portage::elf::LinkMap::Instance().CollectUnresolvedSymbols();
+        std::cout << "[check-apk] Unresolved strong symbols: " << unresolved.size() << "\n";
+        for (const auto &sym : unresolved) {
+            std::cout << "  - " << sym << "\n";
+        }
+        portage::elf::LinkMap::Instance().FinalizeAll();
+        portage::syscall::SyscallDispatcher::Shutdown();
+        return unresolved.empty() ? 0 : 1;
+    }
     if (verbose) {
         std::cout << "[portage] Loaded ELF base: 0x" << std::hex << loaded_elf.base_address
                   << " entry: 0x" << loaded_elf.entry_point << " app_entry: 0x"
@@ -206,6 +240,8 @@ int main(int argc, char *argv[])
         std::cerr << "Error: failed to allocate guest stack\n";
         return 1;
     }
+
+    portage::thread::ThreadManager::Instance().EnsureCurrentThreadTcb();
 
     if (is_apk) {
         uintptr_t jni_onload_addr = loaded_elf.FindSymbol("JNI_OnLoad");
@@ -238,6 +274,8 @@ int main(int argc, char *argv[])
                     std::cout << "[portage] Interactive window opened. Close window to exit.\n";
                 }
                 portage::wsi::WindowManager::Instance().WaitUntilClosed();
+                portage::wsi::WindowManager::Instance().DestroyWindow();
+                portage::wsi::WindowManager::Instance().ClearCallbacks();
             } else {
                 runner.DispatchPause();
                 runner.DispatchWindowDestroyed(&default_window);

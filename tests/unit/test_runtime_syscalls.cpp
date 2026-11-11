@@ -12,15 +12,9 @@ using namespace portage::poll;
 
 class RuntimeSyscallsTest : public ::testing::Test {
   protected:
-    void SetUp() override
-    {
-        SyscallDispatcher::Initialize(&as_, &vfs_, &fd_table_);
-    }
+    void SetUp() override { SyscallDispatcher::Initialize(&as_, &vfs_, &fd_table_); }
 
-    void TearDown() override
-    {
-        SyscallDispatcher::Shutdown();
-    }
+    void TearDown() override { SyscallDispatcher::Shutdown(); }
 
     portage::mem::AddressSpace as_{};
     portage::fs::Vfs vfs_{};
@@ -73,8 +67,8 @@ TEST_F(RuntimeSyscallsTest, GetrusagePopulatesTimesAndMaxRss)
     EXPECT_GT(usage.ru_maxrss, 0);
 
     std::memset(&usage, 0, sizeof(usage));
-    int64_t ret_thread = SyscallDispatcher::Dispatch(98, LINUX_RUSAGE_THREAD,
-                                                     reinterpret_cast<uint64_t>(&usage), 0, 0, 0, 0);
+    int64_t ret_thread = SyscallDispatcher::Dispatch(
+        98, LINUX_RUSAGE_THREAD, reinterpret_cast<uint64_t>(&usage), 0, 0, 0, 0);
     EXPECT_EQ(ret_thread, 0);
 
     EXPECT_EQ(SyscallDispatcher::Dispatch(98, LINUX_RUSAGE_SELF, 0, 0, 0, 0, 0), LINUX_EFAULT);
@@ -88,8 +82,8 @@ TEST_F(RuntimeSyscallsTest, MremapShrinksAndGrowsWithMaymove)
 
     std::strcpy(static_cast<char *>(addr), "PortageMremapPayload");
 
-    int64_t fail_grow = SyscallDispatcher::Dispatch(25, reinterpret_cast<uint64_t>(addr), 4096,
-                                                    8192, 0, 0, 0);
+    int64_t fail_grow =
+        SyscallDispatcher::Dispatch(25, reinterpret_cast<uint64_t>(addr), 4096, 8192, 0, 0, 0);
     EXPECT_EQ(fail_grow, LINUX_ENOMEM);
 
     int64_t new_addr = SyscallDispatcher::Dispatch(25, reinterpret_cast<uint64_t>(addr), 4096, 8192,
@@ -122,8 +116,8 @@ TEST_F(RuntimeSyscallsTest, Eventfd2CounterReadWriteAndSemaphore)
 
     SyscallDispatcher::Dispatch(3, fd, 0, 0, 0, 0, 0);
 
-    int sem_fd = SyscallDispatcher::Dispatch(290, 2, LINUX_EFD_SEMAPHORE | LINUX_EFD_NONBLOCK, 0,
-                                             0, 0, 0);
+    int sem_fd =
+        SyscallDispatcher::Dispatch(290, 2, LINUX_EFD_SEMAPHORE | LINUX_EFD_NONBLOCK, 0, 0, 0, 0);
     ASSERT_GE(sem_fd, 3);
 
     read_val = 0;
@@ -168,21 +162,18 @@ TEST_F(RuntimeSyscallsTest, Eventfd2IntegratesWithEpollAndPoll)
     LinuxPollFd pfd{};
     pfd.fd = efd;
     pfd.events = LINUX_POLLIN;
-    int64_t p_cnt =
-        SyscallDispatcher::Dispatch(7, reinterpret_cast<uint64_t>(&pfd), 1, 0, 0, 0, 0);
+    int64_t p_cnt = SyscallDispatcher::Dispatch(7, reinterpret_cast<uint64_t>(&pfd), 1, 0, 0, 0, 0);
     EXPECT_EQ(p_cnt, 0);
     EXPECT_EQ(pfd.revents, 0);
 
     uint64_t one = 1;
     SyscallDispatcher::Dispatch(1, efd, reinterpret_cast<uint64_t>(&one), 8, 0, 0, 0);
 
-    w_cnt =
-        SyscallDispatcher::Dispatch(232, epfd, reinterpret_cast<uint64_t>(out_evs), 1, 0, 0, 0);
+    w_cnt = SyscallDispatcher::Dispatch(232, epfd, reinterpret_cast<uint64_t>(out_evs), 1, 0, 0, 0);
     EXPECT_EQ(w_cnt, 1);
     EXPECT_EQ(out_evs[0].data, 0xAA);
 
-    p_cnt =
-        SyscallDispatcher::Dispatch(7, reinterpret_cast<uint64_t>(&pfd), 1, 0, 0, 0, 0);
+    p_cnt = SyscallDispatcher::Dispatch(7, reinterpret_cast<uint64_t>(&pfd), 1, 0, 0, 0, 0);
     EXPECT_EQ(p_cnt, 1);
     EXPECT_TRUE(pfd.revents & LINUX_POLLIN);
 

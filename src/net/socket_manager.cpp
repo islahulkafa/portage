@@ -121,7 +121,8 @@ int64_t SocketManager::SocketPair(int domain, int type, int protocol, SOCKET sv[
         addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         addr.sin_port = 0;
 
-        if (::bind(listener, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+        if (::bind(listener, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr)) ==
+            SOCKET_ERROR) {
             int err = WSAGetLastError();
             ::closesocket(listener);
             return TranslateWsaError(err);
@@ -134,7 +135,8 @@ int64_t SocketManager::SocketPair(int domain, int type, int protocol, SOCKET sv[
         }
 
         int addr_len = sizeof(addr);
-        if (::getsockname(listener, reinterpret_cast<sockaddr *>(&addr), &addr_len) == SOCKET_ERROR) {
+        if (::getsockname(listener, reinterpret_cast<sockaddr *>(&addr), &addr_len) ==
+            SOCKET_ERROR) {
             int err = WSAGetLastError();
             ::closesocket(listener);
             return TranslateWsaError(err);
@@ -147,7 +149,8 @@ int64_t SocketManager::SocketPair(int domain, int type, int protocol, SOCKET sv[
             return TranslateWsaError(err);
         }
 
-        if (::connect(client, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+        if (::connect(client, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr)) ==
+            SOCKET_ERROR) {
             int err = WSAGetLastError();
             ::closesocket(client);
             ::closesocket(listener);
@@ -163,8 +166,10 @@ int64_t SocketManager::SocketPair(int domain, int type, int protocol, SOCKET sv[
         }
 
         int nodelay = 1;
-        ::setsockopt(client, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char *>(&nodelay), sizeof(nodelay));
-        ::setsockopt(server, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char *>(&nodelay), sizeof(nodelay));
+        ::setsockopt(client, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char *>(&nodelay),
+                     sizeof(nodelay));
+        ::setsockopt(server, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char *>(&nodelay),
+                     sizeof(nodelay));
 
         if (out_flags & LINUX_SOCK_NONBLOCK) {
             u_long mode = 1;

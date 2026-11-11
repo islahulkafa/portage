@@ -62,4 +62,43 @@ TEST_F(WindowManagerTest, NativeWindowCreationAndDestruction)
     EXPECT_EQ(mgr.GetWindowHandle(), nullptr);
 }
 
+TEST_F(WindowManagerTest, WmCloseDispatchesCloseOnceAndWaitUntilClosedWaitsForHwndCleanup)
+{
+    auto &mgr = WindowManager::Instance();
+    mgr.SetHeadless(false);
+
+    std::atomic<int> close_count{0};
+    mgr.SetCloseCallback([&close_count]() { close_count.fetch_add(1); });
+
+    ASSERT_TRUE(mgr.EnsureWindow(320, 240, "Portage Close Test"));
+    HWND hwnd = mgr.GetWindowHandle();
+    ASSERT_NE(hwnd, nullptr);
+
+    PostMessageW(hwnd, WM_CLOSE, 0, 0);
+    mgr.WaitUntilClosed();
+
+    EXPECT_EQ(mgr.GetWindowHandle(), nullptr);
+    mgr.DestroyWindow();
+    EXPECT_EQ(close_count.load(), 1);
+}
+
+TEST_F(WindowManagerTest, ReopeningWindowAfterNaturalCloseSucceedsWithoutTerminating)
+{
+    auto &mgr = WindowManager::Instance();
+    mgr.SetHeadless(false);
+
+    ASSERT_TRUE(mgr.EnsureWindow(320, 240, "Portage Reopen Test 1"));
+    HWND hwnd1 = mgr.GetWindowHandle();
+    ASSERT_NE(hwnd1, nullptr);
+
+    PostMessageW(hwnd1, WM_CLOSE, 0, 0);
+    mgr.WaitUntilClosed();
+    mgr.DestroyWindow();
+
+    ASSERT_TRUE(mgr.EnsureWindow(320, 240, "Portage Reopen Test 2"));
+    EXPECT_NE(mgr.GetWindowHandle(), nullptr);
+    mgr.DestroyWindow();
+    EXPECT_EQ(mgr.GetWindowHandle(), nullptr);
+}
+
 } // namespace portage::wsi

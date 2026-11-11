@@ -20,8 +20,7 @@ AStatus_fromExceptionCodeWithMessage(binder_exception_t exception, const char *m
     return new AStatus{STATUS_UNKNOWN_ERROR, exception, 0, message ? message : "", ""};
 }
 
-__attribute__((sysv_abi)) AStatus *
-AStatus_fromServiceSpecificError(int32_t serviceSpecificError)
+__attribute__((sysv_abi)) AStatus *AStatus_fromServiceSpecificError(int32_t serviceSpecificError)
 {
     return new AStatus{STATUS_UNKNOWN_ERROR, EX_SERVICE_SPECIFIC, serviceSpecificError, "", ""};
 }
@@ -38,10 +37,7 @@ __attribute__((sysv_abi)) AStatus *AStatus_fromStatus(binder_status_t status)
     return new AStatus{status, status == STATUS_OK ? EX_NONE : EX_TRANSACTION_FAILED, 0, "", ""};
 }
 
-__attribute__((sysv_abi)) void AStatus_delete(AStatus *status)
-{
-    delete status;
-}
+__attribute__((sysv_abi)) void AStatus_delete(AStatus *status) { delete status; }
 
 __attribute__((sysv_abi)) bool AStatus_isOk(const AStatus *status)
 {

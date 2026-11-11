@@ -52,10 +52,12 @@ double ThermalManager::SampleHostCpuUtilization() noexcept
         return 0.15;
     }
 
-    uint64_t idle = (static_cast<uint64_t>(idle_time.dwHighDateTime) << 32) | idle_time.dwLowDateTime;
+    uint64_t idle =
+        (static_cast<uint64_t>(idle_time.dwHighDateTime) << 32) | idle_time.dwLowDateTime;
     uint64_t kernel =
         (static_cast<uint64_t>(kernel_time.dwHighDateTime) << 32) | kernel_time.dwLowDateTime;
-    uint64_t user = (static_cast<uint64_t>(user_time.dwHighDateTime) << 32) | user_time.dwLowDateTime;
+    uint64_t user =
+        (static_cast<uint64_t>(user_time.dwHighDateTime) << 32) | user_time.dwLowDateTime;
 
     if (prev_kernel_time_ == 0 && prev_user_time_ == 0) {
         prev_idle_time_ = idle;
@@ -136,9 +138,10 @@ int ThermalManager::UnregisterListener(AThermal_StatusCallback callback, void *d
     }
 
     std::lock_guard<std::mutex> lock(listener_mutex_);
-    auto it = std::remove_if(listeners_.begin(), listeners_.end(), [&](const ThermalListenerEntry &e) {
-        return e.callback == callback && e.data == data;
-    });
+    auto it =
+        std::remove_if(listeners_.begin(), listeners_.end(), [&](const ThermalListenerEntry &e) {
+            return e.callback == callback && e.data == data;
+        });
 
     if (it != listeners_.end()) {
         listeners_.erase(it, listeners_.end());

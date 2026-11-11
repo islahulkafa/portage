@@ -28,10 +28,7 @@ LocationManager &LocationManager::Instance()
     return instance;
 }
 
-LocationManager::LocationManager()
-{
-    Initialize();
-}
+LocationManager::LocationManager() { Initialize(); }
 
 LocationManager::~LocationManager()
 {
@@ -56,10 +53,9 @@ void LocationManager::Initialize()
     auto now_sys = std::chrono::system_clock::now();
     current_fix_.time_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(now_sys.time_since_epoch()).count();
-    current_fix_.elapsed_realtime_ns =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now().time_since_epoch())
-            .count();
+    current_fix_.elapsed_realtime_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                           std::chrono::steady_clock::now().time_since_epoch())
+                                           .count();
 
     gps_enabled_ = true;
     network_enabled_ = true;
@@ -108,10 +104,9 @@ void LocationManager::SetLocation(double lat, double lon, double alt, float accu
     auto now_sys = std::chrono::system_clock::now();
     current_fix_.time_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(now_sys.time_since_epoch()).count();
-    current_fix_.elapsed_realtime_ns =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now().time_since_epoch())
-            .count();
+    current_fix_.elapsed_realtime_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                           std::chrono::steady_clock::now().time_since_epoch())
+                                           .count();
 
     CheckGeofencesLocked(current_fix_.time_ms);
 }
@@ -157,9 +152,9 @@ std::vector<std::string> LocationManager::GetAllProviders() const
 }
 
 void LocationManager::RequestLocationUpdates(const std::string &provider, int64_t min_time_ms,
-                                            float min_distance_m,
-                                            ALocationListener_onLocationChanged callback,
-                                            void *context)
+                                             float min_distance_m,
+                                             ALocationListener_onLocationChanged callback,
+                                             void *context)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     ListenerEntry entry{
@@ -193,9 +188,9 @@ void LocationManager::RemoveLocationUpdates(ALocationListener_onLocationChanged 
 }
 
 bool LocationManager::AddCircularGeofence(int fence_id, double lat, double lon, float radius_m,
-                                         int64_t expiration_ms, int64_t dwell_duration_ms,
-                                         uint32_t transition_mask,
-                                         AGeofenceListener_onTransition callback, void *context)
+                                          int64_t expiration_ms, int64_t dwell_duration_ms,
+                                          uint32_t transition_mask,
+                                          AGeofenceListener_onTransition callback, void *context)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     GeofenceCircle circle{
@@ -251,8 +246,7 @@ void LocationManager::AdvanceSimulation(float delta_seconds)
         double lat_rad = current_fix_.latitude * DEG_TO_RAD;
 
         double dlat = (dist * std::cos(bearing_rad)) / EARTH_RADIUS_METERS;
-        double dlon =
-            (dist * std::sin(bearing_rad)) / (EARTH_RADIUS_METERS * std::cos(lat_rad));
+        double dlon = (dist * std::sin(bearing_rad)) / (EARTH_RADIUS_METERS * std::cos(lat_rad));
 
         current_fix_.latitude += dlat * RAD_TO_DEG;
         current_fix_.longitude += dlon * RAD_TO_DEG;
@@ -264,10 +258,9 @@ void LocationManager::AdvanceSimulation(float delta_seconds)
     int64_t now_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(now_sys.time_since_epoch()).count();
     current_fix_.time_ms = now_ms;
-    current_fix_.elapsed_realtime_ns =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now().time_since_epoch())
-            .count();
+    current_fix_.elapsed_realtime_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                           std::chrono::steady_clock::now().time_since_epoch())
+                                           .count();
 
     CheckGeofencesLocked(now_ms);
 
@@ -275,8 +268,8 @@ void LocationManager::AdvanceSimulation(float delta_seconds)
     for (auto &listener : listeners_) {
         if (now_ms - listener.last_dispatch_time_ms >= listener.min_time_ms) {
             double dist = CalculateDistanceMeters(current_fix_.latitude, current_fix_.longitude,
-                                                 listener.last_dispatched_fix.latitude,
-                                                 listener.last_dispatched_fix.longitude);
+                                                  listener.last_dispatched_fix.latitude,
+                                                  listener.last_dispatched_fix.longitude);
             if (dist >= static_cast<double>(listener.min_distance_m) ||
                 listener.last_dispatch_time_ms == 0) {
                 listener.last_dispatch_time_ms = now_ms;
@@ -301,8 +294,8 @@ double LocationManager::CalculateDistanceMeters(double lat1, double lon1, double
     double dlat = (lat2 - lat1) * DEG_TO_RAD;
     double dlon = (lon2 - lon1) * DEG_TO_RAD;
     double a = std::sin(dlat / 2.0) * std::sin(dlat / 2.0) +
-               std::cos(lat1 * DEG_TO_RAD) * std::cos(lat2 * DEG_TO_RAD) *
-                   std::sin(dlon / 2.0) * std::sin(dlon / 2.0);
+               std::cos(lat1 * DEG_TO_RAD) * std::cos(lat2 * DEG_TO_RAD) * std::sin(dlon / 2.0) *
+                   std::sin(dlon / 2.0);
     double c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
     return EARTH_RADIUS_METERS * c;
 }
@@ -370,8 +363,8 @@ void LocationManager::WorkerLoop()
         for (auto &listener : listeners_) {
             if (now_ms - listener.last_dispatch_time_ms >= listener.min_time_ms) {
                 double dist = CalculateDistanceMeters(current_fix_.latitude, current_fix_.longitude,
-                                                     listener.last_dispatched_fix.latitude,
-                                                     listener.last_dispatched_fix.longitude);
+                                                      listener.last_dispatched_fix.latitude,
+                                                      listener.last_dispatched_fix.longitude);
                 if (dist >= static_cast<double>(listener.min_distance_m) ||
                     listener.last_dispatch_time_ms == 0) {
                     listener.last_dispatch_time_ms = now_ms;
@@ -402,7 +395,7 @@ void LocationManager::CheckGeofencesLocked(int64_t now_ms)
         }
 
         double dist = CalculateDistanceMeters(current_fix_.latitude, current_fix_.longitude,
-                                             entry.circle.latitude, entry.circle.longitude);
+                                              entry.circle.latitude, entry.circle.longitude);
         bool inside = (dist <= static_cast<double>(entry.circle.radius_meters));
 
         if (entry.circle.last_state == 0) {

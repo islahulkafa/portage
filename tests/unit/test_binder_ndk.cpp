@@ -139,8 +139,8 @@ TEST_F(BinderNdkTest, SerializesAndDeserializesStringsAndByteArrays)
     EXPECT_EQ(AParcel_setDataPosition(p, 0), STATUS_OK);
 
     std::string read_str;
-    auto str_allocator = [](void *stringData, int32_t length,
-                            char **outBuffer) __attribute__((sysv_abi)) -> bool {
+    auto str_allocator = [](void *stringData, int32_t length, char **outBuffer)
+                             __attribute__((sysv_abi)) -> bool {
         if (length < 0) {
             return true;
         }
@@ -154,8 +154,8 @@ TEST_F(BinderNdkTest, SerializesAndDeserializesStringsAndByteArrays)
     EXPECT_EQ(read_str, text);
 
     std::vector<int8_t> read_vec;
-    auto byte_allocator = [](void *arrayData, int32_t length,
-                             int8_t **outBuffer) __attribute__((sysv_abi)) -> bool {
+    auto byte_allocator = [](void *arrayData, int32_t length, int8_t **outBuffer)
+                              __attribute__((sysv_abi)) -> bool {
         if (length < 0) {
             return true;
         }
@@ -203,9 +203,7 @@ TEST_F(BinderNdkTest, DefinesClassAndInstantiatesBinder)
     static bool destroyed = false;
     destroyed = false;
 
-    auto on_create = [](void *args) __attribute__((sysv_abi)) -> void * {
-        return args;
-    };
+    auto on_create = [](void *args) __attribute__((sysv_abi)) -> void * { return args; };
     auto on_destroy = [](void *userData) __attribute__((sysv_abi)) -> void {
         (void)userData;
         destroyed = true;

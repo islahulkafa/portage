@@ -25,6 +25,8 @@ inline constexpr aaudio_result_t AAUDIO_ERROR_OUT_OF_RANGE = -882;
 inline constexpr aaudio_result_t AAUDIO_ERROR_NO_SERVICE = -881;
 inline constexpr aaudio_result_t AAUDIO_ERROR_INVALID_RATE = -880;
 
+inline constexpr int32_t AAUDIO_UNSPECIFIED = 0;
+
 using aaudio_stream_state_t = int32_t;
 inline constexpr aaudio_stream_state_t AAUDIO_STREAM_STATE_UNINITIALIZED = 0;
 inline constexpr aaudio_stream_state_t AAUDIO_STREAM_STATE_UNKNOWN = 1;
@@ -39,6 +41,7 @@ inline constexpr aaudio_stream_state_t AAUDIO_STREAM_STATE_STOPPING = 9;
 inline constexpr aaudio_stream_state_t AAUDIO_STREAM_STATE_STOPPED = 10;
 inline constexpr aaudio_stream_state_t AAUDIO_STREAM_STATE_CLOSING = 11;
 inline constexpr aaudio_stream_state_t AAUDIO_STREAM_STATE_CLOSED = 12;
+inline constexpr aaudio_stream_state_t AAUDIO_STREAM_STATE_DISCONNECTED = 13;
 
 using aaudio_direction_t = int32_t;
 inline constexpr aaudio_direction_t AAUDIO_DIRECTION_OUTPUT = 0;
@@ -58,10 +61,39 @@ using aaudio_performance_mode_t = int32_t;
 inline constexpr aaudio_performance_mode_t AAUDIO_PERFORMANCE_MODE_NONE = 10;
 inline constexpr aaudio_performance_mode_t AAUDIO_PERFORMANCE_MODE_POWER_SAVING = 11;
 inline constexpr aaudio_performance_mode_t AAUDIO_PERFORMANCE_MODE_LOW_LATENCY = 12;
+inline constexpr aaudio_performance_mode_t AAUDIO_PERFORMANCE_MODE_POWER_SAVING_OFFLOADED = 13;
 
 using aaudio_sharing_mode_t = int32_t;
 inline constexpr aaudio_sharing_mode_t AAUDIO_SHARING_MODE_EXCLUSIVE = 0;
 inline constexpr aaudio_sharing_mode_t AAUDIO_SHARING_MODE_SHARED = 1;
+
+using aaudio_usage_t = int32_t;
+inline constexpr aaudio_usage_t AAUDIO_USAGE_MEDIA = 1;
+inline constexpr aaudio_usage_t AAUDIO_USAGE_VOICE_COMMUNICATION = 2;
+inline constexpr aaudio_usage_t AAUDIO_USAGE_VOICE_COMMUNICATION_SIGNALLING = 3;
+inline constexpr aaudio_usage_t AAUDIO_USAGE_ALARM = 4;
+inline constexpr aaudio_usage_t AAUDIO_USAGE_NOTIFICATION = 5;
+inline constexpr aaudio_usage_t AAUDIO_USAGE_NOTIFICATION_RINGTONE = 6;
+inline constexpr aaudio_usage_t AAUDIO_USAGE_NOTIFICATION_EVENT = 10;
+inline constexpr aaudio_usage_t AAUDIO_USAGE_ASSISTANCE_ACCESSIBILITY = 11;
+inline constexpr aaudio_usage_t AAUDIO_USAGE_ASSISTANCE_NAVIGATION_GUIDANCE = 12;
+inline constexpr aaudio_usage_t AAUDIO_USAGE_ASSISTANCE_SONIFICATION = 13;
+inline constexpr aaudio_usage_t AAUDIO_USAGE_GAME = 14;
+inline constexpr aaudio_usage_t AAUDIO_USAGE_ASSISTANT = 16;
+
+using aaudio_content_type_t = int32_t;
+inline constexpr aaudio_content_type_t AAUDIO_CONTENT_TYPE_SPEECH = 1;
+inline constexpr aaudio_content_type_t AAUDIO_CONTENT_TYPE_MUSIC = 2;
+inline constexpr aaudio_content_type_t AAUDIO_CONTENT_TYPE_MOVIE = 3;
+inline constexpr aaudio_content_type_t AAUDIO_CONTENT_TYPE_SONIFICATION = 4;
+
+using aaudio_input_preset_t = int32_t;
+inline constexpr aaudio_input_preset_t AAUDIO_INPUT_PRESET_GENERIC = 1;
+inline constexpr aaudio_input_preset_t AAUDIO_INPUT_PRESET_CAMCORDER = 5;
+inline constexpr aaudio_input_preset_t AAUDIO_INPUT_PRESET_VOICE_RECOGNITION = 6;
+inline constexpr aaudio_input_preset_t AAUDIO_INPUT_PRESET_VOICE_COMMUNICATION = 7;
+inline constexpr aaudio_input_preset_t AAUDIO_INPUT_PRESET_UNPROCESSED = 9;
+inline constexpr aaudio_input_preset_t AAUDIO_INPUT_PRESET_VOICE_PERFORMANCE = 10;
 
 struct AAudioStreamStruct;
 using AAudioStream = AAudioStreamStruct;

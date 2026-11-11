@@ -28,12 +28,10 @@ typedef binder_status_t (*AIBinder_Class_onTransact)(AIBinder *binder, transacti
                                                      const AParcel *in, AParcel *out);
 
 // AStatus exports
-__attribute__((visibility("default"))) AStatus *AStatus_newOk(void)
-{
-    return (AStatus *)0;
-}
+__attribute__((visibility("default"))) AStatus *AStatus_newOk(void) { return (AStatus *)0; }
 
-__attribute__((visibility("default"))) AStatus *AStatus_fromExceptionCode(binder_exception_t exception)
+__attribute__((visibility("default"))) AStatus *
+AStatus_fromExceptionCode(binder_exception_t exception)
 {
     (void)exception;
     return (AStatus *)0;
@@ -68,10 +66,7 @@ __attribute__((visibility("default"))) AStatus *AStatus_fromStatus(binder_status
     return (AStatus *)0;
 }
 
-__attribute__((visibility("default"))) void AStatus_delete(AStatus *status)
-{
-    (void)status;
-}
+__attribute__((visibility("default"))) void AStatus_delete(AStatus *status) { (void)status; }
 
 __attribute__((visibility("default"))) bool AStatus_isOk(const AStatus *status)
 {
@@ -79,13 +74,15 @@ __attribute__((visibility("default"))) bool AStatus_isOk(const AStatus *status)
     return false;
 }
 
-__attribute__((visibility("default"))) binder_exception_t AStatus_getExceptionCode(const AStatus *status)
+__attribute__((visibility("default"))) binder_exception_t
+AStatus_getExceptionCode(const AStatus *status)
 {
     (void)status;
     return 0;
 }
 
-__attribute__((visibility("default"))) int32_t AStatus_getServiceSpecificError(const AStatus *status)
+__attribute__((visibility("default"))) int32_t
+AStatus_getServiceSpecificError(const AStatus *status)
 {
     (void)status;
     return 0;
@@ -110,20 +107,11 @@ __attribute__((visibility("default"))) const char *AStatus_getDescription(const 
 }
 
 // AParcel exports
-__attribute__((visibility("default"))) AParcel *AParcel_create(void)
-{
-    return (AParcel *)0;
-}
+__attribute__((visibility("default"))) AParcel *AParcel_create(void) { return (AParcel *)0; }
 
-__attribute__((visibility("default"))) void AParcel_delete(AParcel *parcel)
-{
-    (void)parcel;
-}
+__attribute__((visibility("default"))) void AParcel_delete(AParcel *parcel) { (void)parcel; }
 
-__attribute__((visibility("default"))) void AParcel_reset(AParcel *parcel)
-{
-    (void)parcel;
-}
+__attribute__((visibility("default"))) void AParcel_reset(AParcel *parcel) { (void)parcel; }
 
 __attribute__((visibility("default"))) binder_status_t
 AParcel_setDataPosition(const AParcel *parcel, int32_t position)
@@ -145,71 +133,81 @@ __attribute__((visibility("default"))) int32_t AParcel_getDataSize(const AParcel
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t AParcel_setDataSize(AParcel *parcel, int32_t size)
+__attribute__((visibility("default"))) binder_status_t AParcel_setDataSize(AParcel *parcel,
+                                                                           int32_t size)
 {
     (void)parcel;
     (void)size;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t AParcel_writeInt32(AParcel *parcel, int32_t value)
+__attribute__((visibility("default"))) binder_status_t AParcel_writeInt32(AParcel *parcel,
+                                                                          int32_t value)
 {
     (void)parcel;
     (void)value;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t AParcel_writeUint32(AParcel *parcel, uint32_t value)
+__attribute__((visibility("default"))) binder_status_t AParcel_writeUint32(AParcel *parcel,
+                                                                           uint32_t value)
 {
     (void)parcel;
     (void)value;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t AParcel_writeInt64(AParcel *parcel, int64_t value)
+__attribute__((visibility("default"))) binder_status_t AParcel_writeInt64(AParcel *parcel,
+                                                                          int64_t value)
 {
     (void)parcel;
     (void)value;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t AParcel_writeUint64(AParcel *parcel, uint64_t value)
+__attribute__((visibility("default"))) binder_status_t AParcel_writeUint64(AParcel *parcel,
+                                                                           uint64_t value)
 {
     (void)parcel;
     (void)value;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t AParcel_writeFloat(AParcel *parcel, float value)
+__attribute__((visibility("default"))) binder_status_t AParcel_writeFloat(AParcel *parcel,
+                                                                          float value)
 {
     (void)parcel;
     (void)value;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t AParcel_writeDouble(AParcel *parcel, double value)
+__attribute__((visibility("default"))) binder_status_t AParcel_writeDouble(AParcel *parcel,
+                                                                           double value)
 {
     (void)parcel;
     (void)value;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t AParcel_writeBool(AParcel *parcel, bool value)
+__attribute__((visibility("default"))) binder_status_t AParcel_writeBool(AParcel *parcel,
+                                                                         bool value)
 {
     (void)parcel;
     (void)value;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t AParcel_writeChar(AParcel *parcel, uint16_t value)
+__attribute__((visibility("default"))) binder_status_t AParcel_writeChar(AParcel *parcel,
+                                                                         uint16_t value)
 {
     (void)parcel;
     (void)value;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t
-AParcel_writeString(AParcel *parcel, const char *string, int32_t length)
+__attribute__((visibility("default"))) binder_status_t AParcel_writeString(AParcel *parcel,
+                                                                           const char *string,
+                                                                           int32_t length)
 {
     (void)parcel;
     (void)string;
@@ -234,8 +232,8 @@ AParcel_writeParcelFileDescriptor(AParcel *parcel, int fd)
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t
-AParcel_writeStrongBinder(AParcel *parcel, AIBinder *binder)
+__attribute__((visibility("default"))) binder_status_t AParcel_writeStrongBinder(AParcel *parcel,
+                                                                                 AIBinder *binder)
 {
     (void)parcel;
     (void)binder;
@@ -250,64 +248,64 @@ AParcel_readStrongBinder(const AParcel *parcel, AIBinder **out)
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t
-AParcel_readInt32(const AParcel *parcel, int32_t *out)
+__attribute__((visibility("default"))) binder_status_t AParcel_readInt32(const AParcel *parcel,
+                                                                         int32_t *out)
 {
     (void)parcel;
     (void)out;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t
-AParcel_readUint32(const AParcel *parcel, uint32_t *out)
+__attribute__((visibility("default"))) binder_status_t AParcel_readUint32(const AParcel *parcel,
+                                                                          uint32_t *out)
 {
     (void)parcel;
     (void)out;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t
-AParcel_readInt64(const AParcel *parcel, int64_t *out)
+__attribute__((visibility("default"))) binder_status_t AParcel_readInt64(const AParcel *parcel,
+                                                                         int64_t *out)
 {
     (void)parcel;
     (void)out;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t
-AParcel_readUint64(const AParcel *parcel, uint64_t *out)
+__attribute__((visibility("default"))) binder_status_t AParcel_readUint64(const AParcel *parcel,
+                                                                          uint64_t *out)
 {
     (void)parcel;
     (void)out;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t
-AParcel_readFloat(const AParcel *parcel, float *out)
+__attribute__((visibility("default"))) binder_status_t AParcel_readFloat(const AParcel *parcel,
+                                                                         float *out)
 {
     (void)parcel;
     (void)out;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t
-AParcel_readDouble(const AParcel *parcel, double *out)
+__attribute__((visibility("default"))) binder_status_t AParcel_readDouble(const AParcel *parcel,
+                                                                          double *out)
 {
     (void)parcel;
     (void)out;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t
-AParcel_readBool(const AParcel *parcel, bool *out)
+__attribute__((visibility("default"))) binder_status_t AParcel_readBool(const AParcel *parcel,
+                                                                        bool *out)
 {
     (void)parcel;
     (void)out;
     return 0;
 }
 
-__attribute__((visibility("default"))) binder_status_t
-AParcel_readChar(const AParcel *parcel, uint16_t *out)
+__attribute__((visibility("default"))) binder_status_t AParcel_readChar(const AParcel *parcel,
+                                                                        uint16_t *out)
 {
     (void)parcel;
     (void)out;
@@ -352,7 +350,8 @@ AIBinder_Class_define(const char *interfaceDescriptor, AIBinder_Class_onCreate o
     return (AIBinder_Class *)0;
 }
 
-__attribute__((visibility("default"))) AIBinder *AIBinder_new(const AIBinder_Class *clazz, void *args)
+__attribute__((visibility("default"))) AIBinder *AIBinder_new(const AIBinder_Class *clazz,
+                                                              void *args)
 {
     (void)clazz;
     (void)args;
@@ -360,10 +359,10 @@ __attribute__((visibility("default"))) AIBinder *AIBinder_new(const AIBinder_Cla
 }
 
 __attribute__((visibility("default"))) binder_status_t AIBinder_transact(AIBinder *binder,
-                                                                       transaction_code_t code,
-                                                                       const AParcel *in,
-                                                                       AParcel *out,
-                                                                       binder_flags_t flags)
+                                                                         transaction_code_t code,
+                                                                         const AParcel *in,
+                                                                         AParcel *out,
+                                                                         binder_flags_t flags)
 {
     (void)binder;
     (void)code;
@@ -373,25 +372,13 @@ __attribute__((visibility("default"))) binder_status_t AIBinder_transact(AIBinde
     return 0;
 }
 
-__attribute__((visibility("default"))) void AIBinder_incStrong(AIBinder *binder)
-{
-    (void)binder;
-}
+__attribute__((visibility("default"))) void AIBinder_incStrong(AIBinder *binder) { (void)binder; }
 
-__attribute__((visibility("default"))) void AIBinder_decStrong(AIBinder *binder)
-{
-    (void)binder;
-}
+__attribute__((visibility("default"))) void AIBinder_decStrong(AIBinder *binder) { (void)binder; }
 
-__attribute__((visibility("default"))) int32_t AIBinder_getCallingPid(void)
-{
-    return 0;
-}
+__attribute__((visibility("default"))) int32_t AIBinder_getCallingPid(void) { return 0; }
 
-__attribute__((visibility("default"))) int32_t AIBinder_getCallingUid(void)
-{
-    return 0;
-}
+__attribute__((visibility("default"))) int32_t AIBinder_getCallingUid(void) { return 0; }
 
 __attribute__((visibility("default"))) bool AIBinder_isAlive(const AIBinder *binder)
 {
@@ -419,7 +406,7 @@ AIBinder_Class_getDescriptor(const AIBinder_Class *clazz)
 }
 
 __attribute__((visibility("default"))) bool AIBinder_associateClass(AIBinder *binder,
-                                                                  const AIBinder_Class *clazz)
+                                                                    const AIBinder_Class *clazz)
 {
     (void)binder;
     (void)clazz;
@@ -453,7 +440,8 @@ __attribute__((visibility("default"))) AIBinder *AServiceManager_getService(cons
     return (AIBinder *)0;
 }
 
-__attribute__((visibility("default"))) AIBinder *AServiceManager_waitForService(const char *instance)
+__attribute__((visibility("default"))) AIBinder *
+AServiceManager_waitForService(const char *instance)
 {
     (void)instance;
     return (AIBinder *)0;

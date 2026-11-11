@@ -17,7 +17,8 @@ std::wstring Utf8ToWide(const std::string &str)
     if (str.empty()) {
         return L"";
     }
-    int len = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), static_cast<int>(str.length()), nullptr, 0);
+    int len =
+        MultiByteToWideChar(CP_UTF8, 0, str.c_str(), static_cast<int>(str.length()), nullptr, 0);
     if (len <= 0) {
         return L"";
     }
@@ -26,10 +27,7 @@ std::wstring Utf8ToWide(const std::string &str)
     return wstr;
 }
 
-std::string MakeKey(const std::string &tag, int32_t id)
-{
-    return tag + ":" + std::to_string(id);
-}
+std::string MakeKey(const std::string &tag, int32_t id) { return tag + ":" + std::to_string(id); }
 
 } // namespace
 
@@ -39,10 +37,7 @@ NotificationManager &NotificationManager::Instance() noexcept
     return instance;
 }
 
-NotificationManager::NotificationManager() noexcept
-{
-    Reset();
-}
+NotificationManager::NotificationManager() noexcept { Reset(); }
 
 void NotificationManager::Reset() noexcept
 {
@@ -90,8 +85,7 @@ bool NotificationManager::DeleteNotificationChannel(const std::string &id) noexc
     return channels_.erase(id) > 0;
 }
 
-std::vector<NotificationChannel>
-NotificationManager::GetAllNotificationChannels() const noexcept
+std::vector<NotificationChannel> NotificationManager::GetAllNotificationChannels() const noexcept
 {
     std::lock_guard<std::mutex> lock(mutex_);
     std::vector<NotificationChannel> result;
@@ -103,7 +97,7 @@ NotificationManager::GetAllNotificationChannels() const noexcept
 }
 
 bool NotificationManager::PostNotification(const std::string &tag, int32_t id,
-                                          const NotificationRecord &record) noexcept
+                                           const NotificationRecord &record) noexcept
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!notifications_enabled_) {

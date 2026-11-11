@@ -181,7 +181,8 @@ TEST(NotificationTest, SyntheticNotificationAndToastJniReflection)
 
     jmethodID get_svc_mid = reinterpret_cast<jmethodID>(const_cast<char *>("getSystemService"));
     jstring notif_str = jenv->functions->NewStringUTF(jenv, "notification");
-    jobject notif_mgr = jenv->functions->CallObjectMethod(jenv, context_obj, get_svc_mid, notif_str);
+    jobject notif_mgr =
+        jenv->functions->CallObjectMethod(jenv, context_obj, get_svc_mid, notif_str);
     ASSERT_NE(notif_mgr, nullptr);
 
     jmethodID are_enabled_mid =
@@ -193,8 +194,8 @@ TEST(NotificationTest, SyntheticNotificationAndToastJniReflection)
         reinterpret_cast<jclass>(const_cast<char *>("android/app/NotificationChannel"));
     jstring ch_id = jenv->functions->NewStringUTF(jenv, "game_alerts");
     jstring ch_name = jenv->functions->NewStringUTF(jenv, "Game Alerts");
-    jobject ch_obj = jenv->functions->NewObject(
-        jenv, channel_cls, ctor_mid, ch_id, ch_name, static_cast<uintptr_t>(IMPORTANCE_HIGH));
+    jobject ch_obj = jenv->functions->NewObject(jenv, channel_cls, ctor_mid, ch_id, ch_name,
+                                                static_cast<uintptr_t>(IMPORTANCE_HIGH));
     ASSERT_NE(ch_obj, nullptr);
 
     jmethodID create_ch_mid =
@@ -212,11 +213,11 @@ TEST(NotificationTest, SyntheticNotificationAndToastJniReflection)
 
     jclass builder_cls =
         reinterpret_cast<jclass>(const_cast<char *>("android/app/Notification$Builder"));
-    jobject builder_obj = jenv->functions->NewObject(jenv, builder_cls, ctor_mid, context_obj, ch_id);
+    jobject builder_obj =
+        jenv->functions->NewObject(jenv, builder_cls, ctor_mid, context_obj, ch_id);
     ASSERT_NE(builder_obj, nullptr);
 
-    jmethodID set_title_mid =
-        reinterpret_cast<jmethodID>(const_cast<char *>("setContentTitle"));
+    jmethodID set_title_mid = reinterpret_cast<jmethodID>(const_cast<char *>("setContentTitle"));
     jstring title_str = jenv->functions->NewStringUTF(jenv, "JNI Notification Title");
     jenv->functions->CallObjectMethod(jenv, builder_obj, set_title_mid, title_str);
 
@@ -229,7 +230,8 @@ TEST(NotificationTest, SyntheticNotificationAndToastJniReflection)
     ASSERT_NE(built_notif, nullptr);
 
     jmethodID notify_mid = reinterpret_cast<jmethodID>(const_cast<char *>("notify"));
-    jenv->functions->CallVoidMethod(jenv, notif_mgr, notify_mid, static_cast<uintptr_t>(55), built_notif);
+    jenv->functions->CallVoidMethod(jenv, notif_mgr, notify_mid, static_cast<uintptr_t>(55),
+                                    built_notif);
 
     EXPECT_EQ(mgr.GetActiveNotificationCount(), 1u);
     auto active = mgr.GetActiveNotifications();

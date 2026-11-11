@@ -14,6 +14,14 @@
 
 namespace portage::thread {
 
+struct alignas(64) BionicTcb {
+    void *self{nullptr};
+    void *dtv{nullptr};
+    uint64_t pad[3]{0, 0, 0};
+    uint64_t stack_guard{0x595e9fbd94fda766ULL};
+    uint64_t reserved[58]{};
+};
+
 struct ThreadAtExitEntry {
     __attribute__((sysv_abi)) void (*dtor)(void *){nullptr};
     void *obj{nullptr};
@@ -56,6 +64,7 @@ class ThreadManager {
     static ThreadManager &Instance() noexcept;
 
     int RegisterMainThread() noexcept;
+    uintptr_t EnsureCurrentThreadTcb() noexcept;
 
     int CreateGuestThread(uint64_t flags, uintptr_t child_stack, uintptr_t parent_tid_ptr,
                           uintptr_t child_tid_ptr, uintptr_t tls, uintptr_t child_rip) noexcept;

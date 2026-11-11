@@ -61,6 +61,11 @@ add_library(portage_core STATIC
     ndk/choreographer.cpp
     ndk/sensor.cpp
     ndk/jnigraphics.cpp
+    ndk/image_decoder.cpp
+    ndk/bionic_thunks.cpp
+    ndk/bionic_stdio.cpp
+    ndk/bionic_posix.cpp
+    ndk/bionic_locale.cpp
     ndk/hardware_buffer.cpp
     ndk/storage_manager.cpp
     ndk/multinetwork.cpp
@@ -72,7 +77,10 @@ add_library(portage_core STATIC
     media/media_format.cpp
     media/media_extractor.cpp
     media/media_codec.cpp
+    media/media_muxer.cpp
     media/wmf_decoder.cpp
+    media/mf_byte_stream.cpp
+    media/wmf_transform.cpp
     gles/wgl_bridge.cpp
     gles/egl_dispatcher.cpp
     gles/gles_dispatcher.cpp
@@ -99,6 +107,7 @@ target_link_libraries(portage_core
         mfplat
         mfreadwrite
         mfuuid
+        windowscodecs
         bcrypt
         ncrypt
         ZLIB::ZLIB

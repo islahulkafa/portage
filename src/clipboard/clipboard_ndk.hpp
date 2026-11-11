@@ -25,9 +25,10 @@ __attribute__((sysv_abi)) int AClipboard_addPrimaryClipChangedListener(
 __attribute__((sysv_abi)) int AClipboard_removePrimaryClipChangedListener(
     AClipboard *clip, portage::clipboard::AClipboard_OnPrimaryClipChangedListener callback);
 
-__attribute__((sysv_abi)) int ADragDrop_registerDropListener(
-    portage::clipboard::ADragDrop_OnDropListener callback, void *context);
-__attribute__((sysv_abi)) int ADragDrop_unregisterDropListener(
-    portage::clipboard::ADragDrop_OnDropListener callback);
+__attribute__((sysv_abi)) int
+ADragDrop_registerDropListener(portage::clipboard::ADragDrop_OnDropListener callback,
+                               void *context);
+__attribute__((sysv_abi)) int
+ADragDrop_unregisterDropListener(portage::clipboard::ADragDrop_OnDropListener callback);
 
 } // extern "C"

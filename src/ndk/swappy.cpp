@@ -52,7 +52,8 @@ struct SwappyManager::Impl {
         if (target_fps > 0 && refresh_ns > 0) {
             int64_t target_frame_duration_ns = 1'000'000'000LL / target_fps;
             swap_interval = std::max<uint32_t>(
-                1, static_cast<uint32_t>((target_frame_duration_ns + (refresh_ns / 2)) / refresh_ns));
+                1,
+                static_cast<uint32_t>((target_frame_duration_ns + (refresh_ns / 2)) / refresh_ns));
         } else {
             swap_interval = 1;
         }
@@ -152,9 +153,9 @@ int32_t SwappyManager::QueuePresentVk(void *queue, const void *presentInfo)
 
     const auto *table = vulkan::VulkanBridge::Instance().GetDispatchTable();
     if (table && table->vkQueuePresentKHR && queue && presentInfo) {
-        return static_cast<int32_t>(table->vkQueuePresentKHR(
-            reinterpret_cast<VkQueue>(queue),
-            reinterpret_cast<const VkPresentInfoKHR *>(presentInfo)));
+        return static_cast<int32_t>(
+            table->vkQueuePresentKHR(reinterpret_cast<VkQueue>(queue),
+                                     reinterpret_cast<const VkPresentInfoKHR *>(presentInfo)));
     }
     return 0;
 }
@@ -342,10 +343,7 @@ bool SwappyGL_swap(void *display, void *surface)
     return portage::ndk::SwappyManager::Instance().SwapGL(display, surface);
 }
 
-void SwappyGL_destroy()
-{
-    portage::ndk::SwappyManager::Instance().DestroyGL();
-}
+void SwappyGL_destroy() { portage::ndk::SwappyManager::Instance().DestroyGL(); }
 
 void SwappyGL_setTargetFrameRateHz(uint32_t targetFps)
 {
@@ -362,9 +360,5 @@ void SwappyGL_setAutoSwapInterval(bool enabled)
     portage::ndk::SwappyManager::Instance().SetAutoSwapInterval(enabled);
 }
 
-bool SwappyGL_isEnabled()
-{
-    return portage::ndk::SwappyManager::Instance().IsGLEnabled();
-}
-
+bool SwappyGL_isEnabled() { return portage::ndk::SwappyManager::Instance().IsGLEnabled(); }
 }

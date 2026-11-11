@@ -10,8 +10,8 @@ SwappyVk_initAndGetRefreshCycleDuration(void *physicalDevice, void *device, cons
     return 16666667ULL;
 }
 
-__attribute__((visibility("default"))) void
-SwappyVk_setWindow(void *device, void *queue, void *swapchain, void *window)
+__attribute__((visibility("default"))) void SwappyVk_setWindow(void *device, void *queue,
+                                                               void *swapchain, void *window)
 {
     (void)device;
     (void)queue;
@@ -33,10 +33,7 @@ __attribute__((visibility("default"))) void SwappyVk_destroySwapchain(void *devi
     (void)swapchain;
 }
 
-__attribute__((visibility("default"))) void SwappyVk_destroyDevice(void *device)
-{
-    (void)device;
-}
+__attribute__((visibility("default"))) void SwappyVk_destroyDevice(void *device) { (void)device; }
 
 __attribute__((visibility("default"))) void SwappyVk_setTargetFrameRateHz(uint32_t targetFps)
 {

@@ -194,9 +194,9 @@ using SysvPfnVkDestroyImage = __attribute__((sysv_abi)) void (*)(
     VkDevice device, VkImage image, const VkAllocationCallbacks *pAllocator);
 using SysvPfnVkGetImageMemoryRequirements = __attribute__((sysv_abi)) void (*)(
     VkDevice device, VkImage image, VkMemoryRequirements *pMemoryRequirements);
-using SysvPfnVkGetImageMemoryRequirements2 = __attribute__((sysv_abi)) void (*)(
-    VkDevice device, const VkImageMemoryRequirementsInfo2 *pInfo,
-    VkMemoryRequirements2 *pMemoryRequirements);
+using SysvPfnVkGetImageMemoryRequirements2 =
+    __attribute__((sysv_abi)) void (*)(VkDevice device, const VkImageMemoryRequirementsInfo2 *pInfo,
+                                       VkMemoryRequirements2 *pMemoryRequirements);
 using SysvPfnVkBindImageMemory = __attribute__((sysv_abi))
 VkResult (*)(VkDevice device, VkImage image, VkDeviceMemory memory, VkDeviceSize memoryOffset);
 using SysvPfnVkBindImageMemory2 = __attribute__((sysv_abi))
@@ -218,9 +218,9 @@ using SysvPfnVkDestroySampler = __attribute__((sysv_abi)) void (*)(
 using SysvPfnVkCreateDescriptorSetLayout = __attribute__((sysv_abi))
 VkResult (*)(VkDevice device, const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
              const VkAllocationCallbacks *pAllocator, VkDescriptorSetLayout *pSetLayout);
-using SysvPfnVkDestroyDescriptorSetLayout = __attribute__((sysv_abi)) void (*)(
-    VkDevice device, VkDescriptorSetLayout descriptorSetLayout,
-    const VkAllocationCallbacks *pAllocator);
+using SysvPfnVkDestroyDescriptorSetLayout =
+    __attribute__((sysv_abi)) void (*)(VkDevice device, VkDescriptorSetLayout descriptorSetLayout,
+                                       const VkAllocationCallbacks *pAllocator);
 using SysvPfnVkCreateDescriptorPool = __attribute__((sysv_abi))
 VkResult (*)(VkDevice device, const VkDescriptorPoolCreateInfo *pCreateInfo,
              const VkAllocationCallbacks *pAllocator, VkDescriptorPool *pDescriptorPool);
@@ -241,9 +241,11 @@ using SysvPfnVkCmdBindDescriptorSets = __attribute__((sysv_abi)) void (*)(
     VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout,
     uint32_t firstSet, uint32_t descriptorSetCount, const VkDescriptorSet *pDescriptorSets,
     uint32_t dynamicOffsetCount, const uint32_t *pDynamicOffsets);
-using SysvPfnVkCmdPushConstants = __attribute__((sysv_abi)) void (*)(
-    VkCommandBuffer commandBuffer, VkPipelineLayout layout, VkShaderStageFlags stageFlags,
-    uint32_t offset, uint32_t size, const void *pValues);
+using SysvPfnVkCmdPushConstants = __attribute__((sysv_abi)) void (*)(VkCommandBuffer commandBuffer,
+                                                                     VkPipelineLayout layout,
+                                                                     VkShaderStageFlags stageFlags,
+                                                                     uint32_t offset, uint32_t size,
+                                                                     const void *pValues);
 
 // Synchronization (Fences, Semaphores, Events)
 using SysvPfnVkCreateFence = __attribute__((sysv_abi))
@@ -286,41 +288,49 @@ using SysvPfnVkResetCommandBuffer = __attribute__((sysv_abi))
 VkResult (*)(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags);
 using SysvPfnVkCmdBindPipeline = __attribute__((sysv_abi)) void (*)(
     VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline);
-using SysvPfnVkCmdSetViewport = __attribute__((sysv_abi)) void (*)(
-    VkCommandBuffer commandBuffer, uint32_t firstViewport, uint32_t viewportCount,
-    const VkViewport *pViewports);
-using SysvPfnVkCmdSetScissor = __attribute__((sysv_abi)) void (*)(
-    VkCommandBuffer commandBuffer, uint32_t firstScissor, uint32_t scissorCount,
-    const VkRect2D *pScissors);
+using SysvPfnVkCmdSetViewport = __attribute__((sysv_abi)) void (*)(VkCommandBuffer commandBuffer,
+                                                                   uint32_t firstViewport,
+                                                                   uint32_t viewportCount,
+                                                                   const VkViewport *pViewports);
+using SysvPfnVkCmdSetScissor = __attribute__((sysv_abi)) void (*)(VkCommandBuffer commandBuffer,
+                                                                  uint32_t firstScissor,
+                                                                  uint32_t scissorCount,
+                                                                  const VkRect2D *pScissors);
 using SysvPfnVkCmdBindVertexBuffers = __attribute__((sysv_abi)) void (*)(
     VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount,
     const VkBuffer *pBuffers, const VkDeviceSize *pOffsets);
 using SysvPfnVkCmdBindIndexBuffer = __attribute__((sysv_abi)) void (*)(
     VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, VkIndexType indexType);
-using SysvPfnVkCmdDraw = __attribute__((sysv_abi)) void (*)(
-    VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount,
-    uint32_t firstVertex, uint32_t firstInstance);
+using SysvPfnVkCmdDraw = __attribute__((sysv_abi)) void (*)(VkCommandBuffer commandBuffer,
+                                                            uint32_t vertexCount,
+                                                            uint32_t instanceCount,
+                                                            uint32_t firstVertex,
+                                                            uint32_t firstInstance);
 using SysvPfnVkCmdDrawIndexed = __attribute__((sysv_abi)) void (*)(
-    VkCommandBuffer commandBuffer, uint32_t indexCount, uint32_t instanceCount,
-    uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance);
-using SysvPfnVkCmdDrawIndirect = __attribute__((sysv_abi)) void (*)(
-    VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount,
-    uint32_t stride);
-using SysvPfnVkCmdDrawIndexedIndirect = __attribute__((sysv_abi)) void (*)(
-    VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount,
-    uint32_t stride);
-using SysvPfnVkCmdDispatch = __attribute__((sysv_abi)) void (*)(
-    VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY,
-    uint32_t groupCountZ);
+    VkCommandBuffer commandBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
+    int32_t vertexOffset, uint32_t firstInstance);
+using SysvPfnVkCmdDrawIndirect = __attribute__((sysv_abi)) void (*)(VkCommandBuffer commandBuffer,
+                                                                    VkBuffer buffer,
+                                                                    VkDeviceSize offset,
+                                                                    uint32_t drawCount,
+                                                                    uint32_t stride);
+using SysvPfnVkCmdDrawIndexedIndirect =
+    __attribute__((sysv_abi)) void (*)(VkCommandBuffer commandBuffer, VkBuffer buffer,
+                                       VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
+using SysvPfnVkCmdDispatch = __attribute__((sysv_abi)) void (*)(VkCommandBuffer commandBuffer,
+                                                                uint32_t groupCountX,
+                                                                uint32_t groupCountY,
+                                                                uint32_t groupCountZ);
 using SysvPfnVkCmdDispatchIndirect = __attribute__((sysv_abi)) void (*)(
     VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset);
-using SysvPfnVkCmdCopyBuffer = __attribute__((sysv_abi)) void (*)(
-    VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount,
-    const VkBufferCopy *pRegions);
+using SysvPfnVkCmdCopyBuffer = __attribute__((sysv_abi)) void (*)(VkCommandBuffer commandBuffer,
+                                                                  VkBuffer srcBuffer,
+                                                                  VkBuffer dstBuffer,
+                                                                  uint32_t regionCount,
+                                                                  const VkBufferCopy *pRegions);
 using SysvPfnVkCmdCopyImage = __attribute__((sysv_abi)) void (*)(
-    VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout,
-    VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount,
-    const VkImageCopy *pRegions);
+    VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout, VkImage dstImage,
+    VkImageLayout dstImageLayout, uint32_t regionCount, const VkImageCopy *pRegions);
 using SysvPfnVkCmdCopyBufferToImage = __attribute__((sysv_abi)) void (*)(
     VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkImage dstImage,
     VkImageLayout dstImageLayout, uint32_t regionCount, const VkBufferImageCopy *pRegions);
@@ -328,9 +338,9 @@ using SysvPfnVkCmdCopyImageToBuffer = __attribute__((sysv_abi)) void (*)(
     VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout,
     VkBuffer dstBuffer, uint32_t regionCount, const VkBufferImageCopy *pRegions);
 using SysvPfnVkCmdBlitImage = __attribute__((sysv_abi)) void (*)(
-    VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout,
-    VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount,
-    const VkImageBlit *pRegions, VkFilter filter);
+    VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout, VkImage dstImage,
+    VkImageLayout dstImageLayout, uint32_t regionCount, const VkImageBlit *pRegions,
+    VkFilter filter);
 using SysvPfnVkCmdPipelineBarrier = __attribute__((sysv_abi)) void (*)(
     VkCommandBuffer commandBuffer, VkPipelineStageFlags srcStageMask,
     VkPipelineStageFlags dstStageMask, VkDependencyFlags dependencyFlags,
@@ -341,20 +351,23 @@ using SysvPfnVkCmdPipelineBarrier2 = __attribute__((sysv_abi)) void (*)(
     VkCommandBuffer commandBuffer, const VkDependencyInfo *pDependencyInfo);
 using SysvPfnVkCmdClearColorImage = __attribute__((sysv_abi)) void (*)(
     VkCommandBuffer commandBuffer, VkImage image, VkImageLayout imageLayout,
-    const VkClearColorValue *pColor, uint32_t rangeCount,
-    const VkImageSubresourceRange *pRanges);
+    const VkClearColorValue *pColor, uint32_t rangeCount, const VkImageSubresourceRange *pRanges);
 using SysvPfnVkCmdClearAttachments = __attribute__((sysv_abi)) void (*)(
-    VkCommandBuffer commandBuffer, uint32_t attachmentCount,
-    const VkClearAttachment *pAttachments, uint32_t rectCount, const VkClearRect *pRects);
-using SysvPfnVkCmdFillBuffer = __attribute__((sysv_abi)) void (*)(
-    VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkDeviceSize dstOffset, VkDeviceSize size,
-    uint32_t data);
-using SysvPfnVkCmdUpdateBuffer = __attribute__((sysv_abi)) void (*)(
-    VkCommandBuffer commandBuffer, VkBuffer dstBuffer, VkDeviceSize dstOffset, VkDeviceSize dataSize,
-    const void *pData);
+    VkCommandBuffer commandBuffer, uint32_t attachmentCount, const VkClearAttachment *pAttachments,
+    uint32_t rectCount, const VkClearRect *pRects);
+using SysvPfnVkCmdFillBuffer = __attribute__((sysv_abi)) void (*)(VkCommandBuffer commandBuffer,
+                                                                  VkBuffer dstBuffer,
+                                                                  VkDeviceSize dstOffset,
+                                                                  VkDeviceSize size, uint32_t data);
+using SysvPfnVkCmdUpdateBuffer = __attribute__((sysv_abi)) void (*)(VkCommandBuffer commandBuffer,
+                                                                    VkBuffer dstBuffer,
+                                                                    VkDeviceSize dstOffset,
+                                                                    VkDeviceSize dataSize,
+                                                                    const void *pData);
 
 // Vulkan 1.1-1.2 Instance & PhysicalDevice Queries
-using SysvPfnVkEnumerateInstanceVersion = __attribute__((sysv_abi)) VkResult (*)(uint32_t *pApiVersion);
+using SysvPfnVkEnumerateInstanceVersion = __attribute__((sysv_abi))
+VkResult (*)(uint32_t *pApiVersion);
 using SysvPfnVkGetPhysicalDeviceProperties2 = __attribute__((sysv_abi)) void (*)(
     VkPhysicalDevice physicalDevice, VkPhysicalDeviceProperties2 *pProperties);
 using SysvPfnVkGetPhysicalDeviceFeatures2 = __attribute__((sysv_abi)) void (*)(

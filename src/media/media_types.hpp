@@ -71,3 +71,16 @@ inline constexpr const char *AMEDIAFORMAT_KEY_CSD = "csd";
 inline constexpr const char *AMEDIAFORMAT_KEY_CSD_0 = "csd-0";
 inline constexpr const char *AMEDIAFORMAT_KEY_CSD_1 = "csd-1";
 inline constexpr const char *AMEDIAFORMAT_KEY_CSD_2 = "csd-2";
+inline constexpr const char *AMEDIAFORMAT_KEY_I_FRAME_INTERVAL = "i-frame-interval";
+inline constexpr const char *AMEDIAFORMAT_KEY_PROFILE = "profile";
+inline constexpr const char *AMEDIAFORMAT_KEY_LEVEL = "level";
+inline constexpr const char *AMEDIAFORMAT_KEY_CAPTURE_RATE = "capture-rate";
+inline constexpr const char *AMEDIAFORMAT_KEY_ROTATION = "rotation-degrees";
+inline constexpr const char *AMEDIAFORMAT_KEY_IS_SYNC_FRAME = "is-sync-frame";
+inline constexpr const char *AMEDIAFORMAT_KEY_REQUEST_SYNC_FRAME = "request-sync";
+inline constexpr const char *AMEDIAFORMAT_KEY_VIDEO_BITRATE = "video-bitrate";
+
+inline constexpr int32_t COLOR_FormatYUV420SemiPlanar = 21;
+inline constexpr int32_t COLOR_FormatYUV420Flexible = 0x7F420888;
+inline constexpr int32_t COLOR_FormatSurface = 0x7F000789;
+inline constexpr int32_t COLOR_Format32bitRGBA8888 = 0x7F00A000;

@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <memory>
 
+struct IAudioClock;
+
 namespace portage::audio {
 
 struct AudioStats {
@@ -17,6 +19,7 @@ struct AudioStats {
     PcmState current_state{SNDRV_PCM_STATE_OPEN};
     bool is_null_sink{false};
     bool is_running{false};
+    bool is_low_latency{false};
 };
 
 struct AudioCaptureStats {
@@ -43,13 +46,20 @@ class AudioManager {
     int64_t WritePcmBytes(const void *buf, size_t count);
     int64_t WriteiFrames(const void *buf, uint64_t frames);
 
-    bool ConfigureStream(uint32_t sample_rate, uint32_t channels, int32_t format);
+    bool ConfigureStream(uint32_t sample_rate, uint32_t channels, int32_t format,
+                         bool low_latency = false);
 
+    void FlushStream();
     void CloseStream();
     void Reset();
 
     void ForceNullSink(bool enable);
     [[nodiscard]] AudioStats GetStats() const;
+    [[nodiscard]] uint32_t GetXRunCount() const;
+    [[nodiscard]] bool IsDeviceInvalidated() const;
+    [[nodiscard]] IAudioClock *GetAudioClock() const;
+    [[nodiscard]] bool GetHardwareClockPosition(uint64_t *position, uint64_t *frequency,
+                                                uint64_t *qpc_100ns) const;
 
     bool ConfigureCaptureStream(uint32_t sample_rate, uint32_t channels, int32_t format);
     bool StartCapture();

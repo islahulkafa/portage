@@ -55,8 +55,8 @@ TEST_F(AdpfTest, ThermalStatusListenerDispatch)
         }
     } state;
 
-    int reg_res = AThermalManager_registerThermalStatusListener(mgr, &CallbackState::OnThermalStatus,
-                                                                &state);
+    int reg_res =
+        AThermalManager_registerThermalStatusListener(mgr, &CallbackState::OnThermalStatus, &state);
     EXPECT_EQ(reg_res, 0);
 
     ThermalManager::Instance().SetStatusOverride(ATHERMAL_STATUS_SEVERE);

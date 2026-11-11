@@ -18,8 +18,9 @@ class PlayLicensingService {
 
     void SetLicenseResponseCode(int32_t code) noexcept { override_response_code_ = code; }
 
-    static __attribute__((sysv_abi)) binder_status_t
-    OnTransact(AIBinder *binder, transaction_code_t code, const AParcel *in, AParcel *out);
+    static __attribute__((sysv_abi)) binder_status_t OnTransact(AIBinder *binder,
+                                                                transaction_code_t code,
+                                                                const AParcel *in, AParcel *out);
 
   private:
     PlayLicensingService();

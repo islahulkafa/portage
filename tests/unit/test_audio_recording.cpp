@@ -35,8 +35,7 @@ class AudioRecordingTest : public ::testing::Test {
 
 TEST_F(AudioRecordingTest, AudioManagerCaptureLifecycle)
 {
-    EXPECT_TRUE(
-        AudioManager::Instance().ConfigureCaptureStream(48000, 1, SNDRV_PCM_FORMAT_S16_LE));
+    EXPECT_TRUE(AudioManager::Instance().ConfigureCaptureStream(48000, 1, SNDRV_PCM_FORMAT_S16_LE));
     EXPECT_TRUE(AudioManager::Instance().StartCapture());
 
     std::vector<int16_t> pcm_samples(512, 0);
@@ -79,8 +78,7 @@ TEST_F(AudioRecordingTest, AAudioInputRecordingSync)
     EXPECT_EQ(AAudioStream_getState(stream), AAUDIO_STREAM_STATE_STARTED);
 
     std::vector<int16_t> audio_buffer(256, 0);
-    int32_t frames_read =
-        AAudioStream_read(stream, audio_buffer.data(), 256, 150'000'000LL);
+    int32_t frames_read = AAudioStream_read(stream, audio_buffer.data(), 256, 150'000'000LL);
     EXPECT_GT(frames_read, 0);
 
     EXPECT_EQ(AAudioStream_requestStop(stream), AAUDIO_OK);
@@ -147,8 +145,8 @@ TEST_F(AudioRecordingTest, AAudioInputDataCallback)
 
 static std::atomic<int32_t> g_recorder_callback_invocations{0};
 
-static void __attribute__((sysv_abi))
-TestRecorderBqCallback(SLAndroidSimpleBufferQueueItf caller, void *context)
+static void __attribute__((sysv_abi)) TestRecorderBqCallback(SLAndroidSimpleBufferQueueItf caller,
+                                                             void *context)
 {
     (void)caller;
     (void)context;
@@ -193,8 +191,9 @@ TEST_F(AudioRecordingTest, OpenSlesAudioRecorderLifecycle)
     SLDataSink audioSnk = {&loc_bq, &format_pcm};
 
     SLObjectItf recorderObject = nullptr;
-    EXPECT_EQ((*engineEngine)->CreateAudioRecorder(engineEngine, &recorderObject, &audioSrc,
-                                                   &audioSnk, 0, nullptr, nullptr),
+    EXPECT_EQ((*engineEngine)
+                  ->CreateAudioRecorder(engineEngine, &recorderObject, &audioSrc, &audioSnk, 0,
+                                        nullptr, nullptr),
               SL_RESULT_SUCCESS);
     ASSERT_NE(recorderObject, nullptr);
 
@@ -218,8 +217,7 @@ TEST_F(AudioRecordingTest, OpenSlesAudioRecorderLifecycle)
     EXPECT_EQ((*bqItf)->Enqueue(bqItf, record_buf.data(), record_buf.size() * sizeof(int16_t)),
               SL_RESULT_SUCCESS);
 
-    EXPECT_EQ((*recordItf)->SetRecordState(recordItf, SL_RECORDSTATE_RECORDING),
-              SL_RESULT_SUCCESS);
+    EXPECT_EQ((*recordItf)->SetRecordState(recordItf, SL_RECORDSTATE_RECORDING), SL_RESULT_SUCCESS);
 
     SLuint32 state = 0;
     EXPECT_EQ((*recordItf)->GetRecordState(recordItf, &state), SL_RESULT_SUCCESS);
@@ -243,8 +241,7 @@ TEST_F(AudioRecordingTest, OpenSlesAudioRecorderLifecycle)
     }
     EXPECT_TRUE(has_audio);
 
-    EXPECT_EQ((*recordItf)->SetRecordState(recordItf, SL_RECORDSTATE_STOPPED),
-              SL_RESULT_SUCCESS);
+    EXPECT_EQ((*recordItf)->SetRecordState(recordItf, SL_RECORDSTATE_STOPPED), SL_RESULT_SUCCESS);
 
     (*recorderObject)->Destroy(recorderObject);
     (*engineObject)->Destroy(engineObject);
@@ -262,8 +259,7 @@ TEST_F(AudioRecordingTest, SyntheticAudioRecordJni)
     EXPECT_EQ(min_buf, 4096);
 
     jmethodID ctor_mid = reinterpret_cast<jmethodID>(const_cast<char *>("<init>"));
-    jobject ar_obj =
-        jenv->functions->NewObject(jenv, ar_class, ctor_mid, 1, 48000, 16, 2, min_buf);
+    jobject ar_obj = jenv->functions->NewObject(jenv, ar_class, ctor_mid, 1, 48000, 16, 2, min_buf);
     ASSERT_NE(ar_obj, nullptr);
 
     jmethodID get_state_mid = reinterpret_cast<jmethodID>(const_cast<char *>("getState"));

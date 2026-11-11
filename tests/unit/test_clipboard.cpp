@@ -195,8 +195,7 @@ TEST(ClipboardTest, SyntheticClipboardJniReflection)
     jobject clip_mgr = jenv->functions->CallObjectMethod(jenv, context_obj, get_svc_mid, clip_str);
     ASSERT_NE(clip_mgr, nullptr);
 
-    jclass clip_data_cls =
-        reinterpret_cast<jclass>(const_cast<char *>("android/content/ClipData"));
+    jclass clip_data_cls = reinterpret_cast<jclass>(const_cast<char *>("android/content/ClipData"));
     jmethodID new_plain_mid = reinterpret_cast<jmethodID>(const_cast<char *>("newPlainText"));
     jstring label_str = jenv->functions->NewStringUTF(jenv, "sample");
     jstring text_str = jenv->functions->NewStringUTF(jenv, "Synthetic JNI Text");
@@ -205,19 +204,15 @@ TEST(ClipboardTest, SyntheticClipboardJniReflection)
         jenv, clip_data_cls, new_plain_mid, label_str, text_str);
     ASSERT_NE(created_clip, nullptr);
 
-    jmethodID set_clip_mid =
-        reinterpret_cast<jmethodID>(const_cast<char *>("setPrimaryClip"));
+    jmethodID set_clip_mid = reinterpret_cast<jmethodID>(const_cast<char *>("setPrimaryClip"));
     jenv->functions->CallVoidMethod(jenv, clip_mgr, set_clip_mid, created_clip);
 
-    jmethodID has_clip_mid =
-        reinterpret_cast<jmethodID>(const_cast<char *>("hasPrimaryClip"));
+    jmethodID has_clip_mid = reinterpret_cast<jmethodID>(const_cast<char *>("hasPrimaryClip"));
     jboolean has_clip = jenv->functions->CallBooleanMethod(jenv, clip_mgr, has_clip_mid);
     EXPECT_EQ(has_clip, JNI_TRUE);
 
-    jmethodID get_clip_mid =
-        reinterpret_cast<jmethodID>(const_cast<char *>("getPrimaryClip"));
-    jobject fetched_clip =
-        jenv->functions->CallObjectMethod(jenv, clip_mgr, get_clip_mid);
+    jmethodID get_clip_mid = reinterpret_cast<jmethodID>(const_cast<char *>("getPrimaryClip"));
+    jobject fetched_clip = jenv->functions->CallObjectMethod(jenv, clip_mgr, get_clip_mid);
     ASSERT_NE(fetched_clip, nullptr);
 
     jmethodID get_count_mid = reinterpret_cast<jmethodID>(const_cast<char *>("getItemCount"));
@@ -229,19 +224,17 @@ TEST(ClipboardTest, SyntheticClipboardJniReflection)
     ASSERT_NE(item_obj, nullptr);
 
     jmethodID get_text_mid = reinterpret_cast<jmethodID>(const_cast<char *>("getText"));
-    jstring text_res = reinterpret_cast<jstring>(
-        jenv->functions->CallObjectMethod(jenv, item_obj, get_text_mid));
+    jstring text_res =
+        reinterpret_cast<jstring>(jenv->functions->CallObjectMethod(jenv, item_obj, get_text_mid));
     ASSERT_NE(text_res, nullptr);
     const char *chars = env.GetStringChars(text_res);
     EXPECT_STREQ(chars, "Synthetic JNI Text");
 
-    jmethodID get_desc_mid =
-        reinterpret_cast<jmethodID>(const_cast<char *>("getDescription"));
+    jmethodID get_desc_mid = reinterpret_cast<jmethodID>(const_cast<char *>("getDescription"));
     jobject desc_obj = jenv->functions->CallObjectMethod(jenv, fetched_clip, get_desc_mid);
     ASSERT_NE(desc_obj, nullptr);
 
-    jmethodID has_mime_mid =
-        reinterpret_cast<jmethodID>(const_cast<char *>("hasMimeType"));
+    jmethodID has_mime_mid = reinterpret_cast<jmethodID>(const_cast<char *>("hasMimeType"));
     jstring mime_plain = jenv->functions->NewStringUTF(jenv, "text/plain");
     jboolean has_plain =
         jenv->functions->CallBooleanMethod(jenv, desc_obj, has_mime_mid, mime_plain);
