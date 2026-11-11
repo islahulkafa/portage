@@ -28,6 +28,7 @@ struct HostSavedContext {
 
 void RestoreActiveTcb() noexcept;
 void SetActiveTcb(uintptr_t tcb) noexcept;
+[[nodiscard]] uintptr_t GetActiveTcb() noexcept;
 void SignalGuestExit(int code) noexcept;
 HostSavedContext *GetThreadHostContext() noexcept;
 void SetThreadHostContextActive(bool active) noexcept;

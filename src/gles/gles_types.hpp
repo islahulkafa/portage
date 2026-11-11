@@ -20,6 +20,10 @@ using GLvoid = void;
 using GLchar = char;
 using GLintptr = ptrdiff_t;
 using GLsizeiptr = ptrdiff_t;
+using GLuint64 = uint64_t;
+using GLint64 = int64_t;
+using GLsync = struct __GLsync *;
+using GLeglImageOES = void *;
 
 // Constants
 inline constexpr GLboolean GL_FALSE = 0;
@@ -48,6 +52,7 @@ inline constexpr GLenum GL_INT = 0x1404;
 inline constexpr GLenum GL_UNSIGNED_INT = 0x1405;
 inline constexpr GLenum GL_FLOAT = 0x1406;
 inline constexpr GLenum GL_FIXED = 0x140C;
+inline constexpr GLenum GL_UNSIGNED_SHORT_5_6_5 = 0x8363;
 
 // Shaders
 inline constexpr GLenum GL_FRAGMENT_SHADER = 0x8B30;
@@ -153,3 +158,65 @@ inline constexpr GLenum GL_RENDERER = 0x1F01;
 inline constexpr GLenum GL_VERSION = 0x1F02;
 inline constexpr GLenum GL_EXTENSIONS = 0x1F03;
 inline constexpr GLenum GL_NUM_EXTENSIONS = 0x821D;
+
+// Uniform Buffer Objects (GLES 3.0)
+inline constexpr GLenum GL_UNIFORM_BUFFER = 0x8A11;
+inline constexpr GLenum GL_UNIFORM_BUFFER_BINDING = 0x8A28;
+inline constexpr GLenum GL_MAX_UNIFORM_BUFFER_BINDINGS = 0x8A2F;
+inline constexpr GLuint GL_INVALID_INDEX = 0xFFFFFFFFu;
+
+// Transform Feedback (GLES 3.0)
+inline constexpr GLenum GL_TRANSFORM_FEEDBACK = 0x8E22;
+inline constexpr GLenum GL_TRANSFORM_FEEDBACK_BUFFER = 0x8C8E;
+inline constexpr GLenum GL_INTERLEAVED_ATTRIBS = 0x8C8C;
+inline constexpr GLenum GL_SEPARATE_ATTRIBS = 0x8C8D;
+
+// Samplers (GLES 3.0)
+inline constexpr GLenum GL_SAMPLER_BINDING = 0x8919;
+
+// Buffer Mapping (GLES 3.0)
+inline constexpr GLbitfield GL_MAP_READ_BIT = 0x0001;
+inline constexpr GLbitfield GL_MAP_WRITE_BIT = 0x0002;
+inline constexpr GLbitfield GL_MAP_INVALIDATE_RANGE_BIT = 0x0004;
+inline constexpr GLbitfield GL_MAP_INVALIDATE_BUFFER_BIT = 0x0008;
+inline constexpr GLbitfield GL_MAP_FLUSH_EXPLICIT_BIT = 0x0010;
+inline constexpr GLbitfield GL_MAP_UNSYNCHRONIZED_BIT = 0x0020;
+
+// Sync Objects & Fences (GLES 3.0)
+inline constexpr GLenum GL_SYNC_FENCE = 0x9116;
+inline constexpr GLenum GL_SYNC_GPU_COMMANDS_COMPLETE = 0x9117;
+inline constexpr GLenum GL_UNSIGNALED = 0x9118;
+inline constexpr GLenum GL_SIGNALED = 0x9119;
+inline constexpr GLenum GL_ALREADY_SIGNALED = 0x911A;
+inline constexpr GLenum GL_TIMEOUT_EXPIRED = 0x911B;
+inline constexpr GLenum GL_CONDITION_SATISFIED = 0x911C;
+inline constexpr GLenum GL_WAIT_FAILED = 0x911D;
+inline constexpr GLenum GL_SYNC_STATUS = 0x9114;
+inline constexpr GLenum GL_OBJECT_TYPE = 0x9112;
+inline constexpr GLenum GL_SYNC_CONDITION = 0x9113;
+inline constexpr GLenum GL_SYNC_FLAGS = 0x9115;
+inline constexpr GLbitfield GL_SYNC_FLUSH_COMMANDS_BIT = 0x00000001;
+inline constexpr GLuint64 GL_TIMEOUT_IGNORED = 0xFFFFFFFFFFFFFFFFULL;
+
+// Textures 3D & Sized Internal Formats (GLES 3.0)
+inline constexpr GLenum GL_TEXTURE_3D = 0x806F;
+inline constexpr GLenum GL_TEXTURE_2D_ARRAY = 0x8C1A;
+inline constexpr GLenum GL_TEXTURE_WRAP_R = 0x8072;
+inline constexpr GLenum GL_RGBA8 = 0x8058;
+inline constexpr GLenum GL_RGB8 = 0x8051;
+inline constexpr GLenum GL_RGBA16F = 0x881A;
+inline constexpr GLenum GL_RGBA32F = 0x8814;
+
+// Pixel Buffer Objects & Store (GLES 3.0)
+inline constexpr GLenum GL_PIXEL_PACK_BUFFER = 0x88EB;
+inline constexpr GLenum GL_PIXEL_UNPACK_BUFFER = 0x88EC;
+inline constexpr GLenum GL_UNPACK_ROW_LENGTH = 0x0CF2;
+inline constexpr GLenum GL_UNPACK_ALIGNMENT = 0x0CF5;
+inline constexpr GLenum GL_PACK_ALIGNMENT = 0x0D05;
+
+// Compute Shaders & Memory Barriers (GLES 3.1)
+inline constexpr GLenum GL_COMPUTE_SHADER = 0x91B9;
+inline constexpr GLenum GL_MAX_COMPUTE_WORK_GROUP_COUNT = 0x91BE;
+inline constexpr GLbitfield GL_ALL_BARRIER_BITS = 0xFFFFFFFFu;
+inline constexpr GLbitfield GL_SHADER_STORAGE_BARRIER_BIT = 0x00002000u;
+inline constexpr GLbitfield GL_TEXTURE_FETCH_BARRIER_BIT = 0x00000008u;

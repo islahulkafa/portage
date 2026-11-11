@@ -1,6 +1,9 @@
 #include "gles/egl_dispatcher.hpp"
+#include "fs/fd_table.hpp"
 #include "gles/gles_dispatcher.hpp"
+#include "ndk/hardware_buffer.hpp"
 #include "ndk/libandroid_thunks.hpp"
+#include "syscall/syscall_dispatcher.hpp"
 #include <cstring>
 
 namespace portage::gles {
@@ -45,6 +48,18 @@ EglDispatcher::EglDispatcher()
         reinterpret_cast<void *>(&eglGetNativeClientBufferANDROID);
     procs_["eglCreateImageKHR"] = reinterpret_cast<void *>(&eglCreateImageKHR);
     procs_["eglDestroyImageKHR"] = reinterpret_cast<void *>(&eglDestroyImageKHR);
+    procs_["eglCreateSync"] = reinterpret_cast<void *>(&eglCreateSync);
+    procs_["eglDestroySync"] = reinterpret_cast<void *>(&eglDestroySync);
+    procs_["eglClientWaitSync"] = reinterpret_cast<void *>(&eglClientWaitSync);
+    procs_["eglWaitSync"] = reinterpret_cast<void *>(&eglWaitSync);
+    procs_["eglGetSyncAttrib"] = reinterpret_cast<void *>(&eglGetSyncAttrib);
+    procs_["eglCreateSyncKHR"] = reinterpret_cast<void *>(&eglCreateSyncKHR);
+    procs_["eglDestroySyncKHR"] = reinterpret_cast<void *>(&eglDestroySyncKHR);
+    procs_["eglClientWaitSyncKHR"] = reinterpret_cast<void *>(&eglClientWaitSyncKHR);
+    procs_["eglWaitSyncKHR"] = reinterpret_cast<void *>(&eglWaitSyncKHR);
+    procs_["eglGetSyncAttribKHR"] = reinterpret_cast<void *>(&eglGetSyncAttribKHR);
+    procs_["eglDupNativeFenceFDANDROID"] = reinterpret_cast<void *>(&eglDupNativeFenceFDANDROID);
+    procs_["eglSwapInterval"] = reinterpret_cast<void *>(&eglSwapInterval);
 }
 
 EGLDisplay EglDispatcher::GetDisplay(EGLNativeDisplayType display_id) noexcept
@@ -70,7 +85,7 @@ EGLBoolean EglDispatcher::Initialize(EGLDisplay dpy, EGLint *major, EGLint *mino
         if (major)
             *major = 1;
         if (minor)
-            *minor = 4;
+            *minor = 5;
         initialized_ = true;
         last_error_ = EGL_SUCCESS;
     }
@@ -87,11 +102,27 @@ EGLBoolean EglDispatcher::Terminate(EGLDisplay dpy) noexcept
         return EGL_FALSE;
     }
 
+    const auto &tbl = WglBridge::Instance().GetDispatchTable();
+    if (tbl.glDeleteSync) {
+        for (const auto &[_, sync] : syncs_) {
+            if (sync && sync->gl_sync) {
+                tbl.glDeleteSync(sync->gl_sync);
+            }
+        }
+    }
+    syncs_.clear();
+    for (const auto &[_, img] : images_) {
+        if (img && img->ahb && ndk::HardwareBufferManager::Instance().IsValid(img->ahb)) {
+            ndk::HardwareBufferManager::Instance().Release(img->ahb);
+        }
+    }
+    images_.clear();
     surfaces_.clear();
     contexts_.clear();
     current_context_ = EGL_NO_CONTEXT;
     current_draw_ = EGL_NO_SURFACE;
     current_read_ = EGL_NO_SURFACE;
+    swap_interval_ = 1;
     initialized_ = false;
     last_error_ = EGL_SUCCESS;
     return EGL_TRUE;
@@ -104,10 +135,11 @@ const char *EglDispatcher::QueryString(EGLDisplay dpy, EGLint name) noexcept
     case EGL_VENDOR:
         return "Portage Project";
     case EGL_VERSION:
-        return "1.4 Portage GLES/WGL Passthrough";
+        return "1.5 Portage GLES/WGL Passthrough";
     case EGL_EXTENSIONS:
-        return "EGL_KHR_image_base EGL_KHR_gl_texture_2D_image EGL_ANDROID_get_native_client_buffer "
-               "EGL_ANDROID_image_native_buffer";
+        return "EGL_KHR_image_base EGL_KHR_gl_texture_2D_image EGL_KHR_fence_sync "
+               "EGL_KHR_wait_sync EGL_ANDROID_native_fence_sync "
+               "EGL_ANDROID_get_native_client_buffer EGL_ANDROID_image_native_buffer";
     case EGL_CLIENT_APIS:
         return "OpenGL_ES";
     default:
@@ -509,6 +541,364 @@ void EglDispatcher::RegisterProc(std::string_view name, void *proc)
     procs_[std::string(name)] = proc;
 }
 
+EGLBoolean EglDispatcher::SwapInterval(EGLDisplay dpy, EGLint interval) noexcept
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (dpy != kSyntheticDisplay) {
+        last_error_ = EGL_BAD_DISPLAY;
+        return EGL_FALSE;
+    }
+
+    swap_interval_ = interval;
+    const auto &tbl = WglBridge::Instance().GetDispatchTable();
+    if (tbl.wglSwapIntervalEXT) {
+        tbl.wglSwapIntervalEXT(interval);
+    }
+
+    last_error_ = EGL_SUCCESS;
+    return EGL_TRUE;
+}
+
+namespace {
+EGLSync CreateSyncCommon(std::mutex &mutex, EGLint &last_error,
+                         std::unordered_map<EGLSync, std::unique_ptr<EglSyncData>> &syncs,
+                         EGLDisplay dpy, EGLenum type, EGLint condition, int initial_fd,
+                         fs::FileDescriptorTable *fd_table) noexcept
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    if (dpy != kSyntheticDisplay) {
+        last_error = EGL_BAD_DISPLAY;
+        return EGL_NO_SYNC;
+    }
+
+    if (type != EGL_SYNC_FENCE && type != EGL_SYNC_NATIVE_FENCE_ANDROID) {
+        last_error = EGL_BAD_ATTRIBUTE;
+        return EGL_NO_SYNC;
+    }
+
+    auto data = std::make_unique<EglSyncData>();
+    data->type = type;
+    data->condition = condition;
+    data->native_fence_fd = initial_fd;
+
+    const auto &tbl = WglBridge::Instance().GetDispatchTable();
+    if (initial_fd >= 0 && fd_table) {
+        auto desc = fd_table->Get(initial_fd);
+        if (desc && desc->dev == fs::DeviceType::SyncFence && desc->sync_fence) {
+            data->gl_sync = static_cast<GLsync>(desc->sync_fence->gl_sync);
+            data->status = desc->sync_fence->IsSignaled() ? EGL_SIGNALED : EGL_UNSIGNALED;
+        } else {
+            data->status = EGL_SIGNALED;
+        }
+    } else if (tbl.glFenceSync && tbl.wglGetCurrentContext &&
+               tbl.wglGetCurrentContext() != nullptr) {
+        data->gl_sync = tbl.glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        data->status = data->gl_sync ? EGL_UNSIGNALED : EGL_SIGNALED;
+    } else {
+        data->status = EGL_SIGNALED;
+    }
+
+    EGLSync handle = reinterpret_cast<EGLSync>(data.get());
+    syncs[handle] = std::move(data);
+    last_error = EGL_SUCCESS;
+    return handle;
+}
+} // namespace
+
+EGLSync EglDispatcher::CreateSync(EGLDisplay dpy, EGLenum type, const EGLAttrib *attrib_list) noexcept
+{
+    EGLint condition = EGL_SYNC_PRIOR_COMMANDS_COMPLETE;
+    int initial_fd = EGL_NO_NATIVE_FENCE_FD_ANDROID;
+    if (attrib_list) {
+        for (int i = 0; attrib_list[i] != EGL_NONE; i += 2) {
+            if (attrib_list[i] == EGL_SYNC_CONDITION) {
+                condition = static_cast<EGLint>(attrib_list[i + 1]);
+            } else if (attrib_list[i] == EGL_SYNC_NATIVE_FENCE_FD_ANDROID) {
+                initial_fd = static_cast<int>(attrib_list[i + 1]);
+            }
+        }
+    }
+    fs::FileDescriptorTable *fd_table =
+        fd_table_override_ ? fd_table_override_ : syscall::SyscallDispatcher::GetFdTable();
+    return CreateSyncCommon(mutex_, last_error_, syncs_, dpy, type, condition, initial_fd, fd_table);
+}
+
+EGLSyncKHR EglDispatcher::CreateSyncKHR(EGLDisplay dpy, EGLenum type,
+                                        const EGLint *attrib_list) noexcept
+{
+    EGLint condition = EGL_SYNC_PRIOR_COMMANDS_COMPLETE;
+    int initial_fd = EGL_NO_NATIVE_FENCE_FD_ANDROID;
+    if (attrib_list) {
+        for (int i = 0; attrib_list[i] != EGL_NONE; i += 2) {
+            if (attrib_list[i] == EGL_SYNC_CONDITION) {
+                condition = attrib_list[i + 1];
+            } else if (attrib_list[i] == EGL_SYNC_NATIVE_FENCE_FD_ANDROID) {
+                initial_fd = attrib_list[i + 1];
+            }
+        }
+    }
+    fs::FileDescriptorTable *fd_table =
+        fd_table_override_ ? fd_table_override_ : syscall::SyscallDispatcher::GetFdTable();
+    return CreateSyncCommon(mutex_, last_error_, syncs_, dpy, type, condition, initial_fd, fd_table);
+}
+
+EGLBoolean EglDispatcher::DestroySync(EGLDisplay dpy, EGLSync sync) noexcept
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (dpy != kSyntheticDisplay) {
+        last_error_ = EGL_BAD_DISPLAY;
+        return EGL_FALSE;
+    }
+
+    auto it = syncs_.find(sync);
+    if (it == syncs_.end()) {
+        last_error_ = EGL_BAD_PARAMETER;
+        return EGL_FALSE;
+    }
+
+    const auto &tbl = WglBridge::Instance().GetDispatchTable();
+    if (it->second->gl_sync && it->second->native_fence_fd < 0 && tbl.glDeleteSync) {
+        tbl.glDeleteSync(it->second->gl_sync);
+    }
+
+    syncs_.erase(it);
+    last_error_ = EGL_SUCCESS;
+    return EGL_TRUE;
+}
+
+EGLint EglDispatcher::ClientWaitSync(EGLDisplay dpy, EGLSync sync, EGLint flags,
+                                     EGLTime timeout) noexcept
+{
+    GLsync gl_sync = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (dpy != kSyntheticDisplay) {
+            last_error_ = EGL_BAD_DISPLAY;
+            return EGL_FALSE;
+        }
+        auto it = syncs_.find(sync);
+        if (it == syncs_.end()) {
+            last_error_ = EGL_BAD_PARAMETER;
+            return EGL_FALSE;
+        }
+        if (it->second->status == EGL_SIGNALED) {
+            last_error_ = EGL_SUCCESS;
+            return EGL_CONDITION_SATISFIED;
+        }
+        gl_sync = it->second->gl_sync;
+    }
+
+    EGLint result = EGL_CONDITION_SATISFIED;
+    if (gl_sync) {
+        const auto &tbl = WglBridge::Instance().GetDispatchTable();
+        if (tbl.glClientWaitSync) {
+            GLbitfield gl_flags =
+                (flags & EGL_SYNC_FLUSH_COMMANDS_BIT) ? GL_SYNC_FLUSH_COMMANDS_BIT : 0;
+            GLenum wait_res = tbl.glClientWaitSync(gl_sync, gl_flags, timeout);
+            if (wait_res == GL_TIMEOUT_EXPIRED) {
+                result = EGL_TIMEOUT_EXPIRED;
+            } else if (wait_res == GL_WAIT_FAILED) {
+                result = EGL_FALSE;
+            } else {
+                result = EGL_CONDITION_SATISFIED;
+            }
+        }
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = syncs_.find(sync);
+    if (it != syncs_.end() && result == EGL_CONDITION_SATISFIED) {
+        it->second->status = EGL_SIGNALED;
+    }
+    last_error_ = (result == EGL_FALSE) ? EGL_BAD_PARAMETER : EGL_SUCCESS;
+    return result;
+}
+
+EGLBoolean EglDispatcher::WaitSync(EGLDisplay dpy, EGLSync sync, EGLint flags) noexcept
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (dpy != kSyntheticDisplay) {
+        last_error_ = EGL_BAD_DISPLAY;
+        return EGL_FALSE;
+    }
+    if (flags != 0) {
+        last_error_ = EGL_BAD_PARAMETER;
+        return EGL_FALSE;
+    }
+    auto it = syncs_.find(sync);
+    if (it == syncs_.end()) {
+        last_error_ = EGL_BAD_PARAMETER;
+        return EGL_FALSE;
+    }
+
+    if (it->second->gl_sync) {
+        const auto &tbl = WglBridge::Instance().GetDispatchTable();
+        if (tbl.glWaitSync) {
+            tbl.glWaitSync(it->second->gl_sync, 0, GL_TIMEOUT_IGNORED);
+        }
+    }
+
+    last_error_ = EGL_SUCCESS;
+    return EGL_TRUE;
+}
+
+EGLBoolean EglDispatcher::GetSyncAttrib(EGLDisplay dpy, EGLSync sync, EGLint attribute,
+                                        EGLAttrib *value) noexcept
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (dpy != kSyntheticDisplay) {
+        last_error_ = EGL_BAD_DISPLAY;
+        return EGL_FALSE;
+    }
+    if (!value) {
+        last_error_ = EGL_BAD_PARAMETER;
+        return EGL_FALSE;
+    }
+    auto it = syncs_.find(sync);
+    if (it == syncs_.end()) {
+        last_error_ = EGL_BAD_PARAMETER;
+        return EGL_FALSE;
+    }
+
+    if (it->second->status == EGL_UNSIGNALED && it->second->gl_sync) {
+        const auto &tbl = WglBridge::Instance().GetDispatchTable();
+        if (tbl.glClientWaitSync) {
+            GLenum res = tbl.glClientWaitSync(it->second->gl_sync, 0, 0);
+            if (res == GL_ALREADY_SIGNALED || res == GL_CONDITION_SATISFIED) {
+                it->second->status = EGL_SIGNALED;
+            }
+        }
+    }
+
+    switch (attribute) {
+    case EGL_SYNC_TYPE:
+        *value = static_cast<EGLAttrib>(it->second->type);
+        break;
+    case EGL_SYNC_STATUS:
+        *value = static_cast<EGLAttrib>(it->second->status);
+        break;
+    case EGL_SYNC_CONDITION:
+        *value = static_cast<EGLAttrib>(it->second->condition);
+        break;
+    default:
+        last_error_ = EGL_BAD_ATTRIBUTE;
+        return EGL_FALSE;
+    }
+
+    last_error_ = EGL_SUCCESS;
+    return EGL_TRUE;
+}
+
+EGLint EglDispatcher::DupNativeFenceFDANDROID(EGLDisplay dpy, EGLSyncKHR sync) noexcept
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (dpy != kSyntheticDisplay) {
+        last_error_ = EGL_BAD_DISPLAY;
+        return EGL_NO_NATIVE_FENCE_FD_ANDROID;
+    }
+    auto it = syncs_.find(sync);
+    if (it == syncs_.end()) {
+        last_error_ = EGL_BAD_PARAMETER;
+        return EGL_NO_NATIVE_FENCE_FD_ANDROID;
+    }
+
+    if (it->second->status == EGL_UNSIGNALED && it->second->gl_sync) {
+        const auto &tbl = WglBridge::Instance().GetDispatchTable();
+        if (tbl.glClientWaitSync) {
+            GLenum res = tbl.glClientWaitSync(it->second->gl_sync, 0, 0);
+            if (res == GL_ALREADY_SIGNALED || res == GL_CONDITION_SATISFIED) {
+                it->second->status = EGL_SIGNALED;
+            }
+        }
+    }
+
+    fs::FileDescriptorTable *fd_table =
+        fd_table_override_ ? fd_table_override_ : syscall::SyscallDispatcher::GetFdTable();
+    if (!fd_table) {
+        last_error_ = EGL_BAD_ALLOC;
+        return EGL_NO_NATIVE_FENCE_FD_ANDROID;
+    }
+
+    int fd = fd_table->AllocateSyncFence(it->second->gl_sync, nullptr,
+                                         it->second->status == EGL_SIGNALED, 0);
+    if (fd < 0) {
+        last_error_ = EGL_BAD_ALLOC;
+        return EGL_NO_NATIVE_FENCE_FD_ANDROID;
+    }
+
+    last_error_ = EGL_SUCCESS;
+    return fd;
+}
+
+EGLImageKHR EglDispatcher::CreateImageKHR(EGLDisplay dpy, EGLContext ctx, EGLenum target,
+                                          EGLClientBuffer buffer,
+                                          const EGLint *attrib_list) noexcept
+{
+    (void)ctx;
+    (void)attrib_list;
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (dpy != EGL_NO_DISPLAY && dpy != kSyntheticDisplay) {
+        last_error_ = EGL_BAD_DISPLAY;
+        return EGL_NO_IMAGE_KHR;
+    }
+    if (!buffer) {
+        last_error_ = EGL_BAD_PARAMETER;
+        return EGL_NO_IMAGE_KHR;
+    }
+
+    auto img = std::make_unique<EglImageData>();
+    img->target = target;
+    img->client_buffer = buffer;
+
+    if (target == EGL_NATIVE_BUFFER_ANDROID) {
+        auto *ahb = reinterpret_cast<AHardwareBuffer *>(buffer);
+        if (ndk::HardwareBufferManager::Instance().IsValid(ahb)) {
+            ndk::HardwareBufferManager::Instance().Acquire(ahb);
+            img->ahb = ahb;
+        }
+    } else if (target == EGL_GL_TEXTURE_2D_KHR) {
+        img->gl_texture = static_cast<GLuint>(reinterpret_cast<uintptr_t>(buffer));
+    }
+
+    EGLImageKHR handle = reinterpret_cast<EGLImageKHR>(img.get());
+    images_[handle] = std::move(img);
+    last_error_ = EGL_SUCCESS;
+    return handle;
+}
+
+EGLBoolean EglDispatcher::DestroyImageKHR(EGLDisplay dpy, EGLImageKHR image) noexcept
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (dpy != EGL_NO_DISPLAY && dpy != kSyntheticDisplay) {
+        last_error_ = EGL_BAD_DISPLAY;
+        return EGL_FALSE;
+    }
+
+    auto it = images_.find(image);
+    if (it == images_.end()) {
+        last_error_ = EGL_BAD_PARAMETER;
+        return EGL_FALSE;
+    }
+
+    if (it->second->ahb && ndk::HardwareBufferManager::Instance().IsValid(it->second->ahb)) {
+        ndk::HardwareBufferManager::Instance().Release(it->second->ahb);
+    }
+
+    images_.erase(it);
+    last_error_ = EGL_SUCCESS;
+    return EGL_TRUE;
+}
+
+const EglImageData *EglDispatcher::FindImage(EGLImageKHR image) const noexcept
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = images_.find(image);
+    if (it == images_.end()) {
+        return nullptr;
+    }
+    return it->second.get();
+}
+
 } // namespace portage::gles
 
 // SysV ABI C Exports
@@ -619,6 +1009,11 @@ __attribute__((sysv_abi)) EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface s
     return portage::gles::EglDispatcher::Instance().SwapBuffers(dpy, surface);
 }
 
+__attribute__((sysv_abi)) EGLBoolean eglSwapInterval(EGLDisplay dpy, EGLint interval)
+{
+    return portage::gles::EglDispatcher::Instance().SwapInterval(dpy, interval);
+}
+
 __attribute__((sysv_abi)) EGLint eglGetError(void)
 {
     return portage::gles::EglDispatcher::Instance().GetError();
@@ -627,6 +1022,73 @@ __attribute__((sysv_abi)) EGLint eglGetError(void)
 __attribute__((sysv_abi)) void *eglGetProcAddress(const char *procname)
 {
     return portage::gles::EglDispatcher::Instance().GetProcAddress(procname);
+}
+
+__attribute__((sysv_abi)) EGLSync eglCreateSync(EGLDisplay dpy, EGLenum type,
+                                                 const EGLAttrib *attrib_list)
+{
+    return portage::gles::EglDispatcher::Instance().CreateSync(dpy, type, attrib_list);
+}
+
+__attribute__((sysv_abi)) EGLBoolean eglDestroySync(EGLDisplay dpy, EGLSync sync)
+{
+    return portage::gles::EglDispatcher::Instance().DestroySync(dpy, sync);
+}
+
+__attribute__((sysv_abi)) EGLint eglClientWaitSync(EGLDisplay dpy, EGLSync sync, EGLint flags,
+                                                   EGLTime timeout)
+{
+    return portage::gles::EglDispatcher::Instance().ClientWaitSync(dpy, sync, flags, timeout);
+}
+
+__attribute__((sysv_abi)) EGLBoolean eglWaitSync(EGLDisplay dpy, EGLSync sync, EGLint flags)
+{
+    return portage::gles::EglDispatcher::Instance().WaitSync(dpy, sync, flags);
+}
+
+__attribute__((sysv_abi)) EGLBoolean eglGetSyncAttrib(EGLDisplay dpy, EGLSync sync, EGLint attribute,
+                                                      EGLAttrib *value)
+{
+    return portage::gles::EglDispatcher::Instance().GetSyncAttrib(dpy, sync, attribute, value);
+}
+
+__attribute__((sysv_abi)) EGLSyncKHR eglCreateSyncKHR(EGLDisplay dpy, EGLenum type,
+                                                       const EGLint *attrib_list)
+{
+    return portage::gles::EglDispatcher::Instance().CreateSyncKHR(dpy, type, attrib_list);
+}
+
+__attribute__((sysv_abi)) EGLBoolean eglDestroySyncKHR(EGLDisplay dpy, EGLSyncKHR sync)
+{
+    return portage::gles::EglDispatcher::Instance().DestroySync(dpy, sync);
+}
+
+__attribute__((sysv_abi)) EGLint eglClientWaitSyncKHR(EGLDisplay dpy, EGLSyncKHR sync, EGLint flags,
+                                                      EGLTimeKHR timeout)
+{
+    return portage::gles::EglDispatcher::Instance().ClientWaitSync(dpy, sync, flags, timeout);
+}
+
+__attribute__((sysv_abi)) EGLBoolean eglWaitSyncKHR(EGLDisplay dpy, EGLSyncKHR sync, EGLint flags)
+{
+    return portage::gles::EglDispatcher::Instance().WaitSync(dpy, sync, flags);
+}
+
+__attribute__((sysv_abi)) EGLBoolean eglGetSyncAttribKHR(EGLDisplay dpy, EGLSyncKHR sync,
+                                                         EGLint attribute, EGLint *value)
+{
+    EGLAttrib attr_val = 0;
+    EGLBoolean ok =
+        portage::gles::EglDispatcher::Instance().GetSyncAttrib(dpy, sync, attribute, &attr_val);
+    if (ok && value) {
+        *value = static_cast<EGLint>(attr_val);
+    }
+    return ok;
+}
+
+__attribute__((sysv_abi)) EGLint eglDupNativeFenceFDANDROID(EGLDisplay dpy, EGLSyncKHR sync)
+{
+    return portage::gles::EglDispatcher::Instance().DupNativeFenceFDANDROID(dpy, sync);
 }
 
 __attribute__((sysv_abi)) EGLClientBuffer
@@ -639,20 +1101,13 @@ __attribute__((sysv_abi)) EGLImageKHR eglCreateImageKHR(EGLDisplay dpy, EGLConte
                                                         EGLenum target, EGLClientBuffer buffer,
                                                         const EGLint *attrib_list)
 {
-    (void)dpy;
-    (void)ctx;
-    (void)attrib_list;
-    if (target == EGL_NATIVE_BUFFER_ANDROID) {
-        return buffer ? reinterpret_cast<EGLImageKHR>(buffer) : EGL_NO_IMAGE_KHR;
-    }
-    return buffer ? reinterpret_cast<EGLImageKHR>(buffer) : EGL_NO_IMAGE_KHR;
+    return portage::gles::EglDispatcher::Instance().CreateImageKHR(dpy, ctx, target, buffer,
+                                                                   attrib_list);
 }
 
 __attribute__((sysv_abi)) EGLBoolean eglDestroyImageKHR(EGLDisplay dpy, EGLImageKHR image)
 {
-    (void)dpy;
-    (void)image;
-    return EGL_TRUE;
+    return portage::gles::EglDispatcher::Instance().DestroyImageKHR(dpy, image);
 }
 
 } // extern "C"

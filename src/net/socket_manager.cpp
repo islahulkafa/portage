@@ -90,6 +90,150 @@ SOCKET SocketManager::CreateSocket(int domain, int type, int protocol, int &out_
     return s;
 }
 
+int64_t SocketManager::SocketPair(int domain, int type, int protocol, SOCKET sv[2], int &out_flags)
+{
+    (void)protocol;
+    if (domain != LINUX_AF_UNIX && domain != LINUX_AF_INET) {
+        return -97; // -EAFNOSUPPORT
+    }
+
+    int real_type = type & ~(LINUX_SOCK_NONBLOCK | LINUX_SOCK_CLOEXEC);
+    if (real_type != LINUX_SOCK_STREAM && real_type != LINUX_SOCK_DGRAM) {
+        return -93; // -EPROTONOSUPPORT
+    }
+
+    out_flags = 0;
+    if (type & LINUX_SOCK_NONBLOCK) {
+        out_flags |= LINUX_SOCK_NONBLOCK;
+    }
+    if (type & LINUX_SOCK_CLOEXEC) {
+        out_flags |= LINUX_SOCK_CLOEXEC;
+    }
+
+    if (real_type == LINUX_SOCK_STREAM) {
+        SOCKET listener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (listener == INVALID_SOCKET) {
+            return TranslateWsaError(WSAGetLastError());
+        }
+
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = 0;
+
+        if (::bind(listener, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+            int err = WSAGetLastError();
+            ::closesocket(listener);
+            return TranslateWsaError(err);
+        }
+
+        if (::listen(listener, 1) == SOCKET_ERROR) {
+            int err = WSAGetLastError();
+            ::closesocket(listener);
+            return TranslateWsaError(err);
+        }
+
+        int addr_len = sizeof(addr);
+        if (::getsockname(listener, reinterpret_cast<sockaddr *>(&addr), &addr_len) == SOCKET_ERROR) {
+            int err = WSAGetLastError();
+            ::closesocket(listener);
+            return TranslateWsaError(err);
+        }
+
+        SOCKET client = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (client == INVALID_SOCKET) {
+            int err = WSAGetLastError();
+            ::closesocket(listener);
+            return TranslateWsaError(err);
+        }
+
+        if (::connect(client, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+            int err = WSAGetLastError();
+            ::closesocket(client);
+            ::closesocket(listener);
+            return TranslateWsaError(err);
+        }
+
+        SOCKET server = ::accept(listener, nullptr, nullptr);
+        ::closesocket(listener);
+        if (server == INVALID_SOCKET) {
+            int err = WSAGetLastError();
+            ::closesocket(client);
+            return TranslateWsaError(err);
+        }
+
+        int nodelay = 1;
+        ::setsockopt(client, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char *>(&nodelay), sizeof(nodelay));
+        ::setsockopt(server, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char *>(&nodelay), sizeof(nodelay));
+
+        if (out_flags & LINUX_SOCK_NONBLOCK) {
+            u_long mode = 1;
+            ioctlsocket(client, FIONBIO, &mode);
+            ioctlsocket(server, FIONBIO, &mode);
+        }
+
+        sv[0] = client;
+        sv[1] = server;
+        return 0;
+    } else {
+        SOCKET s0 = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (s0 == INVALID_SOCKET) {
+            return TranslateWsaError(WSAGetLastError());
+        }
+        SOCKET s1 = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (s1 == INVALID_SOCKET) {
+            int err = WSAGetLastError();
+            ::closesocket(s0);
+            return TranslateWsaError(err);
+        }
+
+        sockaddr_in a0{};
+        a0.sin_family = AF_INET;
+        a0.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        a0.sin_port = 0;
+        if (::bind(s0, reinterpret_cast<const sockaddr *>(&a0), sizeof(a0)) == SOCKET_ERROR) {
+            int err = WSAGetLastError();
+            ::closesocket(s0);
+            ::closesocket(s1);
+            return TranslateWsaError(err);
+        }
+
+        sockaddr_in a1{};
+        a1.sin_family = AF_INET;
+        a1.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        a1.sin_port = 0;
+        if (::bind(s1, reinterpret_cast<const sockaddr *>(&a1), sizeof(a1)) == SOCKET_ERROR) {
+            int err = WSAGetLastError();
+            ::closesocket(s0);
+            ::closesocket(s1);
+            return TranslateWsaError(err);
+        }
+
+        int len0 = sizeof(a0);
+        int len1 = sizeof(a1);
+        ::getsockname(s0, reinterpret_cast<sockaddr *>(&a0), &len0);
+        ::getsockname(s1, reinterpret_cast<sockaddr *>(&a1), &len1);
+
+        if (::connect(s0, reinterpret_cast<const sockaddr *>(&a1), sizeof(a1)) == SOCKET_ERROR ||
+            ::connect(s1, reinterpret_cast<const sockaddr *>(&a0), sizeof(a0)) == SOCKET_ERROR) {
+            int err = WSAGetLastError();
+            ::closesocket(s0);
+            ::closesocket(s1);
+            return TranslateWsaError(err);
+        }
+
+        if (out_flags & LINUX_SOCK_NONBLOCK) {
+            u_long mode = 1;
+            ioctlsocket(s0, FIONBIO, &mode);
+            ioctlsocket(s1, FIONBIO, &mode);
+        }
+
+        sv[0] = s0;
+        sv[1] = s1;
+        return 0;
+    }
+}
+
 bool SocketManager::LinuxToWinAddr(const LinuxSockaddr *laddr, socklen_t llen,
                                    SOCKADDR_STORAGE *waddr, int *wlen) noexcept
 {

@@ -37,7 +37,10 @@ enum class DeviceType {
     PropContext,
     PropLegacy,
     PropSocketDir,
-    PropServiceSocket
+    PropServiceSocket,
+    EventFd,
+    TimerFd,
+    SyncFence
 };
 
 struct ResolvedPath {

@@ -89,4 +89,75 @@ __attribute__((sysv_abi)) GLenum glGetError(void);
 __attribute__((sysv_abi)) const GLubyte *glGetString(GLenum name);
 __attribute__((sysv_abi)) void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height,
                                             GLenum format, GLenum type, void *pixels);
+
+// Image / OES External Texturing
+__attribute__((sysv_abi)) void glEGLImageTargetTexture2DOES(GLenum target, GLeglImageOES image);
+
+// Sync Fences (GLES 3.0)
+__attribute__((sysv_abi)) GLsync glFenceSync(GLenum condition, GLbitfield flags);
+__attribute__((sysv_abi)) GLboolean glIsSync(GLsync sync);
+__attribute__((sysv_abi)) void glDeleteSync(GLsync sync);
+__attribute__((sysv_abi)) GLenum glClientWaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout);
+__attribute__((sysv_abi)) void glWaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout);
+__attribute__((sysv_abi)) void glGetSynciv(GLsync sync, GLenum pname, GLsizei bufSize,
+                                           GLsizei *length, GLint *values);
+
+// Uniform Buffer Objects (GLES 3.0)
+__attribute__((sysv_abi)) void glBindBufferBase(GLenum target, GLuint index, GLuint buffer);
+__attribute__((sysv_abi)) void glBindBufferRange(GLenum target, GLuint index, GLuint buffer,
+                                                 GLintptr offset, GLsizeiptr size);
+__attribute__((sysv_abi)) GLuint glGetUniformBlockIndex(GLuint program,
+                                                        const GLchar *uniformBlockName);
+__attribute__((sysv_abi)) void glUniformBlockBinding(GLuint program, GLuint uniformBlockIndex,
+                                                     GLuint uniformBlockBinding);
+
+// Instanced Rendering (GLES 3.0)
+__attribute__((sysv_abi)) void glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count,
+                                                     GLsizei instancecount);
+__attribute__((sysv_abi)) void glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum type,
+                                                       const void *indices, GLsizei instancecount);
+__attribute__((sysv_abi)) void glVertexAttribDivisor(GLuint index, GLuint divisor);
+
+// Transform Feedback (GLES 3.0)
+__attribute__((sysv_abi)) void glGenTransformFeedbacks(GLsizei n, GLuint *ids);
+__attribute__((sysv_abi)) void glBindTransformFeedback(GLenum target, GLuint id);
+__attribute__((sysv_abi)) void glBeginTransformFeedback(GLenum primitiveMode);
+__attribute__((sysv_abi)) void glEndTransformFeedback(void);
+__attribute__((sysv_abi)) void glTransformFeedbackVaryings(GLuint program, GLsizei count,
+                                                           const GLchar *const *varyings,
+                                                           GLenum bufferMode);
+__attribute__((sysv_abi)) void glDeleteTransformFeedbacks(GLsizei n, const GLuint *ids);
+
+// Sampler Objects (GLES 3.0)
+__attribute__((sysv_abi)) void glGenSamplers(GLsizei count, GLuint *samplers);
+__attribute__((sysv_abi)) void glBindSampler(GLuint unit, GLuint sampler);
+__attribute__((sysv_abi)) void glSamplerParameteri(GLuint sampler, GLenum pname, GLint param);
+__attribute__((sysv_abi)) void glDeleteSamplers(GLsizei count, const GLuint *samplers);
+
+// Buffer Mapping & Pixel Store (GLES 3.0)
+__attribute__((sysv_abi)) void *glMapBufferRange(GLenum target, GLintptr offset, GLsizeiptr length,
+                                                  GLbitfield access);
+__attribute__((sysv_abi)) GLboolean glUnmapBuffer(GLenum target);
+__attribute__((sysv_abi)) void glFlushMappedBufferRange(GLenum target, GLintptr offset,
+                                                        GLsizeiptr length);
+__attribute__((sysv_abi)) void glPixelStorei(GLenum pname, GLint param);
+
+// Texture Storage & 3D Textures (GLES 3.0)
+__attribute__((sysv_abi)) void glTexStorage2D(GLenum target, GLsizei levels, GLenum internalformat,
+                                              GLsizei width, GLsizei height);
+__attribute__((sysv_abi)) void glTexStorage3D(GLenum target, GLsizei levels, GLenum internalformat,
+                                              GLsizei width, GLsizei height, GLsizei depth);
+__attribute__((sysv_abi)) void glTexImage3D(GLenum target, GLint level, GLint internalformat,
+                                            GLsizei width, GLsizei height, GLsizei depth,
+                                            GLint border, GLenum format, GLenum type,
+                                            const void *pixels);
+__attribute__((sysv_abi)) void glTexSubImage3D(GLenum target, GLint level, GLint xoffset,
+                                               GLint yoffset, GLint zoffset, GLsizei width,
+                                               GLsizei height, GLsizei depth, GLenum format,
+                                               GLenum type, const void *pixels);
+
+// Compute Shaders & Memory Barriers (GLES 3.1 / 3.2)
+__attribute__((sysv_abi)) void glDispatchCompute(GLuint num_groups_x, GLuint num_groups_y,
+                                                 GLuint num_groups_z);
+__attribute__((sysv_abi)) void glMemoryBarrier(GLbitfield barriers);
 }

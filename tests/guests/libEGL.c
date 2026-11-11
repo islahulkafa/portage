@@ -144,3 +144,87 @@ EXPORT unsigned int eglDestroyImageKHR(void *dpy, void *image)
     (void)image;
     return 1;
 }
+EXPORT unsigned int eglSwapInterval(void *dpy, int32_t interval)
+{
+    (void)dpy;
+    (void)interval;
+    return 1;
+}
+EXPORT void *eglCreateSync(void *dpy, unsigned int type, const intptr_t *attrib_list)
+{
+    (void)dpy;
+    (void)type;
+    (void)attrib_list;
+    return (void *)0;
+}
+EXPORT unsigned int eglDestroySync(void *dpy, void *sync)
+{
+    (void)dpy;
+    (void)sync;
+    return 1;
+}
+EXPORT int32_t eglClientWaitSync(void *dpy, void *sync, int32_t flags, uint64_t timeout)
+{
+    (void)dpy;
+    (void)sync;
+    (void)flags;
+    (void)timeout;
+    return 0x30F6;
+}
+EXPORT unsigned int eglWaitSync(void *dpy, void *sync, int32_t flags)
+{
+    (void)dpy;
+    (void)sync;
+    (void)flags;
+    return 1;
+}
+EXPORT unsigned int eglGetSyncAttrib(void *dpy, void *sync, int32_t attribute, intptr_t *value)
+{
+    (void)dpy;
+    (void)sync;
+    (void)attribute;
+    (void)value;
+    return 1;
+}
+EXPORT void *eglCreateSyncKHR(void *dpy, unsigned int type, const int32_t *attrib_list)
+{
+    (void)dpy;
+    (void)type;
+    (void)attrib_list;
+    return (void *)0;
+}
+EXPORT unsigned int eglDestroySyncKHR(void *dpy, void *sync)
+{
+    (void)dpy;
+    (void)sync;
+    return 1;
+}
+EXPORT int32_t eglClientWaitSyncKHR(void *dpy, void *sync, int32_t flags, uint64_t timeout)
+{
+    (void)dpy;
+    (void)sync;
+    (void)flags;
+    (void)timeout;
+    return 0x30F6;
+}
+EXPORT unsigned int eglWaitSyncKHR(void *dpy, void *sync, int32_t flags)
+{
+    (void)dpy;
+    (void)sync;
+    (void)flags;
+    return 1;
+}
+EXPORT unsigned int eglGetSyncAttribKHR(void *dpy, void *sync, int32_t attribute, int32_t *value)
+{
+    (void)dpy;
+    (void)sync;
+    (void)attribute;
+    (void)value;
+    return 1;
+}
+EXPORT int32_t eglDupNativeFenceFDANDROID(void *dpy, void *sync)
+{
+    (void)dpy;
+    (void)sync;
+    return -1;
+}

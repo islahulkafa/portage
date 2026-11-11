@@ -262,3 +262,228 @@ EXPORT void glReadPixels(int32_t x, int32_t y, int32_t width, int32_t height, ui
     (void)type;
     (void)pixels;
 }
+
+EXPORT void glEGLImageTargetTexture2DOES(uint32_t target, void *image)
+{
+    (void)target;
+    (void)image;
+}
+
+EXPORT void *glFenceSync(uint32_t condition, uint32_t flags)
+{
+    (void)condition;
+    (void)flags;
+    return (void *)0;
+}
+EXPORT unsigned char glIsSync(void *sync)
+{
+    (void)sync;
+    return 0;
+}
+EXPORT void glDeleteSync(void *sync) { (void)sync; }
+EXPORT uint32_t glClientWaitSync(void *sync, uint32_t flags, uint64_t timeout)
+{
+    (void)sync;
+    (void)flags;
+    (void)timeout;
+    return 0x911A;
+}
+EXPORT void glWaitSync(void *sync, uint32_t flags, uint64_t timeout)
+{
+    (void)sync;
+    (void)flags;
+    (void)timeout;
+}
+EXPORT void glGetSynciv(void *sync, uint32_t pname, int32_t bufSize, int32_t *length,
+                        int32_t *values)
+{
+    (void)sync;
+    (void)pname;
+    (void)bufSize;
+    (void)length;
+    (void)values;
+}
+
+EXPORT void glBindBufferBase(uint32_t target, uint32_t index, uint32_t buffer)
+{
+    (void)target;
+    (void)index;
+    (void)buffer;
+}
+EXPORT void glBindBufferRange(uint32_t target, uint32_t index, uint32_t buffer, intptr_t offset,
+                              intptr_t size)
+{
+    (void)target;
+    (void)index;
+    (void)buffer;
+    (void)offset;
+    (void)size;
+}
+EXPORT uint32_t glGetUniformBlockIndex(uint32_t program, const char *uniformBlockName)
+{
+    (void)program;
+    (void)uniformBlockName;
+    return 0xFFFFFFFFu;
+}
+EXPORT void glUniformBlockBinding(uint32_t program, uint32_t uniformBlockIndex,
+                                  uint32_t uniformBlockBinding)
+{
+    (void)program;
+    (void)uniformBlockIndex;
+    (void)uniformBlockBinding;
+}
+
+EXPORT void glDrawArraysInstanced(uint32_t mode, int32_t first, int32_t count,
+                                  int32_t instancecount)
+{
+    (void)mode;
+    (void)first;
+    (void)count;
+    (void)instancecount;
+}
+EXPORT void glDrawElementsInstanced(uint32_t mode, int32_t count, uint32_t type,
+                                    const void *indices, int32_t instancecount)
+{
+    (void)mode;
+    (void)count;
+    (void)type;
+    (void)indices;
+    (void)instancecount;
+}
+EXPORT void glVertexAttribDivisor(uint32_t index, uint32_t divisor)
+{
+    (void)index;
+    (void)divisor;
+}
+
+EXPORT void glGenTransformFeedbacks(int32_t n, uint32_t *ids)
+{
+    (void)n;
+    (void)ids;
+}
+EXPORT void glBindTransformFeedback(uint32_t target, uint32_t id)
+{
+    (void)target;
+    (void)id;
+}
+EXPORT void glBeginTransformFeedback(uint32_t primitiveMode) { (void)primitiveMode; }
+EXPORT void glEndTransformFeedback(void) {}
+EXPORT void glTransformFeedbackVaryings(uint32_t program, int32_t count,
+                                        const char *const *varyings, uint32_t bufferMode)
+{
+    (void)program;
+    (void)count;
+    (void)varyings;
+    (void)bufferMode;
+}
+EXPORT void glDeleteTransformFeedbacks(int32_t n, const uint32_t *ids)
+{
+    (void)n;
+    (void)ids;
+}
+
+EXPORT void glGenSamplers(int32_t count, uint32_t *samplers)
+{
+    (void)count;
+    (void)samplers;
+}
+EXPORT void glBindSampler(uint32_t unit, uint32_t sampler)
+{
+    (void)unit;
+    (void)sampler;
+}
+EXPORT void glSamplerParameteri(uint32_t sampler, uint32_t pname, int32_t param)
+{
+    (void)sampler;
+    (void)pname;
+    (void)param;
+}
+EXPORT void glDeleteSamplers(int32_t count, const uint32_t *samplers)
+{
+    (void)count;
+    (void)samplers;
+}
+
+EXPORT void *glMapBufferRange(uint32_t target, intptr_t offset, intptr_t length, uint32_t access)
+{
+    (void)target;
+    (void)offset;
+    (void)length;
+    (void)access;
+    return (void *)0;
+}
+EXPORT unsigned char glUnmapBuffer(uint32_t target)
+{
+    (void)target;
+    return 1;
+}
+EXPORT void glFlushMappedBufferRange(uint32_t target, intptr_t offset, intptr_t length)
+{
+    (void)target;
+    (void)offset;
+    (void)length;
+}
+EXPORT void glPixelStorei(uint32_t pname, int32_t param)
+{
+    (void)pname;
+    (void)param;
+}
+
+EXPORT void glTexStorage2D(uint32_t target, int32_t levels, uint32_t internalformat, int32_t width,
+                           int32_t height)
+{
+    (void)target;
+    (void)levels;
+    (void)internalformat;
+    (void)width;
+    (void)height;
+}
+EXPORT void glTexStorage3D(uint32_t target, int32_t levels, uint32_t internalformat, int32_t width,
+                           int32_t height, int32_t depth)
+{
+    (void)target;
+    (void)levels;
+    (void)internalformat;
+    (void)width;
+    (void)height;
+    (void)depth;
+}
+EXPORT void glTexImage3D(uint32_t target, int32_t level, int32_t internalformat, int32_t width,
+                         int32_t height, int32_t depth, int32_t border, uint32_t format,
+                         uint32_t type, const void *pixels)
+{
+    (void)target;
+    (void)level;
+    (void)internalformat;
+    (void)width;
+    (void)height;
+    (void)depth;
+    (void)border;
+    (void)format;
+    (void)type;
+    (void)pixels;
+}
+EXPORT void glTexSubImage3D(uint32_t target, int32_t level, int32_t xoffset, int32_t yoffset,
+                            int32_t zoffset, int32_t width, int32_t height, int32_t depth,
+                            uint32_t format, uint32_t type, const void *pixels)
+{
+    (void)target;
+    (void)level;
+    (void)xoffset;
+    (void)yoffset;
+    (void)zoffset;
+    (void)width;
+    (void)height;
+    (void)depth;
+    (void)format;
+    (void)type;
+    (void)pixels;
+}
+
+EXPORT void glDispatchCompute(uint32_t num_groups_x, uint32_t num_groups_y, uint32_t num_groups_z)
+{
+    (void)num_groups_x;
+    (void)num_groups_y;
+    (void)num_groups_z;
+}
+EXPORT void glMemoryBarrier(uint32_t barriers) { (void)barriers; }

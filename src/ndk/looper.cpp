@@ -155,6 +155,19 @@ int LooperImpl::CheckFdEvents(const LooperRegistration &reg) const
                 triggered |= ALOOPER_EVENT_INPUT;
             }
         }
+    } else if (desc->dev == fs::DeviceType::EventFd && desc->eventfd) {
+        std::lock_guard<std::mutex> ev_lock(desc->eventfd->mutex);
+        if (desc->eventfd->counter > 0 && (reg.events & ALOOPER_EVENT_INPUT)) {
+            triggered |= ALOOPER_EVENT_INPUT;
+        }
+        if (desc->eventfd->counter < 0xFFFFFFFFFFFFFFFFULL - 1 &&
+            (reg.events & ALOOPER_EVENT_OUTPUT)) {
+            triggered |= ALOOPER_EVENT_OUTPUT;
+        }
+    } else if (desc->dev == fs::DeviceType::TimerFd && desc->timerfd) {
+        if (desc->timerfd->IsReady() && (reg.events & ALOOPER_EVENT_INPUT)) {
+            triggered |= ALOOPER_EVENT_INPUT;
+        }
     }
 
     return triggered;

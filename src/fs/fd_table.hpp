@@ -8,6 +8,8 @@
 #endif
 #include <windows.h>
 
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -21,6 +23,56 @@ struct SharedMemoryRegion;
 }
 
 namespace portage::fs {
+
+struct EventFdState {
+    std::mutex mutex{};
+    std::condition_variable cv{};
+    uint64_t counter{0};
+    bool is_semaphore{false};
+};
+
+struct TimerFdState {
+    HANDLE timer_handle{nullptr};
+    HANDLE wake_event{nullptr};
+    int clockid{0};
+    int flags{0};
+    std::mutex mutex{};
+    uint64_t counter{0};
+    int64_t interval_ns{0};
+    std::chrono::steady_clock::time_point next_expiration{};
+    bool armed{false};
+    uint64_t generation{0};
+
+    TimerFdState() = default;
+    ~TimerFdState();
+
+    TimerFdState(const TimerFdState &) = delete;
+    TimerFdState &operator=(const TimerFdState &) = delete;
+
+    void ArmWaitableTimerLocked(std::chrono::nanoseconds delay);
+    uint64_t RefreshExpirationsLocked(bool force_signaled = false);
+    [[nodiscard]] bool IsReady();
+    void GetTime(int64_t &out_value_ns, int64_t &out_interval_ns);
+    void SetTime(bool arm, std::chrono::steady_clock::time_point target_tp, int64_t new_interval_ns,
+                 int64_t *old_value_ns = nullptr, int64_t *old_interval_ns = nullptr);
+    int64_t ReadExpirations(bool nonblock, uint64_t &out_expirations);
+};
+
+struct SyncFenceState {
+    void *gl_sync{nullptr};
+    HANDLE wake_event{nullptr};
+    bool signaled{false};
+    std::mutex mutex{};
+
+    SyncFenceState() = default;
+    ~SyncFenceState();
+
+    SyncFenceState(const SyncFenceState &) = delete;
+    SyncFenceState &operator=(const SyncFenceState &) = delete;
+
+    [[nodiscard]] bool IsSignaled() noexcept;
+    void Signal() noexcept;
+};
 
 struct FileDescriptor {
     int fd{-1};
@@ -49,6 +101,15 @@ struct FileDescriptor {
 
     // Shared memory region (ashmem / memfd)
     std::shared_ptr<portage::mem::SharedMemoryRegion> shared_memory{nullptr};
+
+    // Eventfd support
+    std::shared_ptr<EventFdState> eventfd{nullptr};
+
+    // Timerfd support
+    std::shared_ptr<TimerFdState> timerfd{nullptr};
+
+    // Sync fence support
+    std::shared_ptr<SyncFenceState> sync_fence{nullptr};
 };
 
 class FileDescriptorTable {
@@ -81,11 +142,21 @@ class FileDescriptorTable {
     int AllocateSharedMemory(std::shared_ptr<portage::mem::SharedMemoryRegion> shm, DeviceType dev,
                              int flags, std::string_view path);
 
+    int AllocateEventFd(uint64_t initval, bool is_semaphore, int flags);
+
+    int AllocateTimerFd(int clockid, int flags);
+
+    int AllocateSyncFence(void *gl_sync, HANDLE wake_event, bool signaled, int flags = 0);
+
     int CreatePipe(int fds[2], int flags = 0);
 
     [[nodiscard]] std::shared_ptr<FileDescriptor> Get(int fd);
 
+    [[nodiscard]] std::vector<int> GetOpenFds();
+
     int Close(int fd);
+
+    int CloseRange(unsigned int first, unsigned int last, unsigned int flags);
 
     int Duplicate(int oldfd, int target_fd = -1, int flags = 0);
 

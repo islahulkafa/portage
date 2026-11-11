@@ -138,7 +138,7 @@ static inline void sys_exit(int code)
     __asm__ volatile("syscall" : : "a"(60), "D"(code) : "rcx", "r11", "memory");
 }
 
-static uint8_t child_stack[16384] __attribute__((aligned(16)));
+static uint8_t child_stack[65536] __attribute__((aligned(16)));
 static volatile int child_tid = 0;
 static volatile uint16_t server_port = 0;
 
@@ -209,7 +209,7 @@ void _start(void)
     server_port = bound.sin_port;
 
     // Set up child stack
-    void *stack_top = &child_stack[16384 - 16];
+    void *stack_top = &child_stack[65536 - 16];
     uint64_t flags =
         CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_CHILD_CLEARTID;
     int64_t res = sys_clone(flags, stack_top, NULL, (int *)&child_tid, 0);

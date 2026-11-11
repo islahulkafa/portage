@@ -248,6 +248,7 @@ int main(int argc, char *argv[])
             }
 
             std::cout << "[portage] APK native activity execution completed successfully\n";
+            portage::elf::LinkMap::Instance().FinalizeAll();
             portage::syscall::SyscallDispatcher::Shutdown();
             return 0;
         }
@@ -262,6 +263,7 @@ int main(int argc, char *argv[])
     int exit_code = guest_context.Run(reinterpret_cast<void *>(loaded_elf.entry_point), guest_sp);
     std::cout << "[portage] Guest exited with code: " << exit_code << "\n";
 
+    portage::elf::LinkMap::Instance().FinalizeAll();
     portage::syscall::SyscallDispatcher::Shutdown();
     return exit_code;
 }

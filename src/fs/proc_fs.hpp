@@ -11,12 +11,17 @@ class AddressSpace;
 
 namespace portage::fs {
 
+class FileDescriptorTable;
+
 class ProcFs {
   public:
     static bool IsProcPath(std::string_view path) noexcept;
+    static std::string CanonicalizePath(std::string_view path);
+
     static std::string Generate(std::string_view proc_path, mem::AddressSpace *as = nullptr,
                                 const std::vector<std::string> &cmdline = {});
-    static std::vector<DirEntry> ListDir(std::string_view proc_path);
+    static std::vector<DirEntry> ListDir(std::string_view proc_path,
+                                         FileDescriptorTable *fd_table = nullptr);
 
   private:
     static std::string GenerateCpuInfo();
@@ -24,6 +29,13 @@ class ProcFs {
     static std::string GenerateVersion();
     static std::string GenerateMaps(mem::AddressSpace *as);
     static std::string GenerateStatus();
+    static std::string GenerateStat();
+    static std::string GenerateStatm();
+    static std::string GenerateComm(int tid = 0);
+    static std::string GenerateAuxv();
+    static std::string GenerateProcStat();
+    static std::string GenerateUptime();
+    static std::string GenerateCpuList();
     static std::string GenerateCmdline(const std::vector<std::string> &cmdline);
 };
 

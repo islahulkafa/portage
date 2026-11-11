@@ -11,7 +11,26 @@
 struct ANativeWindow;
 struct AHardwareBuffer;
 
+namespace portage::fs {
+class FileDescriptorTable;
+}
+
 namespace portage::gles {
+
+struct EglSyncData {
+    EGLenum type{EGL_SYNC_FENCE};
+    EGLint status{EGL_UNSIGNALED};
+    EGLint condition{EGL_SYNC_PRIOR_COMMANDS_COMPLETE};
+    GLsync gl_sync{nullptr};
+    int native_fence_fd{-1};
+};
+
+struct EglImageData {
+    EGLenum target{0};
+    EGLClientBuffer client_buffer{nullptr};
+    AHardwareBuffer *ahb{nullptr};
+    GLuint gl_texture{0};
+};
 
 struct EglConfigData {
     EGLint red_size{8};
@@ -76,7 +95,25 @@ class EglDispatcher {
     EGLDisplay GetCurrentDisplay() noexcept;
 
     EGLBoolean SwapBuffers(EGLDisplay dpy, EGLSurface surface) noexcept;
+    EGLBoolean SwapInterval(EGLDisplay dpy, EGLint interval) noexcept;
+    EGLint GetSwapInterval() const noexcept { return swap_interval_; }
     EGLint GetError() noexcept;
+
+    EGLSync CreateSync(EGLDisplay dpy, EGLenum type, const EGLAttrib *attrib_list) noexcept;
+    EGLSyncKHR CreateSyncKHR(EGLDisplay dpy, EGLenum type, const EGLint *attrib_list) noexcept;
+    EGLBoolean DestroySync(EGLDisplay dpy, EGLSync sync) noexcept;
+    EGLint ClientWaitSync(EGLDisplay dpy, EGLSync sync, EGLint flags, EGLTime timeout) noexcept;
+    EGLBoolean WaitSync(EGLDisplay dpy, EGLSync sync, EGLint flags) noexcept;
+    EGLBoolean GetSyncAttrib(EGLDisplay dpy, EGLSync sync, EGLint attribute,
+                             EGLAttrib *value) noexcept;
+    EGLint DupNativeFenceFDANDROID(EGLDisplay dpy, EGLSyncKHR sync) noexcept;
+
+    EGLImageKHR CreateImageKHR(EGLDisplay dpy, EGLContext ctx, EGLenum target, EGLClientBuffer buffer,
+                               const EGLint *attrib_list) noexcept;
+    EGLBoolean DestroyImageKHR(EGLDisplay dpy, EGLImageKHR image) noexcept;
+    [[nodiscard]] const EglImageData *FindImage(EGLImageKHR image) const noexcept;
+
+    void SetFdTable(fs::FileDescriptorTable *fd_table) noexcept { fd_table_override_ = fd_table; }
 
     void *GetProcAddress(const char *procname) noexcept;
     void RegisterProc(std::string_view name, void *proc);
@@ -88,9 +125,11 @@ class EglDispatcher {
     EglDispatcher(const EglDispatcher &) = delete;
     EglDispatcher &operator=(const EglDispatcher &) = delete;
 
-    std::mutex mutex_{};
+    mutable std::mutex mutex_{};
     bool initialized_{false};
     EGLint last_error_{EGL_SUCCESS};
+    EGLint swap_interval_{1};
+    fs::FileDescriptorTable *fd_table_override_{nullptr};
 
     EGLContext current_context_{EGL_NO_CONTEXT};
     EGLSurface current_draw_{EGL_NO_SURFACE};
@@ -99,6 +138,8 @@ class EglDispatcher {
     std::vector<EglConfigData> configs_{};
     std::unordered_map<EGLSurface, std::unique_ptr<EglSurfaceData>> surfaces_{};
     std::unordered_map<EGLContext, std::unique_ptr<EglContextData>> contexts_{};
+    std::unordered_map<EGLSync, std::unique_ptr<EglSyncData>> syncs_{};
+    std::unordered_map<EGLImageKHR, std::unique_ptr<EglImageData>> images_{};
     std::unordered_map<std::string, void *> procs_{};
 };
 
@@ -134,8 +175,26 @@ __attribute__((sysv_abi)) EGLContext eglGetCurrentContext(void);
 __attribute__((sysv_abi)) EGLSurface eglGetCurrentSurface(EGLint readdraw);
 __attribute__((sysv_abi)) EGLDisplay eglGetCurrentDisplay(void);
 __attribute__((sysv_abi)) EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface);
+__attribute__((sysv_abi)) EGLBoolean eglSwapInterval(EGLDisplay dpy, EGLint interval);
 __attribute__((sysv_abi)) EGLint eglGetError(void);
 __attribute__((sysv_abi)) void *eglGetProcAddress(const char *procname);
+__attribute__((sysv_abi)) EGLSync eglCreateSync(EGLDisplay dpy, EGLenum type,
+                                                 const EGLAttrib *attrib_list);
+__attribute__((sysv_abi)) EGLBoolean eglDestroySync(EGLDisplay dpy, EGLSync sync);
+__attribute__((sysv_abi)) EGLint eglClientWaitSync(EGLDisplay dpy, EGLSync sync, EGLint flags,
+                                                   EGLTime timeout);
+__attribute__((sysv_abi)) EGLBoolean eglWaitSync(EGLDisplay dpy, EGLSync sync, EGLint flags);
+__attribute__((sysv_abi)) EGLBoolean eglGetSyncAttrib(EGLDisplay dpy, EGLSync sync, EGLint attribute,
+                                                      EGLAttrib *value);
+__attribute__((sysv_abi)) EGLSyncKHR eglCreateSyncKHR(EGLDisplay dpy, EGLenum type,
+                                                       const EGLint *attrib_list);
+__attribute__((sysv_abi)) EGLBoolean eglDestroySyncKHR(EGLDisplay dpy, EGLSyncKHR sync);
+__attribute__((sysv_abi)) EGLint eglClientWaitSyncKHR(EGLDisplay dpy, EGLSyncKHR sync, EGLint flags,
+                                                      EGLTimeKHR timeout);
+__attribute__((sysv_abi)) EGLBoolean eglWaitSyncKHR(EGLDisplay dpy, EGLSyncKHR sync, EGLint flags);
+__attribute__((sysv_abi)) EGLBoolean eglGetSyncAttribKHR(EGLDisplay dpy, EGLSyncKHR sync,
+                                                         EGLint attribute, EGLint *value);
+__attribute__((sysv_abi)) EGLint eglDupNativeFenceFDANDROID(EGLDisplay dpy, EGLSyncKHR sync);
 __attribute__((sysv_abi)) EGLClientBuffer
 eglGetNativeClientBufferANDROID(const struct AHardwareBuffer *buffer);
 __attribute__((sysv_abi)) EGLImageKHR eglCreateImageKHR(EGLDisplay dpy, EGLContext ctx,

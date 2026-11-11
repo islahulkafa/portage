@@ -497,6 +497,28 @@ add_custom_command(
 )
 add_custom_target(build_guest_test_vulkan_presentation DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/test_vulkan_presentation.elf")
 
+# Vulkan compute pipeline test executable
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/test_vulkan_compute_guest.elf"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -fPIE
+        "-Wl,-pie"
+        "-Wl,--no-dynamic-linker"
+        -I "${VULKAN_INCLUDE_DIR}"
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_vulkan_compute_guest.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/libvulkan.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/test_vulkan_compute_guest.elf"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_vulkan_compute_guest.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/libvulkan.c"
+    COMMENT "Cross-compiling Android x86_64 Vulkan compute test ELF: test_vulkan_compute_guest.elf"
+)
+add_custom_target(build_guest_test_vulkan_compute_guest DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/test_vulkan_compute_guest.elf")
+
 # Test dynamic linker / interpreter: rootfs/system/bin/linker64
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/bin/linker64"
@@ -533,6 +555,46 @@ add_custom_command(
     COMMENT "Cross-compiling Android x86_64 dynamic ELF: hello_dynamic.elf"
 )
 
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libc.so"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "-Wl,-soname,libc.so"
+        "${CMAKE_CURRENT_SOURCE_DIR}/libc.c"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libc.so"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/libc.c"
+    COMMENT "Cross-compiling Android x86_64 shared library: libc.so"
+)
+
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/test_bionic_extensions_guest.elf"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -fPIE
+        "-Wl,-pie"
+        "-Wl,--no-dynamic-linker"
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_bionic_extensions_guest.c"
+        "-L${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
+        -lc
+        -ldl
+        -o "${CMAKE_CURRENT_BINARY_DIR}/test_bionic_extensions_guest.elf"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_bionic_extensions_guest.c"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libc.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libdl.so"
+    COMMENT "Cross-compiling Android x86_64 Bionic extensions test ELF: test_bionic_extensions_guest.elf"
+)
+add_custom_target(build_guest_test_bionic_extensions_guest DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/test_bionic_extensions_guest.elf")
+
 add_custom_target(build_guest_binaries
     DEPENDS
         "${CMAKE_CURRENT_BINARY_DIR}/hello_freestanding.elf"
@@ -561,6 +623,7 @@ add_custom_target(build_guest_binaries
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libaaudio.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libOpenSLES.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libdl.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libc.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libjnigraphics.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libmediandk.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libbinder_ndk.so"
@@ -574,6 +637,7 @@ add_custom_target(build_guest_binaries
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libnotificationndk.so"
         "${CMAKE_CURRENT_BINARY_DIR}/test_vulkan_device.elf"
         "${CMAKE_CURRENT_BINARY_DIR}/test_vulkan_presentation.elf"
+        "${CMAKE_CURRENT_BINARY_DIR}/test_vulkan_compute_guest.elf"
         "${CMAKE_CURRENT_BINARY_DIR}/test_audio_pcm.elf"
         "${CMAKE_CURRENT_BINARY_DIR}/test_input_evdev.elf"
         "${CMAKE_CURRENT_BINARY_DIR}/test_property_bionic.elf"
@@ -581,6 +645,7 @@ add_custom_target(build_guest_binaries
         "${CMAKE_CURRENT_BINARY_DIR}/libgame_plugin.so"
         "${CMAKE_CURRENT_BINARY_DIR}/libtest_game_engine.so"
         "${CMAKE_CURRENT_BINARY_DIR}/libtest_gles_quad.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/test_bionic_extensions_guest.elf"
 )
 
 add_custom_command(

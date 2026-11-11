@@ -7,10 +7,11 @@ Portage is a native user-mode Android compatibility layer for Windows 11 written
 ### Architectural Pillars
 - **Direct CPU Execution**: Guest 64-bit code executes natively on the host x86_64 CPU. Fast thread-local storage switching is achieved via `-mfsgsbase` (`rdfsbase`/`wrfsbase`).
 - **Syscall Interception & Translation**: Bionic Linux system calls are trapped, decoded, and dispatched to Windows Win32, NT, or POSIX-compatible emulation layers (`SyscallDispatcher`).
-- **Dynamic Linker & ABI Bridging**: The custom ELF dynamic linker (`LinkMap`, `ElfLoader`) loads guest shared libraries, resolves recursive `DT_NEEDED` dependencies, executes `DT_INIT`/`DT_INIT_ARRAY`, and routes guest function calls across the ABI boundary (SysV AMD64 ABI to Microsoft x64 ABI) via SysV-annotated thunks (`NdkSymbolRegistry`).
-- **Graphics Pipeline (WSI & WGL)**: Provides hardware-accelerated OpenGL ES 2.0 / 3.0 / 3.2 and Vulkan passthrough directly to host GPUs, presenting frames to Win32 `HWND` surfaces or offscreen DIB sections.
-- **Audio Pipeline**: Emulates Android NDK AAudio (API 26+) and OpenSL ES interfaces over low-latency Windows WASAPI streaming audio.
+- **Dynamic Linker & ABI Bridging**: The custom ELF dynamic linker (`LinkMap`, `ElfLoader`) loads guest shared libraries, resolves recursive `DT_NEEDED` dependencies, executes `DT_INIT`/`DT_INIT_ARRAY`/`DT_FINI`/`DT_FINI_ARRAY` with `__cxa_atexit` tracking, supports GNU2 TLSDESC (`R_X86_64_TLSDESC`), lazy `DT_JMPREL` PLT trampolines, `android_dlopen_ext`, `dlinfo`, `dlclose` segment unmapping, and routes guest calls across the ABI boundary (SysV AMD64 ABI to Microsoft x64 ABI) via SysV-annotated thunks (`NdkSymbolRegistry`).
+- **Graphics Pipeline (WSI & WGL)**: Provides hardware-accelerated OpenGL ES 2.0 / 3.0 / 3.2 (EGL 1.5, sync fences, `AHardwareBuffer` textures) and Vulkan 1.0–1.3 ICD passthrough directly to host GPUs (including external `SyncFence` FD and `AHardwareBuffer` memory bridging), presenting frames to Win32 `HWND` surfaces or offscreen DIB sections.
+- **Audio & Media Pipelines**: Emulates Android NDK AAudio (API 26+) and OpenSL ES over low-latency Windows WASAPI streaming audio; bridges MediaCodec, MediaExtractor, and Camera2 via Windows Media Foundation.
 - **Android Package & Resource Runtime**: Parses APK ZIP archives, extracts sandboxed assets, decodes binary XML (`AndroidManifest.xml`), parses binary resource tables (`resources.arsc`), resolves string/integer/boolean resources, and hosts synthetic Android Java runtime environments (`JavaVM`, `JNIEnv`).
+- **Host Desktop & System Integration**: Bridges Android system services (Power/WakeLocks via `SetThreadExecutionState`, Battery status, Clipboard via OLE, Location via Windows `LocationAPI`, Notifications/Toasts via `Shell_NotifyIconW`, and Keystore via Windows CNG `NCrypt`/`BCrypt`).
 
 ---
 
@@ -23,28 +24,35 @@ All source code resides in `src/`, with subsystems structured as follows:
 | `src/arch/` | Guest CPU state, stack frame allocation, registers, and execution dispatch |
 | `src/audio/` | WASAPI audio backend, AAudio stream dispatcher, and OpenSL ES engine |
 | `src/binder/` | Android IPC Binder driver emulation and ioctl handlers |
-| `src/elf/` | ELF64 binary parsing, segment loading, `LinkMap` management, and relocations |
-| `src/fs/` | Virtual File System (VFS), `/proc`, `/dev`, file descriptor tables, and pipes |
-| `src/gles/` | OpenGL ES 2.0 / 3.0 passthrough, EGL dispatcher, and WGL bridge |
+| `src/camera/` | Camera2 NDK (`ACameraManager`, `ACameraDevice`) and Windows Media Foundation video capture |
+| `src/clipboard/` | Clipboard manager (`ClipboardManager`), MIME clip data, and Win32 OLE clipboard integration |
+| `src/elf/` | ELF64 parsing, segment loading, `R_X86_64_TLSDESC`, lazy PLT trampolines, `android_dlopen_ext`, `dlinfo`, `dlclose` unmapping, and `LinkMap` management |
+| `src/fs/` | Virtual File System (VFS), `/proc`, `/sys`, `/dev`, file descriptor tables, `SyncFence`, and pipes |
+| `src/gles/` | OpenGL ES 2.0–3.2 passthrough, EGL 1.5 dispatcher, and WGL bridge |
 | `src/input/` | Evdev input translation, Win32 mouse/keyboard to Android touch/key mapping |
 | `src/launcher/` | CLI runner (`portage.exe`), argument parsing, APK installation, and execution |
+| `src/location/` | Android location provider (`LocationManager`), GPS/network emulation, and Windows Location API |
+| `src/media/` | MediaCodec / MediaExtractor NDK and Windows Media Foundation decoding bridge |
 | `src/mem/` | Virtual memory manager, address space mappings (`mmap`/`mprotect`), and page tracking |
 | `src/ndk/` | Android NDK runtime libraries (`libandroid`, `ALooper`, `AInputQueue`, `AConfiguration`, `liblog`, `AChoreographer`) |
 | `src/net/` | Socket manager, BSD/Linux socket emulation, and loopback networking |
+| `src/notification/` | Notification & Toast subsystem (`NotificationManager`, `NotificationChannel`), and Win32 `Shell_NotifyIconW` |
 | `src/package/` | APK ZIP archive extractor, binary XML parser, `resources.arsc` table, `AAssetManager`, `JNIEnv`, and `ANativeActivity` |
-| `src/poll/` | Linux `epoll` subsystem and waitable event polling |
+| `src/poll/` | Linux `epoll`, `eventfd`, `timerfd`, and waitable `SyncFence` event polling |
+| `src/power/` | Power management (`PowerManager`, `WakeLock`), Win32 `SetThreadExecutionState`, and battery status |
 | `src/process/` | Guest process lifecycle, process tree, and PID tracking |
 | `src/property/` | Android system properties (`/dev/__properties__`), trie structure, and property services |
 | `src/rewrite/` | Syscall instruction rewriting and x86_64 instruction decoding |
+| `src/security/` | Android Keystore / KeyStore2 subsystem and Windows CNG (`NCrypt`/`BCrypt`) cryptographic provider |
 | `src/signal/` | Signal dispatching, `sigaction`, signal masks, and SEGV recovery via Win32 VEH |
 | `src/sync/` | Linux `futex` emulation, fast userspace locking, and wait queues |
 | `src/syscall/` | Linux syscall table, syscall routing, and argument extraction |
-| `src/thread/` | Bionic thread manager, thread descriptors, TLS/FSGSBASE, and thread joins |
-| `src/vulkan/` | Vulkan ICD passthrough and swapchain WSI integration |
+| `src/thread/` | Bionic thread manager, thread descriptors, per-thread names/stack bounds, TLS/FSGSBASE, and thread joins |
+| `src/vulkan/` | Vulkan 1.0–1.3 ICD passthrough, external sync FDs, `AHardwareBuffer` memory emulation, and swapchain WSI integration |
 | `src/wsi/` | Window System Integration, Win32 window creation, message pump, and event loop |
 
 Test and tool layout:
-- `tests/guests/`: Unmodified guest source code compiled into ELF/shared library test fixtures (e.g. `test_game_engine.c`, `libandroid.c`).
+- `tests/guests/`: Unmodified guest source code and stub libraries compiled into ELF/shared library test fixtures (e.g. `test_game_engine.c`, `test_bionic_extensions_guest.c`, `libc.c`, `libdl.c`, `libvulkan.c`, `libGLESv2.c`, `libandroid.c`, `libnotificationndk.c`, `libpowerndk.c`, `libmediandk.c`).
 - `tests/unit/`: GoogleTest unit test suites testing isolated subsystems.
 - `tests/integration/`: End-to-end integration test suites executing guest code through the emulator runtime.
 - `tools/`: Build and development utilities, including `assemble_samples.cpp` for generating test APKs.
@@ -110,9 +118,14 @@ Portage operates across two distinct 64-bit calling conventions on x86_64:
    extern "C" __attribute__((sysv_abi)) ALooper *ALooper_prepare(int opts);
    ```
 2. **JNI Function Pointers**: Every function pointer inside `JNINativeInterface` and `JNIInvokeInterface` must use `__attribute__((sysv_abi))`. Mismatches cause catastrophic stack corruption and silent crash regressions.
-3. **Thunk Symbol Registration**:
-   - All SysV NDK thunks implemented in `src/ndk/` must be registered in `NdkSymbolRegistry` in `src/ndk/libandroid_thunks.cpp`.
-   - The corresponding symbol stub must be exported in `tests/guests/libandroid.c` to permit guest link-time resolution.
+3. **Thunk Symbol Registration & Lookup Precedence**:
+   - All SysV NDK and Bionic thunks implemented in `src/ndk/` or subsystem directories (`src/elf/`, `src/notification/`, `src/power/`, `src/clipboard/`, `src/location/`, `src/camera/`, `src/security/`, `src/media/`) must be registered in `NdkSymbolRegistry` in `src/ndk/libandroid_thunks.cpp`.
+   - `LinkMap::ResolveGlobalSymbol`, `LinkMap::ResolveSymbolForModule`, and `LinkMap::ResolveLazySymbol` check `NdkSymbolRegistry` before loaded guest `.so` modules so no-op guest stub libraries (`libc.so`, `libdl.so`, `libandroid.so`) never shadow real host SysV thunks.
+   - The corresponding symbol stubs must be exported in guest stub libraries under `tests/guests/` (e.g. `libc.c`, `libdl.c`, `libandroid.c`, `libvulkan.c`, `libEGL.c`, `libGLESv2.c`, `libnotificationndk.c`, `libpowerndk.c`, `liblocationndk.c`, `libclipboardndk.c`, `libcamera2ndk.c`, `libkeystorendk.c`, `libmediandk.c`) to permit guest link-time resolution.
+4. **Host/Guest ABI Layout & Symbol Isolation**:
+   - Bionic ABI constants (`ANDROID_DLEXT_*` bitmasks, `RTLD_DI_*` requests, `BionicPthreadAttr` 56-byte LP64 layout) must match official Android NDK / AOSP definitions verbatim for unmodified APK compatibility.
+   - Prefix host C++ `pthread` thunk implementations as `portage_pthread_*` (registered under `"pthread_*"` in `NdkSymbolRegistry`) to avoid symbol collisions with MinGW/Clang host `<pthread.h>`.
+   - Keep `LoadedElf` copyable by value (e.g., use `std::shared_ptr` for shared relocation state such as `tlsdesc_args`) so launcher and runtime registration remain copy-safe.
 
 ---
 

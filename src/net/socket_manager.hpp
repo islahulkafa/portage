@@ -24,6 +24,7 @@ class SocketManager {
     void Shutdown() noexcept;
 
     SOCKET CreateSocket(int domain, int type, int protocol, int &out_flags);
+    int64_t SocketPair(int domain, int type, int protocol, SOCKET sv[2], int &out_flags);
 
     int64_t Bind(SOCKET s, const LinuxSockaddr *addr, socklen_t len);
     int64_t Connect(SOCKET s, const LinuxSockaddr *addr, socklen_t len);

@@ -50,6 +50,15 @@ class AddressSpace {
     // Initialize and handle sys_brk
     void InitBrk(uintptr_t initial_brk) noexcept;
     [[nodiscard]] uintptr_t Brk(uintptr_t new_brk) noexcept;
+    [[nodiscard]] uintptr_t GetBrkStart() const noexcept { return brk_start_; }
+    [[nodiscard]] uintptr_t GetBrkCurrent() const noexcept { return brk_current_; }
+    [[nodiscard]] uintptr_t GetBrkLimit() const noexcept { return brk_limit_; }
+    void AddReservation(void *ptr) noexcept
+    {
+        if (ptr) {
+            reservations_.push_back(ptr);
+        }
+    }
 
     // Anonymous mmap / munmap / mprotect
     [[nodiscard]] void *MmapAnonymous(void *addr, size_t length, int prot, int flags) noexcept;

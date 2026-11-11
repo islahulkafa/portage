@@ -14,7 +14,7 @@ class EglTest : public ::testing::Test {
         EGLint major = 0, minor = 0;
         ASSERT_EQ(eglInitialize(display_, &major, &minor), EGL_TRUE);
         EXPECT_EQ(major, 1);
-        EXPECT_EQ(minor, 4);
+        EXPECT_EQ(minor, 5);
     }
 
     void TearDown() override

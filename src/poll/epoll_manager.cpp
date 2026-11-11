@@ -129,6 +129,44 @@ int EpollManager::Wait(int epfd, LinuxEpollEvent *events, int maxevents, int tim
             }
         }
 
+        if (desc->dev == fs::DeviceType::EventFd && desc->eventfd) {
+            uint32_t revents = 0;
+            {
+                std::lock_guard<std::mutex> ev_lock(desc->eventfd->mutex);
+                if (desc->eventfd->counter > 0 && (item.events & LINUX_EPOLLIN)) {
+                    revents |= LINUX_EPOLLIN;
+                }
+                if (desc->eventfd->counter < 0xFFFFFFFFFFFFFFFFULL - 1 &&
+                    (item.events & LINUX_EPOLLOUT)) {
+                    revents |= LINUX_EPOLLOUT;
+                }
+            }
+            if (revents != 0) {
+                events[ready_count].events = revents;
+                events[ready_count].data = item.data;
+                ready_count++;
+                continue;
+            }
+        }
+
+        if (desc->dev == fs::DeviceType::TimerFd && desc->timerfd) {
+            if (desc->timerfd->IsReady() && (item.events & LINUX_EPOLLIN)) {
+                events[ready_count].events = LINUX_EPOLLIN;
+                events[ready_count].data = item.data;
+                ready_count++;
+                continue;
+            }
+        }
+
+        if (desc->dev == fs::DeviceType::SyncFence && desc->sync_fence) {
+            if (desc->sync_fence->IsSignaled() && (item.events & LINUX_EPOLLIN)) {
+                events[ready_count].events = LINUX_EPOLLIN;
+                events[ready_count].data = item.data;
+                ready_count++;
+                continue;
+            }
+        }
+
         if (desc->dev == fs::DeviceType::Pipe && desc->handle != INVALID_HANDLE_VALUE) {
             DWORD avail = 0;
             if (PeekNamedPipe(desc->handle, nullptr, 0, nullptr, &avail, nullptr)) {
@@ -179,6 +217,38 @@ int EpollManager::Wait(int epfd, LinuxEpollEvent *events, int maxevents, int tim
                             ready_count++;
                         }
                     }
+                    if (desc->dev == fs::DeviceType::EventFd && desc->eventfd) {
+                        uint32_t revents = 0;
+                        {
+                            std::lock_guard<std::mutex> ev_lock(desc->eventfd->mutex);
+                            if (desc->eventfd->counter > 0 && (item.events & LINUX_EPOLLIN)) {
+                                revents |= LINUX_EPOLLIN;
+                            }
+                            if (desc->eventfd->counter < 0xFFFFFFFFFFFFFFFFULL - 1 &&
+                                (item.events & LINUX_EPOLLOUT)) {
+                                revents |= LINUX_EPOLLOUT;
+                            }
+                        }
+                        if (revents != 0) {
+                            events[ready_count].events = revents;
+                            events[ready_count].data = item.data;
+                            ready_count++;
+                        }
+                    }
+                    if (desc->dev == fs::DeviceType::TimerFd && desc->timerfd) {
+                        if (desc->timerfd->IsReady() && (item.events & LINUX_EPOLLIN)) {
+                            events[ready_count].events = LINUX_EPOLLIN;
+                            events[ready_count].data = item.data;
+                            ready_count++;
+                        }
+                    }
+                    if (desc->dev == fs::DeviceType::SyncFence && desc->sync_fence) {
+                        if (desc->sync_fence->IsSignaled() && (item.events & LINUX_EPOLLIN)) {
+                            events[ready_count].events = LINUX_EPOLLIN;
+                            events[ready_count].data = item.data;
+                            ready_count++;
+                        }
+                    }
                 }
                 if (ready_count > 0)
                     return ready_count;
@@ -189,7 +259,7 @@ int EpollManager::Wait(int epfd, LinuxEpollEvent *events, int maxevents, int tim
                     if (elapsed >= timeout_ms)
                         break;
                 }
-                Sleep(5);
+                Sleep(1);
             }
         }
         return 0;
@@ -254,7 +324,8 @@ int EpollManager::Poll(LinuxPollFd *fds, size_t nfds, int timeout_ms,
         auto desc = fd_table->Get(fd);
         if (!desc ||
             (desc->dev != fs::DeviceType::InputEvent0 && desc->dev != fs::DeviceType::InputEvent1 &&
-             desc->handle == INVALID_HANDLE_VALUE)) {
+             desc->dev != fs::DeviceType::EventFd && desc->dev != fs::DeviceType::TimerFd &&
+             desc->dev != fs::DeviceType::SyncFence && desc->handle == INVALID_HANDLE_VALUE)) {
             fds[i].revents = LINUX_POLLNVAL;
             ready_count++;
             continue;
@@ -264,6 +335,41 @@ int EpollManager::Poll(LinuxPollFd *fds, size_t nfds, int timeout_ms,
             int dev_idx = (desc->dev == fs::DeviceType::InputEvent0) ? 0 : 1;
             if (input::InputManager::Instance().HasEvents(dev_idx) &&
                 (fds[i].events & LINUX_POLLIN)) {
+                fds[i].revents |= LINUX_POLLIN;
+                ready_count++;
+            }
+            continue;
+        }
+
+        if (desc->dev == fs::DeviceType::EventFd && desc->eventfd) {
+            int16_t revents = 0;
+            {
+                std::lock_guard<std::mutex> ev_lock(desc->eventfd->mutex);
+                if (desc->eventfd->counter > 0 && (fds[i].events & LINUX_POLLIN)) {
+                    revents |= LINUX_POLLIN;
+                }
+                if (desc->eventfd->counter < 0xFFFFFFFFFFFFFFFFULL - 1 &&
+                    (fds[i].events & LINUX_POLLOUT)) {
+                    revents |= LINUX_POLLOUT;
+                }
+            }
+            if (revents != 0) {
+                fds[i].revents |= revents;
+                ready_count++;
+            }
+            continue;
+        }
+
+        if (desc->dev == fs::DeviceType::TimerFd && desc->timerfd) {
+            if (desc->timerfd->IsReady() && (fds[i].events & LINUX_POLLIN)) {
+                fds[i].revents |= LINUX_POLLIN;
+                ready_count++;
+            }
+            continue;
+        }
+
+        if (desc->dev == fs::DeviceType::SyncFence && desc->sync_fence) {
+            if (desc->sync_fence->IsSignaled() && (fds[i].events & LINUX_POLLIN)) {
                 fds[i].revents |= LINUX_POLLIN;
                 ready_count++;
             }
@@ -320,6 +426,35 @@ int EpollManager::Poll(LinuxPollFd *fds, size_t nfds, int timeout_ms,
                             ready_count++;
                         }
                     }
+                    if (desc->dev == fs::DeviceType::EventFd && desc->eventfd) {
+                        int16_t revents = 0;
+                        {
+                            std::lock_guard<std::mutex> ev_lock(desc->eventfd->mutex);
+                            if (desc->eventfd->counter > 0 && (fds[i].events & LINUX_POLLIN)) {
+                                revents |= LINUX_POLLIN;
+                            }
+                            if (desc->eventfd->counter < 0xFFFFFFFFFFFFFFFFULL - 1 &&
+                                (fds[i].events & LINUX_POLLOUT)) {
+                                revents |= LINUX_POLLOUT;
+                            }
+                        }
+                        if (revents != 0) {
+                            fds[i].revents |= revents;
+                            ready_count++;
+                        }
+                    }
+                    if (desc->dev == fs::DeviceType::TimerFd && desc->timerfd) {
+                        if (desc->timerfd->IsReady() && (fds[i].events & LINUX_POLLIN)) {
+                            fds[i].revents |= LINUX_POLLIN;
+                            ready_count++;
+                        }
+                    }
+                    if (desc->dev == fs::DeviceType::SyncFence && desc->sync_fence) {
+                        if (desc->sync_fence->IsSignaled() && (fds[i].events & LINUX_POLLIN)) {
+                            fds[i].revents |= LINUX_POLLIN;
+                            ready_count++;
+                        }
+                    }
                 }
                 if (ready_count > 0)
                     return ready_count;
@@ -330,7 +465,7 @@ int EpollManager::Poll(LinuxPollFd *fds, size_t nfds, int timeout_ms,
                     if (elapsed >= timeout_ms)
                         break;
                 }
-                Sleep(5);
+                Sleep(1);
             }
         }
         return 0;

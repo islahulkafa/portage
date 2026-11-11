@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
 namespace portage::elf {
 
@@ -161,11 +162,19 @@ constexpr int64_t DT_INIT_ARRAYSZ = 27;
 constexpr int64_t DT_FINI_ARRAYSZ = 28;
 constexpr int64_t DT_RUNPATH = 29;
 constexpr int64_t DT_FLAGS = 30;
+constexpr int64_t DT_FLAGS_1 = 0x6ffffffb;
+constexpr int64_t DT_GNU_HASH = 0x6ffffef5;
+constexpr int64_t DT_TLSDESC_PLT = 0x6ffffef6;
+constexpr int64_t DT_TLSDESC_GOT = 0x6ffffef7;
+
+constexpr uint64_t DF_BIND_NOW = 0x8;
+constexpr uint64_t DF_1_NOW = 0x1;
 
 constexpr int RTLD_LAZY = 1;
 constexpr int RTLD_NOW = 2;
 constexpr int RTLD_LOCAL = 0;
 constexpr int RTLD_GLOBAL = 0x00100;
+constexpr int RTLD_NODELETE = 0x01000;
 inline void *const RTLD_DEFAULT = reinterpret_cast<void *>(0);
 inline void *const RTLD_NEXT = reinterpret_cast<void *>(-1);
 
@@ -176,11 +185,88 @@ struct Dl_info {
     void *dli_saddr;
 };
 
+struct dl_phdr_info {
+    Elf64_Addr dlpi_addr;
+    const char *dlpi_name;
+    const Elf64_Phdr *dlpi_phdr;
+    Elf64_Half dlpi_phnum;
+    unsigned long long int dlpi_adds;
+    unsigned long long int dlpi_subs;
+    size_t dlpi_tls_modid;
+    void *dlpi_tls_data;
+};
+
+struct TlsIndex {
+    uint64_t ti_module;
+    uint64_t ti_offset;
+};
+
+struct tlsdesc {
+    uintptr_t (*entry)(tlsdesc *);
+    void *arg;
+};
+
+struct tlsdesc_dynamic_arg {
+    size_t gen_count;
+    TlsIndex ti;
+};
+
+struct link_map_raw {
+    Elf64_Addr l_addr;
+    char *l_name;
+    void *l_ld;
+    link_map_raw *l_next;
+    link_map_raw *l_prev;
+};
+
+constexpr int RTLD_DI_LMID = 1;
+constexpr int RTLD_DI_LINKMAP = 2;
+constexpr int RTLD_DI_CONFIGADDR = 3;
+constexpr int RTLD_DI_SERINFO = 4;
+constexpr int RTLD_DI_SERINFOSIZE = 5;
+constexpr int RTLD_DI_ORIGIN = 6;
+constexpr int RTLD_DI_PROFILENAME = 7;
+constexpr int RTLD_DI_PROFILEOUT = 8;
+constexpr int RTLD_DI_TLS_MODID = 9;
+constexpr int RTLD_DI_TLS_DATA = 10;
+
+constexpr uint64_t ANDROID_DLEXT_RESERVED_ADDRESS = 0x1;
+constexpr uint64_t ANDROID_DLEXT_RESERVED_ADDRESS_HINT = 0x2;
+constexpr uint64_t ANDROID_DLEXT_WRITE_RELRO = 0x4;
+constexpr uint64_t ANDROID_DLEXT_USE_RELRO = 0x8;
+constexpr uint64_t ANDROID_DLEXT_USE_LIBRARY_FD = 0x10;
+constexpr uint64_t ANDROID_DLEXT_USE_LIBRARY_FD_OFFSET = 0x20;
+constexpr uint64_t ANDROID_DLEXT_FORCE_LOAD = 0x40;
+constexpr uint64_t ANDROID_DLEXT_USE_NAMESPACE = 0x200;
+
+struct android_dlextinfo {
+    uint64_t flags;
+    void *reserved_addr;
+    size_t reserved_size;
+    int relro_fd;
+    int library_fd;
+    int64_t library_fd_offset;
+    void *library_namespace;
+};
+
+constexpr uint16_t SHN_UNDEF = 0;
+constexpr unsigned char STT_NOTYPE = 0;
+constexpr unsigned char STT_OBJECT = 1;
+constexpr unsigned char STT_FUNC = 2;
+constexpr unsigned char STT_TLS = 6;
+inline unsigned char ELF64_ST_TYPE(unsigned char i) { return static_cast<unsigned char>(i & 0xf); }
+
 constexpr uint32_t R_X86_64_NONE = 0;
 constexpr uint32_t R_X86_64_64 = 1;
+constexpr uint32_t R_X86_64_COPY = 5;
 constexpr uint32_t R_X86_64_GLOB_DAT = 6;
 constexpr uint32_t R_X86_64_JUMP_SLOT = 7;
 constexpr uint32_t R_X86_64_RELATIVE = 8;
+constexpr uint32_t R_X86_64_DTPMOD64 = 16;
+constexpr uint32_t R_X86_64_DTPOFF64 = 17;
+constexpr uint32_t R_X86_64_TPOFF64 = 18;
+constexpr uint32_t R_X86_64_TLSDESC = 36;
+constexpr uint32_t R_X86_64_IRELATIVE = 37;
 
 struct Elf64_Dyn {
     Elf64_Sxword d_tag;
@@ -198,5 +284,21 @@ struct Elf64_Rela {
 
 inline uint32_t ELF64_R_SYM(uint64_t i) { return static_cast<uint32_t>(i >> 32); }
 inline uint32_t ELF64_R_TYPE(uint64_t i) { return static_cast<uint32_t>(i & 0xffffffff); }
+
+struct Elf64_GnuHashHeader {
+    uint32_t nbuckets;
+    uint32_t symoffset;
+    uint32_t bloom_size;
+    uint32_t bloom_shift;
+};
+
+inline uint32_t ElfGnuHash(std::string_view name) noexcept
+{
+    uint32_t h = 5381;
+    for (unsigned char c : name) {
+        h = (h << 5) + h + c;
+    }
+    return h;
+}
 
 } // namespace portage::elf

@@ -4,11 +4,249 @@
 #include "fs/fd_table.hpp"
 #include "audio/audio_manager.hpp"
 #include "binder/binder_driver.hpp"
+#include "gles/wgl_bridge.hpp"
 #include "poll/epoll_manager.hpp"
 #include <windows.h>
 #include <winsock2.h>
 
 namespace portage::fs {
+
+TimerFdState::~TimerFdState()
+{
+    if (timer_handle && timer_handle != INVALID_HANDLE_VALUE) {
+        CloseHandle(timer_handle);
+        timer_handle = nullptr;
+    }
+    if (wake_event && wake_event != INVALID_HANDLE_VALUE) {
+        CloseHandle(wake_event);
+        wake_event = nullptr;
+    }
+}
+
+SyncFenceState::~SyncFenceState()
+{
+    if (wake_event && wake_event != INVALID_HANDLE_VALUE) {
+        CloseHandle(wake_event);
+        wake_event = nullptr;
+    }
+}
+
+bool SyncFenceState::IsSignaled() noexcept
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    if (signaled) {
+        return true;
+    }
+    if (wake_event && wake_event != INVALID_HANDLE_VALUE &&
+        WaitForSingleObject(wake_event, 0) == WAIT_OBJECT_0) {
+        signaled = true;
+        return true;
+    }
+    if (gl_sync) {
+        const auto &tbl = gles::WglBridge::Instance().GetDispatchTable();
+        if (tbl.glClientWaitSync) {
+            const ::GLenum status =
+                tbl.glClientWaitSync(static_cast<::GLsync>(gl_sync), 0, 0);
+            if (status == ::GL_ALREADY_SIGNALED || status == ::GL_CONDITION_SATISFIED) {
+                signaled = true;
+                if (wake_event && wake_event != INVALID_HANDLE_VALUE) {
+                    SetEvent(wake_event);
+                }
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void SyncFenceState::Signal() noexcept
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    signaled = true;
+    if (wake_event && wake_event != INVALID_HANDLE_VALUE) {
+        SetEvent(wake_event);
+    }
+}
+
+void TimerFdState::ArmWaitableTimerLocked(std::chrono::nanoseconds delay)
+{
+    if (!timer_handle || timer_handle == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    int64_t ns = delay.count();
+    if (ns <= 0) {
+        ns = 100;
+    }
+    LARGE_INTEGER due_time;
+    due_time.QuadPart = -static_cast<int64_t>((ns + 99) / 100);
+    SetWaitableTimer(timer_handle, &due_time, 0, nullptr, nullptr, FALSE);
+}
+
+uint64_t TimerFdState::RefreshExpirationsLocked(bool force_signaled)
+{
+    if (!armed) {
+        return counter;
+    }
+
+    auto now = std::chrono::steady_clock::now();
+    bool signaled = force_signaled ||
+                    (timer_handle && timer_handle != INVALID_HANDLE_VALUE &&
+                     WaitForSingleObject(timer_handle, 0) == WAIT_OBJECT_0);
+
+    if (now >= next_expiration) {
+        if (interval_ns > 0) {
+            auto diff =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(now - next_expiration).count();
+            uint64_t periods = 1 + static_cast<uint64_t>(diff / interval_ns);
+            counter += periods;
+            next_expiration +=
+                std::chrono::nanoseconds(static_cast<int64_t>(periods) * interval_ns);
+            ArmWaitableTimerLocked(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(next_expiration - now));
+        } else {
+            counter += 1;
+            armed = false;
+            if (timer_handle && timer_handle != INVALID_HANDLE_VALUE) {
+                CancelWaitableTimer(timer_handle);
+            }
+        }
+    } else if (signaled) {
+        if (interval_ns > 0) {
+            counter += 1;
+            next_expiration += std::chrono::nanoseconds(interval_ns);
+            auto rem =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(next_expiration - now);
+            ArmWaitableTimerLocked(rem);
+        } else {
+            counter += 1;
+            armed = false;
+        }
+    }
+
+    return counter;
+}
+
+bool TimerFdState::IsReady()
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    return RefreshExpirationsLocked() > 0;
+}
+
+void TimerFdState::GetTime(int64_t &out_value_ns, int64_t &out_interval_ns)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    RefreshExpirationsLocked();
+    out_interval_ns = interval_ns;
+    if (!armed) {
+        out_value_ns = 0;
+    } else {
+        auto now = std::chrono::steady_clock::now();
+        auto rem =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(next_expiration - now).count();
+        out_value_ns = (rem > 0) ? rem : 0;
+    }
+}
+
+void TimerFdState::SetTime(bool arm, std::chrono::steady_clock::time_point target_tp,
+                           int64_t new_interval_ns, int64_t *old_value_ns,
+                           int64_t *old_interval_ns)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    if (old_value_ns || old_interval_ns) {
+        RefreshExpirationsLocked();
+        if (old_interval_ns) {
+            *old_interval_ns = interval_ns;
+        }
+        if (old_value_ns) {
+            if (!armed) {
+                *old_value_ns = 0;
+            } else {
+                auto now = std::chrono::steady_clock::now();
+                auto rem = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               next_expiration - now)
+                               .count();
+                *old_value_ns = (rem > 0) ? rem : 0;
+            }
+        }
+    }
+
+    counter = 0;
+    generation++;
+    interval_ns = new_interval_ns;
+
+    if (!arm) {
+        armed = false;
+        if (timer_handle && timer_handle != INVALID_HANDLE_VALUE) {
+            CancelWaitableTimer(timer_handle);
+        }
+    } else {
+        armed = true;
+        next_expiration = target_tp;
+        auto now = std::chrono::steady_clock::now();
+        if (now >= next_expiration) {
+            RefreshExpirationsLocked();
+        } else {
+            ArmWaitableTimerLocked(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(next_expiration - now));
+        }
+    }
+
+    if (wake_event && wake_event != INVALID_HANDLE_VALUE) {
+        SetEvent(wake_event);
+    }
+}
+
+int64_t TimerFdState::ReadExpirations(bool nonblock, uint64_t &out_expirations)
+{
+    while (true) {
+        HANDLE th = nullptr;
+        HANDLE we = nullptr;
+        uint64_t saved_gen = 0;
+
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            uint64_t cur = RefreshExpirationsLocked();
+            if (cur > 0) {
+                out_expirations = cur;
+                counter = 0;
+                return 0;
+            }
+            if (nonblock) {
+                return -11; // -EAGAIN
+            }
+            th = timer_handle;
+            we = wake_event;
+            saved_gen = generation;
+        }
+
+        HANDLE handles[2] = {th, we};
+        DWORD num_handles = 0;
+        if (th && th != INVALID_HANDLE_VALUE) {
+            handles[num_handles++] = th;
+        }
+        if (we && we != INVALID_HANDLE_VALUE) {
+            handles[num_handles++] = we;
+        }
+
+        if (num_handles > 0) {
+            DWORD wait_res = WaitForMultipleObjects(num_handles, handles, FALSE, INFINITE);
+            if (wait_res == WAIT_OBJECT_0 && th && th != INVALID_HANDLE_VALUE &&
+                handles[0] == th) {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (generation == saved_gen) {
+                    uint64_t cur = RefreshExpirationsLocked(true);
+                    if (cur > 0) {
+                        out_expirations = cur;
+                        counter = 0;
+                        return 0;
+                    }
+                }
+            }
+        } else {
+            Sleep(1);
+        }
+    }
+}
 
 FileDescriptorTable::FileDescriptorTable()
 {
@@ -266,6 +504,94 @@ int FileDescriptorTable::AllocateSharedMemory(std::shared_ptr<portage::mem::Shar
     return assigned_fd;
 }
 
+int FileDescriptorTable::AllocateEventFd(uint64_t initval, bool is_semaphore, int flags)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    int assigned_fd = m_next_fd++;
+    while (m_descriptors.contains(assigned_fd)) {
+        assigned_fd = m_next_fd++;
+    }
+
+    auto desc = std::make_shared<FileDescriptor>();
+    desc->fd = assigned_fd;
+    desc->handle = INVALID_HANDLE_VALUE;
+    desc->flags = flags;
+    desc->dev = DeviceType::EventFd;
+    desc->is_pipe_or_console = false;
+
+    auto ev_state = std::make_shared<EventFdState>();
+    ev_state->counter = initval;
+    ev_state->is_semaphore = is_semaphore;
+    desc->eventfd = std::move(ev_state);
+
+    m_descriptors[assigned_fd] = std::move(desc);
+    return assigned_fd;
+}
+
+int FileDescriptorTable::AllocateTimerFd(int clockid, int flags)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    int assigned_fd = m_next_fd++;
+    while (m_descriptors.contains(assigned_fd)) {
+        assigned_fd = m_next_fd++;
+    }
+
+    auto desc = std::make_shared<FileDescriptor>();
+    desc->fd = assigned_fd;
+    desc->handle = INVALID_HANDLE_VALUE;
+    desc->flags = flags;
+    desc->dev = DeviceType::TimerFd;
+    desc->is_pipe_or_console = false;
+
+    auto tfd_state = std::make_shared<TimerFdState>();
+    tfd_state->clockid = clockid;
+    tfd_state->flags = flags;
+    constexpr DWORD kCreateWaitableTimerHighResolution = 0x00000002;
+    tfd_state->timer_handle = CreateWaitableTimerExW(
+        nullptr, nullptr, kCreateWaitableTimerHighResolution, TIMER_ALL_ACCESS);
+    if (!tfd_state->timer_handle) {
+        tfd_state->timer_handle = CreateWaitableTimerW(nullptr, FALSE, nullptr);
+    }
+    tfd_state->wake_event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    desc->timerfd = std::move(tfd_state);
+
+    m_descriptors[assigned_fd] = std::move(desc);
+    return assigned_fd;
+}
+
+int FileDescriptorTable::AllocateSyncFence(void *gl_sync, HANDLE wake_event, bool signaled,
+                                           int flags)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    int assigned_fd = m_next_fd++;
+    while (m_descriptors.contains(assigned_fd)) {
+        assigned_fd = m_next_fd++;
+    }
+
+    auto desc = std::make_shared<FileDescriptor>();
+    desc->fd = assigned_fd;
+    desc->handle = INVALID_HANDLE_VALUE;
+    desc->flags = flags;
+    desc->dev = DeviceType::SyncFence;
+    desc->is_pipe_or_console = false;
+
+    auto fence_state = std::make_shared<SyncFenceState>();
+    fence_state->gl_sync = gl_sync;
+    fence_state->signaled = signaled;
+    if (wake_event && wake_event != INVALID_HANDLE_VALUE) {
+        fence_state->wake_event = wake_event;
+        if (signaled) {
+            SetEvent(fence_state->wake_event);
+        }
+    } else {
+        fence_state->wake_event = CreateEventW(nullptr, TRUE, signaled ? TRUE : FALSE, nullptr);
+    }
+    desc->sync_fence = std::move(fence_state);
+
+    m_descriptors[assigned_fd] = std::move(desc);
+    return assigned_fd;
+}
+
 int FileDescriptorTable::CreatePipe(int fds[2], int flags)
 {
     if (!fds) {
@@ -356,6 +682,64 @@ int FileDescriptorTable::Close(int fd)
     return 0;
 }
 
+int FileDescriptorTable::CloseRange(unsigned int first, unsigned int last, unsigned int flags)
+{
+    if (first > last) {
+        return -22; // -EINVAL
+    }
+    constexpr unsigned int valid_flags = 0x2 /* CLOSE_RANGE_UNSHARE */ | 0x4 /* CLOSE_RANGE_CLOEXEC */;
+    if ((flags & ~valid_flags) != 0) {
+        return -22; // -EINVAL
+    }
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    if (flags & 0x4 /* CLOSE_RANGE_CLOEXEC */) {
+        for (auto &[fd, desc] : m_descriptors) {
+            if (static_cast<unsigned int>(fd) >= first && static_cast<unsigned int>(fd) <= last) {
+                if (desc) {
+                    desc->flags |= 02000000; // LINUX_O_CLOEXEC
+                }
+            }
+        }
+        return 0;
+    }
+
+    std::vector<int> to_close;
+    for (const auto &[fd, desc] : m_descriptors) {
+        if (static_cast<unsigned int>(fd) >= first && static_cast<unsigned int>(fd) <= last) {
+            to_close.push_back(fd);
+        }
+    }
+
+    for (int fd : to_close) {
+        auto it = m_descriptors.find(fd);
+        if (it != m_descriptors.end()) {
+            auto desc = it->second;
+            m_descriptors.erase(it);
+            if (desc) {
+                if (desc->dev == DeviceType::Socket) {
+                    if (desc->handle != INVALID_HANDLE_VALUE) {
+                        ::closesocket(reinterpret_cast<SOCKET>(desc->handle));
+                        desc->handle = INVALID_HANDLE_VALUE;
+                    }
+                } else if (desc->dev == DeviceType::Epoll) {
+                    poll::EpollManager::Instance().CloseInstance(desc->epoll_id);
+                } else if (desc->dev == DeviceType::Binder || desc->dev == DeviceType::HwBinder) {
+                    binder::BinderDriver::Instance().CloseInstance(desc->binder_id);
+                } else if (desc->dev == DeviceType::AlsaPcm) {
+                    audio::AudioManager::Instance().CloseStream();
+                } else if (fd > 2 && desc->handle != INVALID_HANDLE_VALUE) {
+                    CloseHandle(desc->handle);
+                    desc->handle = INVALID_HANDLE_VALUE;
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
 int FileDescriptorTable::Duplicate(int oldfd, int target_fd, int flags)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -417,9 +801,26 @@ int FileDescriptorTable::Duplicate(int oldfd, int target_fd, int flags)
     new_desc->binder_id = old_desc->binder_id;
     new_desc->input_device_index = old_desc->input_device_index;
     new_desc->shared_memory = old_desc->shared_memory;
+    new_desc->eventfd = old_desc->eventfd;
+    new_desc->timerfd = old_desc->timerfd;
+    new_desc->sync_fence = old_desc->sync_fence;
 
     m_descriptors[assigned_fd] = std::move(new_desc);
     return assigned_fd;
+}
+
+std::vector<int> FileDescriptorTable::GetOpenFds()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<int> fds;
+    fds.reserve(m_descriptors.size());
+    for (const auto &[fd, desc] : m_descriptors) {
+        if (desc) {
+            fds.push_back(fd);
+        }
+    }
+    std::sort(fds.begin(), fds.end());
+    return fds;
 }
 
 void FileDescriptorTable::CloseOnExec()

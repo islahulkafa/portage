@@ -10,8 +10,15 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 namespace portage::thread {
+
+struct ThreadAtExitEntry {
+    __attribute__((sysv_abi)) void (*dtor)(void *){nullptr};
+    void *obj{nullptr};
+    void *dso_handle{nullptr};
+};
 
 constexpr uint64_t LINUX_CLONE_VM = 0x00000100;
 constexpr uint64_t LINUX_CLONE_FS = 0x00000200;
@@ -30,10 +37,16 @@ struct GuestThread {
     HANDLE win32_handle{INVALID_HANDLE_VALUE};
     DWORD win32_thread_id{0};
     uintptr_t child_stack{0};
+    uintptr_t stack_limit{0};
+    size_t stack_size{8 * 1024 * 1024};
     uintptr_t tcb{0};
     uintptr_t clear_child_tid{0};
     uint64_t sigmask{0};
     std::atomic<uint64_t> sigpending{0};
+    uintptr_t robust_list_head{0};
+    size_t robust_list_len{0};
+    std::vector<ThreadAtExitEntry> thread_atexit_entries;
+    std::string name{"portage"};
     bool is_exited{false};
     int exit_code{0};
 };
@@ -49,10 +62,23 @@ class ThreadManager {
 
     void OnThreadExit(int tid, int exit_code) noexcept;
 
+    int RegisterThreadAtExit(__attribute__((sysv_abi)) void (*dtor)(void *), void *obj,
+                             void *dso_handle) noexcept;
+    void RunCurrentThreadAtExit() noexcept;
+
     void SetClearChildTid(int tid, uintptr_t ctid_ptr) noexcept;
+    void SetCurrentThreadTcb(uintptr_t tcb) noexcept;
+    void SetCurrentThreadStack(uintptr_t stack_limit, size_t stack_size) noexcept;
 
     [[nodiscard]] std::shared_ptr<GuestThread> GetThread(int tid) noexcept;
     [[nodiscard]] std::shared_ptr<GuestThread> GetCurrentGuestThread() noexcept;
+    [[nodiscard]] std::shared_ptr<GuestThread> ResolvePthreadHandle(uintptr_t handle) noexcept;
+    [[nodiscard]] std::vector<int> GetActiveTids() const noexcept;
+
+    int SetThreadName(uintptr_t pthread_handle, std::string_view name) noexcept;
+    int GetThreadName(uintptr_t pthread_handle, char *buf, size_t len) noexcept;
+    bool GetThreadStack(uintptr_t pthread_handle, void **stack_addr, size_t *stack_size) noexcept;
+    [[nodiscard]] uintptr_t GetCurrentPthreadHandle() noexcept;
 
     int GetCurrentTid() noexcept;
 

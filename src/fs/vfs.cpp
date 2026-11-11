@@ -1,4 +1,5 @@
 #include "fs/vfs.hpp"
+#include "fs/proc_fs.hpp"
 #include "package/package_manager.hpp"
 
 #include <algorithm>
@@ -281,11 +282,21 @@ ResolvedPath Vfs::Resolve(std::string_view guest_path) const
         }
     }
 
-    if (normalized == "/proc" || normalized == "/proc/self") {
-        return {DeviceType::Directory, normalized};
-    }
-    if (normalized.starts_with("/proc/")) {
-        return {DeviceType::SyntheticProc, normalized};
+    if (ProcFs::IsProcPath(normalized)) {
+        std::string canon = ProcFs::CanonicalizePath(normalized);
+        if (canon == "/proc/self/exe") {
+            return {DeviceType::Regular, m_executable_path};
+        }
+        if (canon == "/proc" || canon == "/proc/self" || canon == "/proc/self/fd" ||
+            canon == "/proc/self/task" || canon == "/proc/sys" || canon == "/proc/sys/kernel" ||
+            canon == "/proc/sys/kernel/random" || canon == "/sys" || canon == "/sys/devices" ||
+            canon == "/sys/devices/system" || canon == "/sys/devices/system/cpu" ||
+            (canon.starts_with("/proc/self/task/") && canon.find('/', 16) == std::string::npos) ||
+            (canon.starts_with("/sys/devices/system/cpu/cpu") &&
+             canon.find('/', 24) == std::string::npos)) {
+            return {DeviceType::Directory, canon};
+        }
+        return {DeviceType::SyntheticProc, canon};
     }
 
     if (!m_rootfs.empty() && normalized.starts_with('/')) {

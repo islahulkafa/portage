@@ -72,6 +72,7 @@ bool WglBridge::Initialize() noexcept
     table_.glDeleteTextures = LoadProc<PFN_glDeleteTextures>(opengl_module_, "glDeleteTextures");
     table_.glTexImage2D = LoadProc<PFN_glTexImage2D>(opengl_module_, "glTexImage2D");
     table_.glTexParameteri = LoadProc<PFN_glTexParameteri>(opengl_module_, "glTexParameteri");
+    table_.glPixelStorei = LoadProc<PFN_glPixelStorei>(opengl_module_, "glPixelStorei");
 
     // Register dummy window class for extension loading
     WNDCLASSA wc{};
@@ -190,6 +191,70 @@ bool WglBridge::Initialize() noexcept
         table_.glDeleteFramebuffers =
             reinterpret_cast<PFN_glDeleteFramebuffers>(load_fn("glDeleteFramebuffersEXT"));
     }
+
+    table_.wglSwapIntervalEXT =
+        reinterpret_cast<PFN_wglSwapIntervalEXT>(load_fn("wglSwapIntervalEXT"));
+
+    // Sync Fences
+    table_.glFenceSync = reinterpret_cast<PFN_glFenceSync>(load_fn("glFenceSync"));
+    table_.glIsSync = reinterpret_cast<PFN_glIsSync>(load_fn("glIsSync"));
+    table_.glDeleteSync = reinterpret_cast<PFN_glDeleteSync>(load_fn("glDeleteSync"));
+    table_.glClientWaitSync = reinterpret_cast<PFN_glClientWaitSync>(load_fn("glClientWaitSync"));
+    table_.glWaitSync = reinterpret_cast<PFN_glWaitSync>(load_fn("glWaitSync"));
+    table_.glGetSynciv = reinterpret_cast<PFN_glGetSynciv>(load_fn("glGetSynciv"));
+
+    // UBOs
+    table_.glBindBufferBase = reinterpret_cast<PFN_glBindBufferBase>(load_fn("glBindBufferBase"));
+    table_.glBindBufferRange = reinterpret_cast<PFN_glBindBufferRange>(load_fn("glBindBufferRange"));
+    table_.glGetUniformBlockIndex =
+        reinterpret_cast<PFN_glGetUniformBlockIndex>(load_fn("glGetUniformBlockIndex"));
+    table_.glUniformBlockBinding =
+        reinterpret_cast<PFN_glUniformBlockBinding>(load_fn("glUniformBlockBinding"));
+
+    // Instancing
+    table_.glDrawArraysInstanced =
+        reinterpret_cast<PFN_glDrawArraysInstanced>(load_fn("glDrawArraysInstanced"));
+    table_.glDrawElementsInstanced =
+        reinterpret_cast<PFN_glDrawElementsInstanced>(load_fn("glDrawElementsInstanced"));
+    table_.glVertexAttribDivisor =
+        reinterpret_cast<PFN_glVertexAttribDivisor>(load_fn("glVertexAttribDivisor"));
+
+    // Transform Feedback
+    table_.glGenTransformFeedbacks =
+        reinterpret_cast<PFN_glGenTransformFeedbacks>(load_fn("glGenTransformFeedbacks"));
+    table_.glBindTransformFeedback =
+        reinterpret_cast<PFN_glBindTransformFeedback>(load_fn("glBindTransformFeedback"));
+    table_.glBeginTransformFeedback =
+        reinterpret_cast<PFN_glBeginTransformFeedback>(load_fn("glBeginTransformFeedback"));
+    table_.glEndTransformFeedback =
+        reinterpret_cast<PFN_glEndTransformFeedback>(load_fn("glEndTransformFeedback"));
+    table_.glTransformFeedbackVaryings =
+        reinterpret_cast<PFN_glTransformFeedbackVaryings>(load_fn("glTransformFeedbackVaryings"));
+    table_.glDeleteTransformFeedbacks =
+        reinterpret_cast<PFN_glDeleteTransformFeedbacks>(load_fn("glDeleteTransformFeedbacks"));
+
+    // Sampler Objects
+    table_.glGenSamplers = reinterpret_cast<PFN_glGenSamplers>(load_fn("glGenSamplers"));
+    table_.glBindSampler = reinterpret_cast<PFN_glBindSampler>(load_fn("glBindSampler"));
+    table_.glSamplerParameteri =
+        reinterpret_cast<PFN_glSamplerParameteri>(load_fn("glSamplerParameteri"));
+    table_.glDeleteSamplers = reinterpret_cast<PFN_glDeleteSamplers>(load_fn("glDeleteSamplers"));
+
+    // Buffer Mapping
+    table_.glMapBufferRange = reinterpret_cast<PFN_glMapBufferRange>(load_fn("glMapBufferRange"));
+    table_.glUnmapBuffer = reinterpret_cast<PFN_glUnmapBuffer>(load_fn("glUnmapBuffer"));
+    table_.glFlushMappedBufferRange =
+        reinterpret_cast<PFN_glFlushMappedBufferRange>(load_fn("glFlushMappedBufferRange"));
+
+    // Texture Storage & 3D Textures
+    table_.glTexStorage2D = reinterpret_cast<PFN_glTexStorage2D>(load_fn("glTexStorage2D"));
+    table_.glTexStorage3D = reinterpret_cast<PFN_glTexStorage3D>(load_fn("glTexStorage3D"));
+    table_.glTexImage3D = reinterpret_cast<PFN_glTexImage3D>(load_fn("glTexImage3D"));
+    table_.glTexSubImage3D = reinterpret_cast<PFN_glTexSubImage3D>(load_fn("glTexSubImage3D"));
+
+    // Compute & Barriers
+    table_.glDispatchCompute = reinterpret_cast<PFN_glDispatchCompute>(load_fn("glDispatchCompute"));
+    table_.glMemoryBarrier = reinterpret_cast<PFN_glMemoryBarrier>(load_fn("glMemoryBarrier"));
 
     if (table_.wglMakeCurrent) {
         table_.wglMakeCurrent(nullptr, nullptr);

@@ -1,6 +1,7 @@
 #include "guest_context.hpp"
 #include "signal/signal_manager.hpp"
 #include "syscall/syscall_dispatcher.hpp"
+#include "thread/thread_manager.hpp"
 #include <algorithm>
 #include <cstring>
 #include <immintrin.h>
@@ -166,6 +167,14 @@ void SetActiveTcb(uintptr_t tcb) noexcept
     if (tcb != 0) {
         _writefsbase_u64(tcb);
     }
+}
+
+uintptr_t GetActiveTcb() noexcept
+{
+    if (t_active_tcb != 0) {
+        return t_active_tcb;
+    }
+    return _readfsbase_u64();
 }
 
 HostSavedContext *GetThreadHostContext() noexcept { return &t_host_ctx; }
@@ -338,6 +347,8 @@ int GuestContext::Run(void *entry_point, void *guest_rsp) noexcept
 
     uintptr_t g_stack_limit = reinterpret_cast<uintptr_t>(stack_base_);
     uintptr_t g_stack_base = g_stack_limit + stack_size_;
+
+    thread::ThreadManager::Instance().SetCurrentThreadStack(g_stack_limit, stack_size_);
 
     __writegsqword(0x08, g_stack_base);
     __writegsqword(0x10, g_stack_limit);

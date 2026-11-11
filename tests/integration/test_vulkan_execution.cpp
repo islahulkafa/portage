@@ -100,3 +100,11 @@ TEST_F(VulkanExecutionFixture, RunsVulkanDeviceAndBufferOperations)
     int exit_code = ExecuteGuest(guest_path);
     EXPECT_EQ(exit_code, 0);
 }
+
+TEST_F(VulkanExecutionFixture, RunsGuestVulkanComputePipelineAndFence)
+{
+    stdfs::path guest_path = FindGuestBinary("test_vulkan_compute_guest.elf");
+    ASSERT_TRUE(stdfs::exists(guest_path)) << "Guest binary not found at: " << guest_path;
+    int exit_code = ExecuteGuest(guest_path);
+    EXPECT_EQ(exit_code, 0);
+}

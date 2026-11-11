@@ -115,4 +115,45 @@ __attribute__((sysv_abi)) int32_t ASharedMemory_create(const char *name, size_t 
 __attribute__((sysv_abi)) size_t ASharedMemory_getSize(int fd);
 __attribute__((sysv_abi)) int32_t ASharedMemory_setProt(int fd, int prot);
 __attribute__((sysv_abi)) int32_t ASharedMemory_dup(int fd);
+
+__attribute__((sysv_abi)) int android_get_device_api_level();
+__attribute__((sysv_abi)) int android_get_application_target_sdk_version();
+
+struct BionicPthreadAttr {
+    uint32_t flags{0};
+    void *stack_base{nullptr};
+    size_t stack_size{0};
+    size_t guard_size{0};
+    int32_t sched_policy{0};
+    int32_t sched_priority{0};
+    char reserved[16]{};
+};
+
+__attribute__((sysv_abi)) uintptr_t portage_pthread_self() noexcept;
+__attribute__((sysv_abi)) int portage_pthread_equal(uintptr_t t1, uintptr_t t2) noexcept;
+__attribute__((sysv_abi)) int portage_pthread_setname_np(uintptr_t thread, const char *name) noexcept;
+__attribute__((sysv_abi)) int portage_pthread_getname_np(uintptr_t thread, char *buf,
+                                                        size_t len) noexcept;
+__attribute__((sysv_abi)) int portage_pthread_getattr_np(uintptr_t thread,
+                                                        BionicPthreadAttr *attr) noexcept;
+__attribute__((sysv_abi)) int portage_pthread_attr_init(BionicPthreadAttr *attr) noexcept;
+__attribute__((sysv_abi)) int portage_pthread_attr_destroy(BionicPthreadAttr *attr) noexcept;
+__attribute__((sysv_abi)) int portage_pthread_attr_getstack(const BionicPthreadAttr *attr,
+                                                            void **stackaddr,
+                                                            size_t *stacksize) noexcept;
+__attribute__((sysv_abi)) int portage_pthread_attr_setstack(BionicPthreadAttr *attr,
+                                                            void *stackaddr,
+                                                            size_t stacksize) noexcept;
+__attribute__((sysv_abi)) int portage_pthread_attr_getstacksize(const BionicPthreadAttr *attr,
+                                                                size_t *stacksize) noexcept;
+__attribute__((sysv_abi)) int portage_pthread_attr_setstacksize(BionicPthreadAttr *attr,
+                                                                size_t stacksize) noexcept;
+__attribute__((sysv_abi)) int portage_pthread_attr_getguardsize(const BionicPthreadAttr *attr,
+                                                                size_t *guardsize) noexcept;
+__attribute__((sysv_abi)) int portage_pthread_attr_setguardsize(BionicPthreadAttr *attr,
+                                                                size_t guardsize) noexcept;
+__attribute__((sysv_abi)) int portage_pthread_attr_getdetachstate(const BionicPthreadAttr *attr,
+                                                                  int *detachstate) noexcept;
+__attribute__((sysv_abi)) int portage_pthread_attr_setdetachstate(BionicPthreadAttr *attr,
+                                                                  int detachstate) noexcept;
 }

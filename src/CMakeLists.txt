@@ -67,6 +67,7 @@ add_library(portage_core STATIC
     ndk/thermal.cpp
     ndk/performance_hint.cpp
     ndk/swappy.cpp
+    ndk/atrace.cpp
     ndk/libandroid_thunks.cpp
     media/media_format.cpp
     media/media_extractor.cpp

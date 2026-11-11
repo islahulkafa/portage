@@ -29,10 +29,13 @@
 #include "ndk/storage_manager.hpp"
 #include "ndk/swappy.hpp"
 #include "ndk/thermal.hpp"
+#include "ndk/atrace.hpp"
 #include "package/asset_manager.hpp"
 #include "package/jni_env.hpp"
 #include "package/package_manager.hpp"
+#include "property/property_manager.hpp"
 #include "syscall/syscall_dispatcher.hpp"
+#include "thread/thread_manager.hpp"
 #include "wsi/window_manager.hpp"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -346,8 +349,25 @@ void NdkSymbolRegistry::RegisterAll()
     Register("eglGetCurrentSurface", reinterpret_cast<uintptr_t>(&eglGetCurrentSurface));
     Register("eglGetCurrentDisplay", reinterpret_cast<uintptr_t>(&eglGetCurrentDisplay));
     Register("eglSwapBuffers", reinterpret_cast<uintptr_t>(&eglSwapBuffers));
+    Register("eglSwapInterval", reinterpret_cast<uintptr_t>(&eglSwapInterval));
     Register("eglGetError", reinterpret_cast<uintptr_t>(&eglGetError));
     Register("eglGetProcAddress", reinterpret_cast<uintptr_t>(&eglGetProcAddress));
+    Register("eglGetNativeClientBufferANDROID",
+             reinterpret_cast<uintptr_t>(&eglGetNativeClientBufferANDROID));
+    Register("eglCreateImageKHR", reinterpret_cast<uintptr_t>(&eglCreateImageKHR));
+    Register("eglDestroyImageKHR", reinterpret_cast<uintptr_t>(&eglDestroyImageKHR));
+    Register("eglCreateSync", reinterpret_cast<uintptr_t>(&eglCreateSync));
+    Register("eglDestroySync", reinterpret_cast<uintptr_t>(&eglDestroySync));
+    Register("eglClientWaitSync", reinterpret_cast<uintptr_t>(&eglClientWaitSync));
+    Register("eglWaitSync", reinterpret_cast<uintptr_t>(&eglWaitSync));
+    Register("eglGetSyncAttrib", reinterpret_cast<uintptr_t>(&eglGetSyncAttrib));
+    Register("eglCreateSyncKHR", reinterpret_cast<uintptr_t>(&eglCreateSyncKHR));
+    Register("eglDestroySyncKHR", reinterpret_cast<uintptr_t>(&eglDestroySyncKHR));
+    Register("eglClientWaitSyncKHR", reinterpret_cast<uintptr_t>(&eglClientWaitSyncKHR));
+    Register("eglWaitSyncKHR", reinterpret_cast<uintptr_t>(&eglWaitSyncKHR));
+    Register("eglGetSyncAttribKHR", reinterpret_cast<uintptr_t>(&eglGetSyncAttribKHR));
+    Register("eglDupNativeFenceFDANDROID",
+             reinterpret_cast<uintptr_t>(&eglDupNativeFenceFDANDROID));
 
     // OpenGL ES 2.0 / 3.0
     Register("glCreateShader", reinterpret_cast<uintptr_t>(&glCreateShader));
@@ -402,6 +422,43 @@ void NdkSymbolRegistry::RegisterAll()
     Register("glGetError", reinterpret_cast<uintptr_t>(&glGetError));
     Register("glGetString", reinterpret_cast<uintptr_t>(&glGetString));
     Register("glReadPixels", reinterpret_cast<uintptr_t>(&glReadPixels));
+    Register("glEGLImageTargetTexture2DOES",
+             reinterpret_cast<uintptr_t>(&glEGLImageTargetTexture2DOES));
+    Register("glFenceSync", reinterpret_cast<uintptr_t>(&glFenceSync));
+    Register("glIsSync", reinterpret_cast<uintptr_t>(&glIsSync));
+    Register("glDeleteSync", reinterpret_cast<uintptr_t>(&glDeleteSync));
+    Register("glClientWaitSync", reinterpret_cast<uintptr_t>(&glClientWaitSync));
+    Register("glWaitSync", reinterpret_cast<uintptr_t>(&glWaitSync));
+    Register("glGetSynciv", reinterpret_cast<uintptr_t>(&glGetSynciv));
+    Register("glBindBufferBase", reinterpret_cast<uintptr_t>(&glBindBufferBase));
+    Register("glBindBufferRange", reinterpret_cast<uintptr_t>(&glBindBufferRange));
+    Register("glGetUniformBlockIndex", reinterpret_cast<uintptr_t>(&glGetUniformBlockIndex));
+    Register("glUniformBlockBinding", reinterpret_cast<uintptr_t>(&glUniformBlockBinding));
+    Register("glDrawArraysInstanced", reinterpret_cast<uintptr_t>(&glDrawArraysInstanced));
+    Register("glDrawElementsInstanced", reinterpret_cast<uintptr_t>(&glDrawElementsInstanced));
+    Register("glVertexAttribDivisor", reinterpret_cast<uintptr_t>(&glVertexAttribDivisor));
+    Register("glGenTransformFeedbacks", reinterpret_cast<uintptr_t>(&glGenTransformFeedbacks));
+    Register("glBindTransformFeedback", reinterpret_cast<uintptr_t>(&glBindTransformFeedback));
+    Register("glBeginTransformFeedback", reinterpret_cast<uintptr_t>(&glBeginTransformFeedback));
+    Register("glEndTransformFeedback", reinterpret_cast<uintptr_t>(&glEndTransformFeedback));
+    Register("glTransformFeedbackVaryings",
+             reinterpret_cast<uintptr_t>(&glTransformFeedbackVaryings));
+    Register("glDeleteTransformFeedbacks",
+             reinterpret_cast<uintptr_t>(&glDeleteTransformFeedbacks));
+    Register("glGenSamplers", reinterpret_cast<uintptr_t>(&glGenSamplers));
+    Register("glBindSampler", reinterpret_cast<uintptr_t>(&glBindSampler));
+    Register("glSamplerParameteri", reinterpret_cast<uintptr_t>(&glSamplerParameteri));
+    Register("glDeleteSamplers", reinterpret_cast<uintptr_t>(&glDeleteSamplers));
+    Register("glMapBufferRange", reinterpret_cast<uintptr_t>(&glMapBufferRange));
+    Register("glUnmapBuffer", reinterpret_cast<uintptr_t>(&glUnmapBuffer));
+    Register("glFlushMappedBufferRange", reinterpret_cast<uintptr_t>(&glFlushMappedBufferRange));
+    Register("glPixelStorei", reinterpret_cast<uintptr_t>(&glPixelStorei));
+    Register("glTexStorage2D", reinterpret_cast<uintptr_t>(&glTexStorage2D));
+    Register("glTexStorage3D", reinterpret_cast<uintptr_t>(&glTexStorage3D));
+    Register("glTexImage3D", reinterpret_cast<uintptr_t>(&glTexImage3D));
+    Register("glTexSubImage3D", reinterpret_cast<uintptr_t>(&glTexSubImage3D));
+    Register("glDispatchCompute", reinterpret_cast<uintptr_t>(&glDispatchCompute));
+    Register("glMemoryBarrier", reinterpret_cast<uintptr_t>(&glMemoryBarrier));
 
     // AAudio
     Register("AAudio_createStreamBuilder",
@@ -699,9 +756,11 @@ void NdkSymbolRegistry::RegisterAll()
              reinterpret_cast<uintptr_t>(&ANotificationManager_cancelAll));
     Register("AToast_show", reinterpret_cast<uintptr_t>(&AToast_show));
 
-    // libdl
+    // libdl & Bionic runtime symbols
     Register("dlopen", reinterpret_cast<uintptr_t>(&dlopen));
     Register("__loader_dlopen", reinterpret_cast<uintptr_t>(&dlopen));
+    Register("android_dlopen_ext", reinterpret_cast<uintptr_t>(&android_dlopen_ext));
+    Register("__loader_android_dlopen_ext", reinterpret_cast<uintptr_t>(&android_dlopen_ext));
     Register("dlsym", reinterpret_cast<uintptr_t>(&dlsym));
     Register("__loader_dlsym", reinterpret_cast<uintptr_t>(&dlsym));
     Register("dlclose", reinterpret_cast<uintptr_t>(&dlclose));
@@ -710,6 +769,51 @@ void NdkSymbolRegistry::RegisterAll()
     Register("__loader_dlerror", reinterpret_cast<uintptr_t>(&dlerror));
     Register("dladdr", reinterpret_cast<uintptr_t>(&dladdr));
     Register("__loader_dladdr", reinterpret_cast<uintptr_t>(&dladdr));
+    Register("dlinfo", reinterpret_cast<uintptr_t>(&dlinfo));
+    Register("__loader_dlinfo", reinterpret_cast<uintptr_t>(&dlinfo));
+    Register("dl_iterate_phdr", reinterpret_cast<uintptr_t>(&dl_iterate_phdr));
+    Register("__loader_dl_iterate_phdr", reinterpret_cast<uintptr_t>(&dl_iterate_phdr));
+    Register("__tls_get_addr", reinterpret_cast<uintptr_t>(&__tls_get_addr));
+    Register("__cxa_atexit", reinterpret_cast<uintptr_t>(&portage_cxa_atexit));
+    Register("__cxa_finalize", reinterpret_cast<uintptr_t>(&portage_cxa_finalize));
+    Register("__cxa_thread_atexit_impl",
+             reinterpret_cast<uintptr_t>(&portage_cxa_thread_atexit_impl));
+    Register("atexit", reinterpret_cast<uintptr_t>(&portage_guest_atexit));
+    Register("android_get_device_api_level",
+             reinterpret_cast<uintptr_t>(&android_get_device_api_level));
+    Register("android_get_application_target_sdk_version",
+             reinterpret_cast<uintptr_t>(&android_get_application_target_sdk_version));
+
+    // Bionic pthread introspection & attribute APIs
+    Register("pthread_self", reinterpret_cast<uintptr_t>(&portage_pthread_self));
+    Register("pthread_equal", reinterpret_cast<uintptr_t>(&portage_pthread_equal));
+    Register("pthread_setname_np", reinterpret_cast<uintptr_t>(&portage_pthread_setname_np));
+    Register("pthread_getname_np", reinterpret_cast<uintptr_t>(&portage_pthread_getname_np));
+    Register("pthread_getattr_np", reinterpret_cast<uintptr_t>(&portage_pthread_getattr_np));
+    Register("pthread_attr_init", reinterpret_cast<uintptr_t>(&portage_pthread_attr_init));
+    Register("pthread_attr_destroy", reinterpret_cast<uintptr_t>(&portage_pthread_attr_destroy));
+    Register("pthread_attr_getstack", reinterpret_cast<uintptr_t>(&portage_pthread_attr_getstack));
+    Register("pthread_attr_setstack", reinterpret_cast<uintptr_t>(&portage_pthread_attr_setstack));
+    Register("pthread_attr_getstacksize",
+             reinterpret_cast<uintptr_t>(&portage_pthread_attr_getstacksize));
+    Register("pthread_attr_setstacksize",
+             reinterpret_cast<uintptr_t>(&portage_pthread_attr_setstacksize));
+    Register("pthread_attr_getguardsize",
+             reinterpret_cast<uintptr_t>(&portage_pthread_attr_getguardsize));
+    Register("pthread_attr_setguardsize",
+             reinterpret_cast<uintptr_t>(&portage_pthread_attr_setguardsize));
+    Register("pthread_attr_getdetachstate",
+             reinterpret_cast<uintptr_t>(&portage_pthread_attr_getdetachstate));
+    Register("pthread_attr_setdetachstate",
+             reinterpret_cast<uintptr_t>(&portage_pthread_attr_setdetachstate));
+
+    // ATrace
+    Register("ATrace_isEnabled", reinterpret_cast<uintptr_t>(&ATrace_isEnabled));
+    Register("ATrace_beginSection", reinterpret_cast<uintptr_t>(&ATrace_beginSection));
+    Register("ATrace_endSection", reinterpret_cast<uintptr_t>(&ATrace_endSection));
+    Register("ATrace_beginAsyncSection", reinterpret_cast<uintptr_t>(&ATrace_beginAsyncSection));
+    Register("ATrace_endAsyncSection", reinterpret_cast<uintptr_t>(&ATrace_endAsyncSection));
+    Register("ATrace_setCounter", reinterpret_cast<uintptr_t>(&ATrace_setCounter));
 
     // libjnigraphics
     Register("AndroidBitmap_getInfo", reinterpret_cast<uintptr_t>(&AndroidBitmap_getInfo));
@@ -1299,6 +1403,197 @@ __attribute__((sysv_abi)) int32_t ASharedMemory_dup(int fd)
         return -1;
     }
     return fd_table->Duplicate(fd);
+}
+
+__attribute__((sysv_abi)) int android_get_device_api_level()
+{
+    std::string val =
+        portage::property::PropertyManager::Instance().GetProperty("ro.build.version.sdk", "34");
+    if (!val.empty()) {
+        int parsed = 0;
+        bool ok = true;
+        for (char c : val) {
+            if (c < '0' || c > '9') {
+                ok = false;
+                break;
+            }
+            parsed = parsed * 10 + (c - '0');
+        }
+        if (ok && parsed > 0) {
+            return parsed;
+        }
+    }
+    return 34;
+}
+
+__attribute__((sysv_abi)) int android_get_application_target_sdk_version()
+{
+    const auto *pkg = portage::package::PackageManager::Instance().GetActivePackage();
+    if (pkg && pkg->manifest.target_sdk_version > 0) {
+        return pkg->manifest.target_sdk_version;
+    }
+    return 34;
+}
+
+__attribute__((sysv_abi)) uintptr_t portage_pthread_self() noexcept
+{
+    return portage::thread::ThreadManager::Instance().GetCurrentPthreadHandle();
+}
+
+__attribute__((sysv_abi)) int portage_pthread_equal(uintptr_t t1, uintptr_t t2) noexcept
+{
+    return (t1 == t2) ? 1 : 0;
+}
+
+__attribute__((sysv_abi)) int portage_pthread_setname_np(uintptr_t thread,
+                                                        const char *name) noexcept
+{
+    if (name == nullptr) {
+        return 22; // EINVAL
+    }
+    return portage::thread::ThreadManager::Instance().SetThreadName(thread, name);
+}
+
+__attribute__((sysv_abi)) int portage_pthread_getname_np(uintptr_t thread, char *buf,
+                                                        size_t len) noexcept
+{
+    return portage::thread::ThreadManager::Instance().GetThreadName(thread, buf, len);
+}
+
+__attribute__((sysv_abi)) int portage_pthread_attr_init(BionicPthreadAttr *attr) noexcept
+{
+    if (attr == nullptr) {
+        return 22; // EINVAL
+    }
+    *attr = BionicPthreadAttr{};
+    attr->flags = 0;
+    attr->stack_base = nullptr;
+    attr->stack_size = 1024 * 1024;
+    attr->guard_size = 4096;
+    attr->sched_policy = 0;
+    attr->sched_priority = 0;
+    return 0;
+}
+
+__attribute__((sysv_abi)) int portage_pthread_attr_destroy(BionicPthreadAttr *attr) noexcept
+{
+    if (attr == nullptr) {
+        return 22; // EINVAL
+    }
+    *attr = BionicPthreadAttr{};
+    return 0;
+}
+
+__attribute__((sysv_abi)) int portage_pthread_getattr_np(uintptr_t thread,
+                                                        BionicPthreadAttr *attr) noexcept
+{
+    if (attr == nullptr) {
+        return 22; // EINVAL
+    }
+    *attr = BionicPthreadAttr{};
+    attr->guard_size = 4096;
+    void *stack_addr = nullptr;
+    size_t stack_sz = 0;
+    if (!portage::thread::ThreadManager::Instance().GetThreadStack(thread, &stack_addr,
+                                                                   &stack_sz)) {
+        return 3; // ESRCH
+    }
+    attr->stack_base = stack_addr;
+    attr->stack_size = stack_sz;
+    return 0;
+}
+
+__attribute__((sysv_abi)) int portage_pthread_attr_getstack(const BionicPthreadAttr *attr,
+                                                            void **stackaddr,
+                                                            size_t *stacksize) noexcept
+{
+    if (attr == nullptr) {
+        return 22;
+    }
+    if (stackaddr != nullptr) {
+        *stackaddr = attr->stack_base;
+    }
+    if (stacksize != nullptr) {
+        *stacksize = attr->stack_size;
+    }
+    return 0;
+}
+
+__attribute__((sysv_abi)) int portage_pthread_attr_setstack(BionicPthreadAttr *attr,
+                                                            void *stackaddr,
+                                                            size_t stacksize) noexcept
+{
+    if (attr == nullptr || stacksize < 16384) {
+        return 22;
+    }
+    attr->stack_base = stackaddr;
+    attr->stack_size = stacksize;
+    attr->flags |= 0x2U;
+    return 0;
+}
+
+__attribute__((sysv_abi)) int portage_pthread_attr_getstacksize(const BionicPthreadAttr *attr,
+                                                                size_t *stacksize) noexcept
+{
+    if (attr == nullptr || stacksize == nullptr) {
+        return 22;
+    }
+    *stacksize = attr->stack_size;
+    return 0;
+}
+
+__attribute__((sysv_abi)) int portage_pthread_attr_setstacksize(BionicPthreadAttr *attr,
+                                                                size_t stacksize) noexcept
+{
+    if (attr == nullptr || stacksize < 16384) {
+        return 22;
+    }
+    attr->stack_size = stacksize;
+    return 0;
+}
+
+__attribute__((sysv_abi)) int portage_pthread_attr_getguardsize(const BionicPthreadAttr *attr,
+                                                                size_t *guardsize) noexcept
+{
+    if (attr == nullptr || guardsize == nullptr) {
+        return 22;
+    }
+    *guardsize = attr->guard_size;
+    return 0;
+}
+
+__attribute__((sysv_abi)) int portage_pthread_attr_setguardsize(BionicPthreadAttr *attr,
+                                                                size_t guardsize) noexcept
+{
+    if (attr == nullptr) {
+        return 22;
+    }
+    attr->guard_size = guardsize;
+    return 0;
+}
+
+__attribute__((sysv_abi)) int portage_pthread_attr_getdetachstate(const BionicPthreadAttr *attr,
+                                                                  int *detachstate) noexcept
+{
+    if (attr == nullptr || detachstate == nullptr) {
+        return 22;
+    }
+    *detachstate = (attr->flags & 0x1U) ? 1 : 0;
+    return 0;
+}
+
+__attribute__((sysv_abi)) int portage_pthread_attr_setdetachstate(BionicPthreadAttr *attr,
+                                                                  int detachstate) noexcept
+{
+    if (attr == nullptr || (detachstate != 0 && detachstate != 1)) {
+        return 22;
+    }
+    if (detachstate == 1) {
+        attr->flags |= 0x1U;
+    } else {
+        attr->flags &= ~0x1U;
+    }
+    return 0;
 }
 
 } // extern "C"

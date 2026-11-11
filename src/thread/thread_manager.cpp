@@ -1,6 +1,9 @@
 #include "thread/thread_manager.hpp"
 #include "arch/guest_context.hpp"
+#include "elf/link_map.hpp"
 #include "sync/futex.hpp"
+#include <algorithm>
+#include <cstring>
 #include <iostream>
 #include <synchapi.h>
 
@@ -86,6 +89,10 @@ int ThreadManager::RegisterMainThread() noexcept
     thread->tid = static_cast<int>(GetCurrentProcessId());
     thread->win32_handle = GetCurrentThread();
     thread->win32_thread_id = win32_tid;
+    uint64_t sb = __readgsqword(0x08);
+    uint64_t sl = __readgsqword(0x10);
+    thread->stack_limit = sl;
+    thread->stack_size = (sb > sl) ? static_cast<size_t>(sb - sl) : (8 * 1024 * 1024);
 
     m_threads[thread->tid] = thread;
     m_win32_to_tid[win32_tid] = thread->tid;
@@ -105,6 +112,9 @@ int ThreadManager::CreateGuestThread(uint64_t flags, uintptr_t child_stack,
     auto thread = std::make_shared<GuestThread>();
     thread->tid = assigned_tid;
     thread->child_stack = child_stack;
+    thread->stack_size = 8 * 1024 * 1024;
+    thread->stack_limit =
+        (child_stack > thread->stack_size) ? (child_stack - thread->stack_size) : 0x1000;
     thread->tcb = tls;
 
     auto *params = new ThreadStartParams{.tid = assigned_tid,
@@ -143,8 +153,87 @@ void ThreadManager::SetClearChildTid(int tid, uintptr_t ctid_ptr) noexcept
     }
 }
 
+int ThreadManager::RegisterThreadAtExit(__attribute__((sysv_abi)) void (*dtor)(void *), void *obj,
+                                        void *dso_handle) noexcept
+{
+    if (dtor == nullptr) {
+        return -1;
+    }
+
+    DWORD win32_tid = GetCurrentThreadId();
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_ptr<GuestThread> thread;
+    auto it = m_win32_to_tid.find(win32_tid);
+    if (it != m_win32_to_tid.end()) {
+        auto tit = m_threads.find(it->second);
+        if (tit != m_threads.end()) {
+            thread = tit->second;
+        }
+    }
+
+    if (!thread) {
+        int synthetic_tid = static_cast<int>(win32_tid);
+        thread = std::make_shared<GuestThread>();
+        thread->tid = synthetic_tid;
+        thread->win32_handle = GetCurrentThread();
+        thread->win32_thread_id = win32_tid;
+        m_threads[synthetic_tid] = thread;
+        m_win32_to_tid[win32_tid] = synthetic_tid;
+    }
+
+    thread->thread_atexit_entries.push_back(ThreadAtExitEntry{dtor, obj, dso_handle});
+    return 0;
+}
+
+void ThreadManager::RunCurrentThreadAtExit() noexcept
+{
+    int tid = GetCurrentTid();
+    while (true) {
+        ThreadAtExitEntry entry{};
+        bool has_entry = false;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto it = m_threads.find(tid);
+            if (it != m_threads.end() && !it->second->thread_atexit_entries.empty()) {
+                entry = it->second->thread_atexit_entries.back();
+                it->second->thread_atexit_entries.pop_back();
+                has_entry = true;
+            }
+        }
+        if (!has_entry) {
+            break;
+        }
+        if (entry.dtor != nullptr) {
+            entry.dtor(entry.obj);
+        }
+    }
+}
+
 void ThreadManager::OnThreadExit(int tid, int exit_code) noexcept
 {
+    while (true) {
+        ThreadAtExitEntry entry{};
+        bool has_entry = false;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto it = m_threads.find(tid);
+            if (it != m_threads.end() && !it->second->thread_atexit_entries.empty()) {
+                entry = it->second->thread_atexit_entries.back();
+                it->second->thread_atexit_entries.pop_back();
+                has_entry = true;
+            }
+        }
+        if (!has_entry) {
+            break;
+        }
+        if (entry.dtor != nullptr) {
+            entry.dtor(entry.obj);
+        }
+    }
+
+    RunCurrentThreadAtExit();
+    elf::LinkMap::Instance().CleanupCurrentThreadTls();
+
     uintptr_t clear_tid_ptr = 0;
     HANDLE hThread = INVALID_HANDLE_VALUE;
 
@@ -193,6 +282,20 @@ std::shared_ptr<GuestThread> ThreadManager::GetCurrentGuestThread() noexcept
     return nullptr;
 }
 
+std::vector<int> ThreadManager::GetActiveTids() const noexcept
+{
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex &>(m_mutex));
+    std::vector<int> tids;
+    tids.reserve(m_threads.size());
+    for (const auto &[tid, th] : m_threads) {
+        if (th && !th->is_exited) {
+            tids.push_back(tid);
+        }
+    }
+    std::sort(tids.begin(), tids.end());
+    return tids;
+}
+
 int ThreadManager::GetCurrentTid() noexcept
 {
     DWORD win32_tid = GetCurrentThreadId();
@@ -202,6 +305,152 @@ int ThreadManager::GetCurrentTid() noexcept
         return it->second;
     }
     return static_cast<int>(win32_tid);
+}
+
+void ThreadManager::SetCurrentThreadTcb(uintptr_t tcb) noexcept
+{
+    DWORD win32_tid = GetCurrentThreadId();
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_win32_to_tid.find(win32_tid);
+    if (it != m_win32_to_tid.end()) {
+        auto tit = m_threads.find(it->second);
+        if (tit != m_threads.end() && tit->second) {
+            tit->second->tcb = tcb;
+        }
+    }
+}
+
+void ThreadManager::SetCurrentThreadStack(uintptr_t stack_limit, size_t stack_size) noexcept
+{
+    DWORD win32_tid = GetCurrentThreadId();
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_win32_to_tid.find(win32_tid);
+    if (it != m_win32_to_tid.end()) {
+        auto tit = m_threads.find(it->second);
+        if (tit != m_threads.end() && tit->second) {
+            tit->second->stack_limit = stack_limit;
+            tit->second->stack_size = stack_size;
+        }
+    }
+}
+
+std::shared_ptr<GuestThread> ThreadManager::ResolvePthreadHandle(uintptr_t handle) noexcept
+{
+    DWORD win32_tid = GetCurrentThreadId();
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    auto get_or_register_current = [&]() -> std::shared_ptr<GuestThread> {
+        auto it = m_win32_to_tid.find(win32_tid);
+        if (it != m_win32_to_tid.end()) {
+            auto tit = m_threads.find(it->second);
+            if (tit != m_threads.end()) {
+                return tit->second;
+            }
+        }
+        int synthetic_tid = static_cast<int>(win32_tid);
+        auto thread = std::make_shared<GuestThread>();
+        thread->tid = synthetic_tid;
+        thread->win32_handle = GetCurrentThread();
+        thread->win32_thread_id = win32_tid;
+        uint64_t sb = __readgsqword(0x08);
+        uint64_t sl = __readgsqword(0x10);
+        thread->stack_limit = sl;
+        thread->stack_size = (sb > sl) ? static_cast<size_t>(sb - sl) : (8 * 1024 * 1024);
+        m_threads[synthetic_tid] = thread;
+        m_win32_to_tid[win32_tid] = synthetic_tid;
+        return thread;
+    };
+
+    if (handle == 0) {
+        return get_or_register_current();
+    }
+
+    for (const auto &[tid, th] : m_threads) {
+        if (th && ((th->tcb != 0 && th->tcb == handle) ||
+                   static_cast<uintptr_t>(th->tid) == handle)) {
+            return th;
+        }
+    }
+
+    uintptr_t active_tcb = arch::GetActiveTcb();
+    if (active_tcb != 0 && handle == active_tcb) {
+        return get_or_register_current();
+    }
+    if (handle == static_cast<uintptr_t>(win32_tid)) {
+        return get_or_register_current();
+    }
+
+    return nullptr;
+}
+
+uintptr_t ThreadManager::GetCurrentPthreadHandle() noexcept
+{
+    uintptr_t tcb = arch::GetActiveTcb();
+    if (tcb != 0) {
+        return tcb;
+    }
+    auto cur = GetCurrentGuestThread();
+    if (cur && cur->tcb != 0) {
+        return cur->tcb;
+    }
+    return static_cast<uintptr_t>(GetCurrentTid());
+}
+
+int ThreadManager::SetThreadName(uintptr_t pthread_handle, std::string_view name) noexcept
+{
+    constexpr size_t TASK_COMM_LEN = 16;
+    if (name.size() >= TASK_COMM_LEN) {
+        return 34; // ERANGE
+    }
+    auto thread = ResolvePthreadHandle(pthread_handle);
+    if (!thread) {
+        return 3; // ESRCH
+    }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    thread->name.assign(name.data(), name.size());
+    return 0;
+}
+
+int ThreadManager::GetThreadName(uintptr_t pthread_handle, char *buf, size_t len) noexcept
+{
+    if (buf == nullptr || len == 0) {
+        return 22; // EINVAL
+    }
+    auto thread = ResolvePthreadHandle(pthread_handle);
+    if (!thread) {
+        return 3; // ESRCH
+    }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (thread->name.size() + 1 > len) {
+        return 34; // ERANGE
+    }
+    std::memcpy(buf, thread->name.c_str(), thread->name.size() + 1);
+    return 0;
+}
+
+bool ThreadManager::GetThreadStack(uintptr_t pthread_handle, void **stack_addr,
+                                   size_t *stack_size) noexcept
+{
+    auto thread = ResolvePthreadHandle(pthread_handle);
+    if (!thread) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    uintptr_t sl = thread->stack_limit;
+    size_t sz = thread->stack_size;
+    if (sl == 0) {
+        uint64_t teb_base = __readgsqword(0x08);
+        uint64_t teb_limit = __readgsqword(0x10);
+        sl = teb_limit;
+        sz = (teb_base > teb_limit) ? static_cast<size_t>(teb_base - teb_limit) : sz;
+    }
+    if (stack_addr) {
+        *stack_addr = reinterpret_cast<void *>(sl);
+    }
+    if (stack_size) {
+        *stack_size = sz;
+    }
+    return true;
 }
 
 } // namespace portage::thread

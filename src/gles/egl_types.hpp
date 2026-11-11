@@ -14,6 +14,7 @@ using EGLNativeWindowType = void *;
 using EGLNativePixmapType = void *;
 using EGLenum = unsigned int;
 using EGLClientBuffer = void *;
+using EGLAttrib = intptr_t;
 
 // Boolean values
 inline constexpr EGLBoolean EGL_FALSE = 0;
@@ -108,5 +109,41 @@ inline constexpr EGLint EGL_CLIENT_APIS = 0x308D;
 
 // Android EGL Extensions
 inline constexpr EGLenum EGL_NATIVE_BUFFER_ANDROID = 0x3140;
+inline constexpr EGLenum EGL_GL_TEXTURE_2D_KHR = 0x30B1;
+inline constexpr EGLenum EGL_IMAGE_PRESERVED_KHR = 0x30D2;
 using EGLImageKHR = void *;
 inline constexpr EGLImageKHR EGL_NO_IMAGE_KHR = nullptr;
+
+// EGL 1.5 & Sync Fence Extensions
+using EGLSync = void *;
+using EGLSyncKHR = void *;
+using EGLTime = uint64_t;
+using EGLTimeKHR = uint64_t;
+inline constexpr EGLSync EGL_NO_SYNC = nullptr;
+inline constexpr EGLSyncKHR EGL_NO_SYNC_KHR = nullptr;
+inline constexpr EGLTime EGL_FOREVER = 0xFFFFFFFFFFFFFFFFULL;
+inline constexpr EGLTimeKHR EGL_FOREVER_KHR = 0xFFFFFFFFFFFFFFFFULL;
+inline constexpr EGLenum EGL_SYNC_FENCE = 0x30F9;
+inline constexpr EGLenum EGL_SYNC_FENCE_KHR = 0x30F9;
+inline constexpr EGLint EGL_SYNC_TYPE = 0x30F7;
+inline constexpr EGLint EGL_SYNC_STATUS = 0x30F1;
+inline constexpr EGLint EGL_SYNC_CONDITION = 0x30F8;
+inline constexpr EGLint EGL_SYNC_TYPE_KHR = 0x30F7;
+inline constexpr EGLint EGL_SYNC_STATUS_KHR = 0x30F1;
+inline constexpr EGLint EGL_SYNC_CONDITION_KHR = 0x30F8;
+inline constexpr EGLint EGL_SIGNALED = 0x30F2;
+inline constexpr EGLint EGL_UNSIGNALED = 0x30F3;
+inline constexpr EGLint EGL_SIGNALED_KHR = 0x30F2;
+inline constexpr EGLint EGL_UNSIGNALED_KHR = 0x30F3;
+inline constexpr EGLint EGL_SYNC_FLUSH_COMMANDS_BIT = 0x0001;
+inline constexpr EGLint EGL_SYNC_FLUSH_COMMANDS_BIT_KHR = 0x0001;
+inline constexpr EGLint EGL_TIMEOUT_EXPIRED = 0x30F5;
+inline constexpr EGLint EGL_CONDITION_SATISFIED = 0x30F6;
+inline constexpr EGLint EGL_TIMEOUT_EXPIRED_KHR = 0x30F5;
+inline constexpr EGLint EGL_CONDITION_SATISFIED_KHR = 0x30F6;
+inline constexpr EGLint EGL_SYNC_PRIOR_COMMANDS_COMPLETE = 0x30F0;
+
+inline constexpr EGLenum EGL_SYNC_NATIVE_FENCE_ANDROID = 0x3144;
+inline constexpr EGLint EGL_SYNC_NATIVE_FENCE_FD_ANDROID = 0x3145;
+inline constexpr EGLint EGL_SYNC_NATIVE_FENCE_SIGNALED_ANDROID = 0x3146;
+inline constexpr EGLint EGL_NO_NATIVE_FENCE_FD_ANDROID = -1;

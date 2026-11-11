@@ -60,6 +60,17 @@ set(UNIT_TEST_SOURCES
     unit/test_clipboard.cpp
     unit/test_power.cpp
     unit/test_notification.cpp
+    unit/test_syscall_coverage.cpp
+    unit/test_elf_relocations.cpp
+    unit/test_runtime_syscalls.cpp
+    unit/test_timerfd.cpp
+    unit/test_posix_batch2.cpp
+    unit/test_posix_batch3.cpp
+    unit/test_linker_hardening.cpp
+    unit/test_procfs_and_batch4.cpp
+    unit/test_modern_gles_and_sync.cpp
+    unit/test_vulkan_pipeline.cpp
+    unit/test_linker_extensions.cpp
 )
 
 set(INTEGRATION_TEST_SOURCES
@@ -76,6 +87,7 @@ set(INTEGRATION_TEST_SOURCES
     integration/test_property_execution.cpp
     integration/test_game_engine_execution.cpp
     integration/test_gles_execution.cpp
+    integration/test_bionic_runtime.cpp
 )
 
 add_executable(unit_tests ${UNIT_TEST_SOURCES})

@@ -76,7 +76,7 @@ TEST_F(LinkMapTest, LoadsLibraryAndExecutesConstructors)
 
     lm.AddSearchPath(math_path.parent_path().string());
 
-    void *handle = lm.DlOpen("libgame_math.so", elf::RTLD_NOW);
+    void *handle = lm.DlOpen("libgame_math.so", elf::RTLD_NOW | elf::RTLD_NODELETE);
     ASSERT_NE(handle, nullptr) << (lm.DlError() ? lm.DlError() : "unknown error");
 
     // Symbol lookup for constructor verification

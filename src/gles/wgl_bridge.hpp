@@ -91,6 +91,73 @@ using PFN_glTexImage2D = void(APIENTRY *)(GLenum target, GLint level, GLint inte
                                           GLsizei width, GLsizei height, GLint border,
                                           GLenum format, GLenum type, const void *pixels);
 using PFN_glTexParameteri = void(APIENTRY *)(GLenum target, GLenum pname, GLint param);
+using PFN_wglSwapIntervalEXT = BOOL(APIENTRY *)(int interval);
+
+// Sync Fences (GL 3.2 / ARB_sync)
+using PFN_glFenceSync = GLsync(APIENTRY *)(GLenum condition, GLbitfield flags);
+using PFN_glIsSync = GLboolean(APIENTRY *)(GLsync sync);
+using PFN_glDeleteSync = void(APIENTRY *)(GLsync sync);
+using PFN_glClientWaitSync = GLenum(APIENTRY *)(GLsync sync, GLbitfield flags, GLuint64 timeout);
+using PFN_glWaitSync = void(APIENTRY *)(GLsync sync, GLbitfield flags, GLuint64 timeout);
+using PFN_glGetSynciv = void(APIENTRY *)(GLsync sync, GLenum pname, GLsizei bufSize, GLsizei *length,
+                                         GLint *values);
+
+// Uniform Buffer Objects (GL 3.1 / ARB_uniform_buffer_object)
+using PFN_glBindBufferBase = void(APIENTRY *)(GLenum target, GLuint index, GLuint buffer);
+using PFN_glBindBufferRange = void(APIENTRY *)(GLenum target, GLuint index, GLuint buffer,
+                                               GLintptr offset, GLsizeiptr size);
+using PFN_glGetUniformBlockIndex = GLuint(APIENTRY *)(GLuint program, const char *uniformBlockName);
+using PFN_glUniformBlockBinding = void(APIENTRY *)(GLuint program, GLuint uniformBlockIndex,
+                                                   GLuint uniformBlockBinding);
+
+// Instanced Drawing (GL 3.1 / 3.3)
+using PFN_glDrawArraysInstanced = void(APIENTRY *)(GLenum mode, GLint first, GLsizei count,
+                                                   GLsizei instancecount);
+using PFN_glDrawElementsInstanced = void(APIENTRY *)(GLenum mode, GLsizei count, GLenum type,
+                                                     const void *indices, GLsizei instancecount);
+using PFN_glVertexAttribDivisor = void(APIENTRY *)(GLuint index, GLuint divisor);
+
+// Transform Feedback (GL 3.0 / 4.0)
+using PFN_glGenTransformFeedbacks = void(APIENTRY *)(GLsizei n, GLuint *ids);
+using PFN_glBindTransformFeedback = void(APIENTRY *)(GLenum target, GLuint id);
+using PFN_glBeginTransformFeedback = void(APIENTRY *)(GLenum primitiveMode);
+using PFN_glEndTransformFeedback = void(APIENTRY *)(void);
+using PFN_glTransformFeedbackVaryings = void(APIENTRY *)(GLuint program, GLsizei count,
+                                                         const char *const *varyings,
+                                                         GLenum bufferMode);
+using PFN_glDeleteTransformFeedbacks = void(APIENTRY *)(GLsizei n, const GLuint *ids);
+
+// Sampler Objects (GL 3.3 / ARB_sampler_objects)
+using PFN_glGenSamplers = void(APIENTRY *)(GLsizei count, GLuint *samplers);
+using PFN_glBindSampler = void(APIENTRY *)(GLuint unit, GLuint sampler);
+using PFN_glSamplerParameteri = void(APIENTRY *)(GLuint sampler, GLenum pname, GLint param);
+using PFN_glDeleteSamplers = void(APIENTRY *)(GLsizei count, const GLuint *samplers);
+
+// Buffer Mapping & Pixel Store
+using PFN_glMapBufferRange = void *(APIENTRY *)(GLenum target, GLintptr offset, GLsizeiptr length,
+                                                GLbitfield access);
+using PFN_glUnmapBuffer = GLboolean(APIENTRY *)(GLenum target);
+using PFN_glFlushMappedBufferRange = void(APIENTRY *)(GLenum target, GLintptr offset,
+                                                      GLsizeiptr length);
+using PFN_glPixelStorei = void(APIENTRY *)(GLenum pname, GLint param);
+
+// Texture Storage & 3D Textures
+using PFN_glTexStorage2D = void(APIENTRY *)(GLenum target, GLsizei levels, GLenum internalformat,
+                                            GLsizei width, GLsizei height);
+using PFN_glTexStorage3D = void(APIENTRY *)(GLenum target, GLsizei levels, GLenum internalformat,
+                                            GLsizei width, GLsizei height, GLsizei depth);
+using PFN_glTexImage3D = void(APIENTRY *)(GLenum target, GLint level, GLint internalformat,
+                                          GLsizei width, GLsizei height, GLsizei depth, GLint border,
+                                          GLenum format, GLenum type, const void *pixels);
+using PFN_glTexSubImage3D = void(APIENTRY *)(GLenum target, GLint level, GLint xoffset,
+                                             GLint yoffset, GLint zoffset, GLsizei width,
+                                             GLsizei height, GLsizei depth, GLenum format,
+                                             GLenum type, const void *pixels);
+
+// Compute Shaders & Memory Barriers (GL 4.3 / 4.2)
+using PFN_glDispatchCompute = void(APIENTRY *)(GLuint num_groups_x, GLuint num_groups_y,
+                                               GLuint num_groups_z);
+using PFN_glMemoryBarrier = void(APIENTRY *)(GLbitfield barriers);
 
 struct WglDispatchTable {
     // WGL
@@ -161,6 +228,56 @@ struct WglDispatchTable {
     PFN_glDeleteTextures glDeleteTextures{nullptr};
     PFN_glTexImage2D glTexImage2D{nullptr};
     PFN_glTexParameteri glTexParameteri{nullptr};
+    PFN_wglSwapIntervalEXT wglSwapIntervalEXT{nullptr};
+
+    // Sync Fences
+    PFN_glFenceSync glFenceSync{nullptr};
+    PFN_glIsSync glIsSync{nullptr};
+    PFN_glDeleteSync glDeleteSync{nullptr};
+    PFN_glClientWaitSync glClientWaitSync{nullptr};
+    PFN_glWaitSync glWaitSync{nullptr};
+    PFN_glGetSynciv glGetSynciv{nullptr};
+
+    // UBOs
+    PFN_glBindBufferBase glBindBufferBase{nullptr};
+    PFN_glBindBufferRange glBindBufferRange{nullptr};
+    PFN_glGetUniformBlockIndex glGetUniformBlockIndex{nullptr};
+    PFN_glUniformBlockBinding glUniformBlockBinding{nullptr};
+
+    // Instancing
+    PFN_glDrawArraysInstanced glDrawArraysInstanced{nullptr};
+    PFN_glDrawElementsInstanced glDrawElementsInstanced{nullptr};
+    PFN_glVertexAttribDivisor glVertexAttribDivisor{nullptr};
+
+    // Transform Feedback
+    PFN_glGenTransformFeedbacks glGenTransformFeedbacks{nullptr};
+    PFN_glBindTransformFeedback glBindTransformFeedback{nullptr};
+    PFN_glBeginTransformFeedback glBeginTransformFeedback{nullptr};
+    PFN_glEndTransformFeedback glEndTransformFeedback{nullptr};
+    PFN_glTransformFeedbackVaryings glTransformFeedbackVaryings{nullptr};
+    PFN_glDeleteTransformFeedbacks glDeleteTransformFeedbacks{nullptr};
+
+    // Sampler Objects
+    PFN_glGenSamplers glGenSamplers{nullptr};
+    PFN_glBindSampler glBindSampler{nullptr};
+    PFN_glSamplerParameteri glSamplerParameteri{nullptr};
+    PFN_glDeleteSamplers glDeleteSamplers{nullptr};
+
+    // Buffer Mapping & Pixel Store
+    PFN_glMapBufferRange glMapBufferRange{nullptr};
+    PFN_glUnmapBuffer glUnmapBuffer{nullptr};
+    PFN_glFlushMappedBufferRange glFlushMappedBufferRange{nullptr};
+    PFN_glPixelStorei glPixelStorei{nullptr};
+
+    // Texture Storage & 3D Textures
+    PFN_glTexStorage2D glTexStorage2D{nullptr};
+    PFN_glTexStorage3D glTexStorage3D{nullptr};
+    PFN_glTexImage3D glTexImage3D{nullptr};
+    PFN_glTexSubImage3D glTexSubImage3D{nullptr};
+
+    // Compute & Barriers
+    PFN_glDispatchCompute glDispatchCompute{nullptr};
+    PFN_glMemoryBarrier glMemoryBarrier{nullptr};
 };
 
 class WglBridge {
