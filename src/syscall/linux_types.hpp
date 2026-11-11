@@ -82,7 +82,7 @@ struct LinuxSchedParam {
 struct LinuxStatxTimestamp {
     int64_t tv_sec;
     uint32_t tv_nsec;
-    int32_t __reserved;
+    int32_t reserved;
 };
 
 struct LinuxStatx {

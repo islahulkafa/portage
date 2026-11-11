@@ -187,22 +187,23 @@ TEST_F(SensorTest, DispatchesLooperCallbackAndRespectsDisable)
     struct CallbackState {
         int call_count{0};
         ASensorEventQueue *queue{nullptr};
+
+        static int __attribute__((sysv_abi)) Callback(int fd, int events, void *data)
+        {
+            (void)fd;
+            (void)events;
+            auto *st = static_cast<CallbackState *>(data);
+            st->call_count++;
+            ASensorEvent ev[8];
+            ASensorEventQueue_getEvents(st->queue, ev, 8);
+            return 1;
+        }
     };
 
     CallbackState state{};
 
-    auto callback_func = +[](int fd, int events, void *data) __attribute__((sysv_abi)) -> int {
-        (void)fd;
-        (void)events;
-        auto *st = static_cast<CallbackState *>(data);
-        st->call_count++;
-        ASensorEvent ev[8];
-        ASensorEventQueue_getEvents(st->queue, ev, 8);
-        return 1;
-    };
-
     auto *queue =
-        ASensorManager_createEventQueue(mgr, looper, ALOOPER_POLL_CALLBACK, callback_func, &state);
+        ASensorManager_createEventQueue(mgr, looper, ALOOPER_POLL_CALLBACK, &CallbackState::Callback, &state);
     ASSERT_NE(queue, nullptr);
     state.queue = queue;
 
