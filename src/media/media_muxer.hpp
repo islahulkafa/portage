@@ -7,6 +7,11 @@
 #include <cstdint>
 #include <sys/types.h>
 
+#if defined(_WIN32) && !defined(_SSIZE_T_DEFINED)
+using ssize_t = std::ptrdiff_t;
+#define _SSIZE_T_DEFINED 1
+#endif
+
 enum OutputFormat {
     AMEDIAMUXER_OUTPUT_FORMAT_MPEG_4 = 0,
     AMEDIAMUXER_OUTPUT_FORMAT_WEBM = 1,

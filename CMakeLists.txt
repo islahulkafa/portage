@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
 project(portage CXX C)
 
+if(CMAKE_C_COMPILER_ID STREQUAL "MSVC" OR CMAKE_GENERATOR MATCHES "Visual Studio")
+    message(FATAL_ERROR "Portage requires Clang (clang/clang++) with the Ninja generator. Visual Studio / cl.exe is not supported because Portage requires __attribute__((sysv_abi)), -mfsgsbase, and Android x86_64 guest cross-compilation.\n\nPlease configure using:\n  cmake --preset debug\nor specify:\n  cmake -B <dir> -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++")
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -46,6 +50,7 @@ foreach(ndk_dir ${NDK_ROOT_CANDIDATES})
     endif()
 endforeach()
 
+include(cmake/CPM.cmake)
 include(cmake/CompilerWarnings.cmake)
 include(cmake/Dependencies.cmake)
 

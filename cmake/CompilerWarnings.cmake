@@ -6,4 +6,7 @@ target_compile_options(project_warnings INTERFACE
     -Wall
     -Wextra
     -Wpedantic
+    -Wno-language-extension-token
 )
+
+

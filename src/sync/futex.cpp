@@ -3,8 +3,11 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <synchapi.h>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#include <synchapi.h>
 
 namespace portage::sync {
 

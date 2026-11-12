@@ -8,6 +8,13 @@
 #include <iostream>
 #include <windows.h>
 
+#if defined(_MSC_VER) && !defined(__MINGW32__)
+extern "C" void __writegsqword(unsigned long offset, unsigned __int64 data)
+{
+    __asm__ volatile("movq %0, %%gs:(%1)" :: "r"(data), "r"(static_cast<uint64_t>(offset)) : "memory");
+}
+#endif
+
 namespace portage::arch {
 
 namespace {

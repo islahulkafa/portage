@@ -201,11 +201,14 @@ TEST_F(ChoreographerTest, SupportsLegacyCallbacksAndRegistersAllNdkSymbols)
         ASSERT_NE(ch, nullptr);
 
         int64_t recorded_ts = 0;
-        auto legacy_cb = +[](int64_t frame_time_nanos, void *data) __attribute__((sysv_abi)) {
-            *static_cast<int64_t *>(data) = frame_time_nanos;
+        struct FrameCallbackHelper {
+            static void __attribute__((sysv_abi)) Callback(int64_t frame_time_nanos, void *data)
+            {
+                *static_cast<int64_t *>(data) = frame_time_nanos;
+            }
         };
 
-        AChoreographer_postFrameCallback(ch, legacy_cb, &recorded_ts);
+        AChoreographer_postFrameCallback(ch, &FrameCallbackHelper::Callback, &recorded_ts);
         int res = ALooper_pollOnce(100, nullptr, nullptr, nullptr);
         EXPECT_EQ(res, ALOOPER_POLL_CALLBACK);
         EXPECT_GT(recorded_ts, 0);

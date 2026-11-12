@@ -92,6 +92,14 @@ if(VULKAN_INCLUDE_DIR)
     target_include_directories(portage_core PUBLIC ${VULKAN_INCLUDE_DIR})
 endif()
 
+target_compile_definitions(portage_core PUBLIC
+    _AMD64_
+    NOMINMAX
+    WIN32_LEAN_AND_MEAN
+    _CRT_SECURE_NO_WARNINGS
+    _CRT_NONSTDC_NO_WARNINGS
+)
+
 target_link_libraries(portage_core
     PUBLIC
         synchronization
