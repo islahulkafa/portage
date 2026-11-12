@@ -368,9 +368,14 @@ enum class JniObjectType {
     Class,
     String,
     DirectBuffer,
+    BooleanArray,
     ByteArray,
+    CharArray,
+    ShortArray,
     IntArray,
+    LongArray,
     FloatArray,
+    DoubleArray,
     ObjectArray,
     Context,
     Activity,
@@ -382,6 +387,13 @@ enum class JniObjectType {
     AssetManager,
     Bitmap,
     BitmapConfig,
+    Method,
+    Field,
+    Bundle,
+    Vibrator,
+    PackageInfo,
+    ApplicationInfo,
+    Point,
 };
 
 struct JniSyntheticObject {
@@ -400,10 +412,26 @@ struct JniSyntheticObject {
     jlong buffer_capacity{0};
     void *native_ptr{nullptr};
 
+    std::vector<uint8_t> bool_data;
     std::vector<int8_t> byte_data;
+    std::vector<uint16_t> char_data;
+    std::vector<int16_t> short_data;
     std::vector<int32_t> int_data;
+    std::vector<int64_t> long_data;
     std::vector<float> float_data;
+    std::vector<double> double_data;
     std::vector<jobject> object_data;
+
+    std::string member_name;
+    std::string signature;
+    std::string target_class;
+    bool is_static{false};
+    jmethodID method_id{nullptr};
+    jfieldID field_id{nullptr};
+
+    std::unordered_map<std::string, std::string> bundle_strings;
+    std::unordered_map<std::string, int32_t> bundle_ints;
+    std::unordered_map<std::string, bool> bundle_bools;
 
     uint32_t bitmap_width{0};
     uint32_t bitmap_height{0};

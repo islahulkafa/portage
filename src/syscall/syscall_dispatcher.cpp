@@ -41,6 +41,106 @@ void SignalGuestExit(int code) noexcept;
 
 namespace portage::syscall {
 
+namespace {
+
+constexpr int LINUX_SIGEV_SIGNAL = 0;
+constexpr int LINUX_SIGEV_NONE = 1;
+constexpr int LINUX_SIGEV_THREAD = 2;
+
+struct LinuxSigevent {
+    int32_t sigev_value_int;
+    int32_t sigev_signo;
+    int32_t sigev_notify;
+    int32_t __pad[13];
+};
+
+struct PosixTimerEntry {
+    int timer_id{0};
+    int target_tid{0};
+    int signo{signal::LINUX_SIGALRM};
+    int notify{LINUX_SIGEV_NONE};
+    std::atomic<int> overrun{0};
+    HANDLE win_timer{nullptr};
+    HANDLE stop_event{nullptr};
+    HANDLE worker_thread{nullptr};
+    std::atomic<bool> active{false};
+    LinuxItimerspec current_value{};
+};
+
+static DWORD WINAPI PosixTimerWorker(void *arg)
+{
+    auto *entry = static_cast<PosixTimerEntry *>(arg);
+    HANDLE wait_handles[2] = {entry->stop_event, entry->win_timer};
+    while (entry->active.load(std::memory_order_relaxed)) {
+        DWORD res = WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE);
+        if (res == WAIT_OBJECT_0) {
+            break;
+        }
+        if (res == WAIT_OBJECT_0 + 1) {
+            if (!entry->active.load(std::memory_order_relaxed)) {
+                break;
+            }
+            int target_tid = entry->target_tid;
+            auto th = thread::ThreadManager::Instance().GetThread(target_tid);
+            if (!th) {
+                th = thread::ThreadManager::Instance().GetCurrentGuestThread();
+            }
+            if (th) {
+                th->sigpending.fetch_or(1ULL << entry->signo, std::memory_order_relaxed);
+            }
+        } else {
+            break;
+        }
+    }
+    return 0;
+}
+
+struct PosixTimerTable {
+    std::mutex mtx;
+    std::unordered_map<int, std::unique_ptr<PosixTimerEntry>> timers;
+    int next_id{1};
+
+    static PosixTimerTable &Instance()
+    {
+        static PosixTimerTable inst;
+        return inst;
+    }
+
+    void Reset()
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        for (auto &[id, entry] : timers) {
+            if (!entry) {
+                continue;
+            }
+            entry->active.store(false, std::memory_order_relaxed);
+            if (entry->stop_event) {
+                SetEvent(entry->stop_event);
+            }
+            if (entry->win_timer) {
+                CancelWaitableTimer(entry->win_timer);
+            }
+            if (entry->worker_thread) {
+                WaitForSingleObject(entry->worker_thread, 200);
+                CloseHandle(entry->worker_thread);
+                entry->worker_thread = nullptr;
+            }
+            if (entry->stop_event) {
+                CloseHandle(entry->stop_event);
+                entry->stop_event = nullptr;
+            }
+            if (entry->win_timer) {
+                CloseHandle(entry->win_timer);
+                entry->win_timer = nullptr;
+            }
+        }
+        timers.clear();
+        next_id = 1;
+    }
+};
+
+} // namespace
+
 mem::AddressSpace *SyscallDispatcher::address_space_ = nullptr;
 fs::Vfs *SyscallDispatcher::vfs_ = nullptr;
 fs::FileDescriptorTable *SyscallDispatcher::fd_table_ = nullptr;
@@ -65,6 +165,7 @@ void SyscallDispatcher::Initialize(mem::AddressSpace *as, fs::Vfs *vfs,
 
 void SyscallDispatcher::Shutdown() noexcept
 {
+    PosixTimerTable::Instance().Reset();
     property::PropertyManager::Instance().Reset();
     address_space_ = nullptr;
     vfs_ = nullptr;
@@ -299,6 +400,57 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 } else {
                     std::memcpy(buf, &expirations, sizeof(uint64_t));
                     ret = static_cast<int64_t>(sizeof(uint64_t));
+                }
+                break;
+            }
+
+            if (desc->dev == fs::DeviceType::Signalfd) {
+                if (count < sizeof(signal::LinuxSignalfdSiginfo)) {
+                    ret = LINUX_EINVAL;
+                    break;
+                }
+                if (!desc->signalfd) {
+                    ret = LINUX_EBADF;
+                    break;
+                }
+                bool nonblock = (desc->flags & LINUX_O_NONBLOCK) != 0;
+                uint64_t mask = desc->signalfd->mask;
+                size_t max_records = count / sizeof(signal::LinuxSignalfdSiginfo);
+                size_t written_records = 0;
+                auto *out_arr = static_cast<signal::LinuxSignalfdSiginfo *>(buf);
+
+                while (written_records < max_records) {
+                    signal::LinuxSiginfo info{};
+                    int sig = 0;
+                    if (written_records == 0 && !nonblock) {
+                        sig = signal::SignalManager::Instance().TimedWait(0, mask, &info, -1);
+                        if (sig < 0) {
+                            ret = sig;
+                            break;
+                        }
+                    } else {
+                        sig = signal::SignalManager::Instance().DequeueSignal(0, mask, &info);
+                        if (sig <= 0) {
+                            break;
+                        }
+                    }
+
+                    signal::LinuxSignalfdSiginfo ssi{};
+                    ssi.ssi_signo = static_cast<uint32_t>(info.si_signo);
+                    ssi.ssi_errno = info.si_errno;
+                    ssi.ssi_code = info.si_code;
+                    ssi.ssi_pid = static_cast<uint32_t>(info._sifields.rt.si_pid);
+                    ssi.ssi_uid = info._sifields.rt.si_uid;
+                    ssi.ssi_int = info._sifields.rt.si_sigval.sival_int;
+                    ssi.ssi_ptr = reinterpret_cast<uint64_t>(info._sifields.rt.si_sigval.sival_ptr);
+                    ssi.ssi_addr = info._sifields.sigfault.si_addr;
+                    out_arr[written_records++] = ssi;
+                }
+
+                if (written_records > 0) {
+                    ret = static_cast<int64_t>(written_records * sizeof(signal::LinuxSignalfdSiginfo));
+                } else {
+                    ret = LINUX_EAGAIN;
                 }
                 break;
             }
@@ -1161,6 +1313,56 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             } else {
                 ret = LINUX_EIO;
             }
+        }
+        break;
+    }
+
+    case 18: { // sys_pwrite64(fd, buf, count, offset)
+        int fd = static_cast<int>(a1);
+        const void *buf = reinterpret_cast<const void *>(a2);
+        size_t count = static_cast<size_t>(a3);
+        uint64_t offset = a4;
+
+        if (!buf) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+
+        if (!fd_table_) {
+            ret = LINUX_EBADF;
+            break;
+        }
+
+        auto desc = fd_table_->Get(fd);
+        if (!desc) {
+            ret = LINUX_EBADF;
+            break;
+        }
+
+        if (desc->dev == fs::DeviceType::DevNull || desc->dev == fs::DeviceType::DevZero) {
+            ret = static_cast<int64_t>(count);
+            break;
+        }
+
+        if (desc->dev == fs::DeviceType::SyntheticProc || desc->dev == fs::DeviceType::Directory) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+
+        if (desc->handle == INVALID_HANDLE_VALUE) {
+            ret = LINUX_EBADF;
+            break;
+        }
+
+        OVERLAPPED ov{};
+        ov.Offset = static_cast<DWORD>(offset & 0xFFFFFFFF);
+        ov.OffsetHigh = static_cast<DWORD>((offset >> 32) & 0xFFFFFFFF);
+
+        DWORD written = 0;
+        if (WriteFile(desc->handle, buf, static_cast<DWORD>(count), &written, &ov)) {
+            ret = static_cast<int64_t>(written);
+        } else {
+            ret = LINUX_EIO;
         }
         break;
     }
@@ -2066,7 +2268,9 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
     }
 
     case 62: { // sys_kill(pid, sig)
-        ret = 0;
+        int pid = static_cast<int>(a1);
+        int sig = static_cast<int>(a2);
+        ret = signal::SignalManager::Instance().SendSignal(pid, 0, sig);
         break;
     }
 
@@ -2301,6 +2505,9 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             break;
         }
         if (desc->dev == fs::DeviceType::Regular) {
+            if (vfs_ && !desc->guest_path.empty()) {
+                vfs_->SetMode(desc->guest_path, mode);
+            }
             std::vector<wchar_t> path_buf(MAX_PATH);
             DWORD len = GetFinalPathNameByHandleW(desc->handle, path_buf.data(),
                                                   static_cast<DWORD>(path_buf.size()),
@@ -2455,6 +2662,95 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         break;
     }
 
+    case 112: { // sys_setsid()
+        ret = static_cast<int64_t>(GetCurrentProcessId());
+        break;
+    }
+
+    case 121: { // sys_getpgid(pid)
+        ret = static_cast<int64_t>(GetCurrentProcessId());
+        break;
+    }
+
+    case 125: { // sys_capget(header, data)
+        if (a2) {
+            std::memset(reinterpret_cast<void *>(a2), 0, 24);
+        }
+        ret = 0;
+        break;
+    }
+
+    case 126: { // sys_capset(header, data)
+        ret = 0;
+        break;
+    }
+
+    case 128: { // sys_rt_sigtimedwait(uthese, uinfo, uts, sigsetsize)
+        const uint64_t *uthese = reinterpret_cast<const uint64_t *>(a1);
+        auto *uinfo = reinterpret_cast<signal::LinuxSiginfo *>(a2);
+        const auto *uts = reinterpret_cast<const LinuxTimespec *>(a3);
+        size_t sigsetsize = static_cast<size_t>(a4);
+
+        if (!uthese) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+        if (sigsetsize != sizeof(uint64_t)) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+
+        int64_t timeout_ns = -1;
+        if (uts) {
+            if (uts->tv_sec < 0 || uts->tv_nsec < 0 || uts->tv_nsec >= 1'000'000'000LL) {
+                ret = LINUX_EINVAL;
+                break;
+            }
+            timeout_ns = uts->tv_sec * 1'000'000'000LL + uts->tv_nsec;
+        }
+
+        int tid = thread::ThreadManager::Instance().GetCurrentTid();
+        ret = signal::SignalManager::Instance().TimedWait(tid, *uthese, uinfo, timeout_ns);
+        break;
+    }
+
+    case 129: { // sys_rt_sigqueueinfo(tgid, sig, uinfo)
+        int tgid = static_cast<int>(a1);
+        int sig = static_cast<int>(a2);
+        const auto *uinfo = reinterpret_cast<const signal::LinuxSiginfo *>(a3);
+        ret = signal::SignalManager::Instance().SendSignal(tgid, 0, sig, uinfo);
+        break;
+    }
+
+    case 130: { // sys_rt_sigsuspend(unewset, sigsetsize)
+        const uint64_t *unewset = reinterpret_cast<const uint64_t *>(a1);
+        size_t sigsetsize = static_cast<size_t>(a2);
+
+        if (!unewset) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+        if (sigsetsize != sizeof(uint64_t)) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+
+        auto th = thread::ThreadManager::Instance().GetCurrentGuestThread();
+        uint64_t old_mask = th ? th->sigmask : 0;
+        if (th) {
+            th->sigmask = *unewset;
+        }
+        int tid = th ? th->tid : 0;
+        uint64_t wait_mask = ~(*unewset);
+        signal::LinuxSiginfo info{};
+        signal::SignalManager::Instance().TimedWait(tid, wait_mask, &info, -1);
+        if (th) {
+            th->sigmask = old_mask;
+        }
+        ret = LINUX_EINTR;
+        break;
+    }
+
     case 131: { // sys_sigaltstack(ss, old_ss)
         ret = 0;
         break;
@@ -2545,6 +2841,32 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         break;
     }
 
+    case 140: { // sys_getpriority(which, who)
+        ret = 0;
+        break;
+    }
+
+    case 141: { // sys_setpriority(which, who, prio)
+        int prio = static_cast<int>(a3);
+        int win_prio = THREAD_PRIORITY_NORMAL;
+        if (prio <= -15) {
+            win_prio = THREAD_PRIORITY_TIME_CRITICAL;
+        } else if (prio <= -5) {
+            win_prio = THREAD_PRIORITY_HIGHEST;
+        } else if (prio < 0) {
+            win_prio = THREAD_PRIORITY_ABOVE_NORMAL;
+        } else if (prio < 10) {
+            win_prio = THREAD_PRIORITY_NORMAL;
+        } else if (prio < 15) {
+            win_prio = THREAD_PRIORITY_BELOW_NORMAL;
+        } else {
+            win_prio = THREAD_PRIORITY_LOWEST;
+        }
+        SetThreadPriority(GetCurrentThread(), win_prio);
+        ret = 0;
+        break;
+    }
+
     case 142: { // sys_sched_getparam(pid, param)
         auto *param = reinterpret_cast<LinuxSchedParam *>(a2);
         if (!param) {
@@ -2556,7 +2878,30 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         break;
     }
 
+    case 143: { // sys_sched_setparam(pid, param)
+        auto *param = reinterpret_cast<LinuxSchedParam *>(a2);
+        if (!param) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+        int prio = param->sched_priority;
+        int win_prio = (prio > 50) ? THREAD_PRIORITY_HIGHEST
+                                   : (prio > 20) ? THREAD_PRIORITY_ABOVE_NORMAL
+                                                 : THREAD_PRIORITY_NORMAL;
+        SetThreadPriority(GetCurrentThread(), win_prio);
+        ret = 0;
+        break;
+    }
+
     case 144: { // sys_sched_setscheduler(pid, policy, param)
+        auto *param = reinterpret_cast<const LinuxSchedParam *>(a3);
+        if (param) {
+            int prio = param->sched_priority;
+            int win_prio = (prio > 50) ? THREAD_PRIORITY_HIGHEST
+                                       : (prio > 20) ? THREAD_PRIORITY_ABOVE_NORMAL
+                                                     : THREAD_PRIORITY_NORMAL;
+            SetThreadPriority(GetCurrentThread(), win_prio);
+        }
         ret = 0;
         break;
     }
@@ -2611,6 +2956,22 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 } else {
                     name[0] = '\0';
                 }
+            }
+            ret = 0;
+        } else if (option == LINUX_PR_GET_DUMPABLE) {
+            ret = 1;
+        } else if (option == LINUX_PR_SET_DUMPABLE) {
+            ret = 0;
+        } else if (option == LINUX_PR_SET_CHILD_SUBREAPER || option == LINUX_PR_GET_CHILD_SUBREAPER) {
+            if (option == LINUX_PR_GET_CHILD_SUBREAPER && a2) {
+                *reinterpret_cast<int *>(a2) = 0;
+            }
+            ret = 0;
+        } else if (option == LINUX_PR_SET_PDEATHSIG) {
+            ret = 0;
+        } else if (option == LINUX_PR_GET_PDEATHSIG) {
+            if (a2) {
+                *reinterpret_cast<int *>(a2) = 0;
             }
             ret = 0;
         } else {
@@ -2769,7 +3130,20 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         break;
     }
 
+    case 200: { // sys_tkill(tid, sig)
+        int tid = static_cast<int>(a1);
+        int sig = static_cast<int>(a2);
+        auto th = thread::ThreadManager::Instance().GetThread(tid);
+        if (!th) {
+            ret = LINUX_ESRCH;
+        } else {
+            ret = signal::SignalManager::Instance().SendSignal(0, tid, sig);
+        }
+        break;
+    }
+
     case 234: { // sys_tgkill(tgid, tid, sig)
+        int tgid = static_cast<int>(a1);
         int tid = static_cast<int>(a2);
         int sig = static_cast<int>(a3);
         auto th = thread::ThreadManager::Instance().GetThread(tid);
@@ -2777,8 +3151,179 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             ret = LINUX_ESRCH;
         } else {
             th->sigpending.fetch_or(1ULL << sig);
-            ret = 0;
+            ret = signal::SignalManager::Instance().SendSignal(tgid, tid, sig);
         }
+        break;
+    }
+
+    case 222: { // sys_timer_create(clockid, sigevent, timerid)
+        auto *sev = reinterpret_cast<LinuxSigevent *>(a2);
+        auto *timerid_ptr = reinterpret_cast<int *>(a3);
+        if (!timerid_ptr) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+
+        int notify = LINUX_SIGEV_SIGNAL;
+        int signo = signal::LINUX_SIGALRM;
+        if (sev) {
+            notify = sev->sigev_notify;
+            signo = (sev->sigev_signo != 0) ? sev->sigev_signo : signal::LINUX_SIGALRM;
+        }
+        if (notify == LINUX_SIGEV_THREAD) {
+            ret = LINUX_ENOSYS;
+            break;
+        }
+
+        auto &tbl = PosixTimerTable::Instance();
+        std::lock_guard<std::mutex> lock(tbl.mtx);
+        int id = tbl.next_id++;
+        auto entry = std::make_unique<PosixTimerEntry>();
+        entry->timer_id = id;
+        entry->target_tid = thread::ThreadManager::Instance().GetCurrentTid();
+        entry->signo = signo;
+        entry->notify = notify;
+        entry->active.store(false, std::memory_order_relaxed);
+        entry->stop_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        entry->win_timer = CreateWaitableTimerW(nullptr, FALSE, nullptr);
+        if (!entry->win_timer || !entry->stop_event) {
+            if (entry->win_timer) {
+                CloseHandle(entry->win_timer);
+            }
+            if (entry->stop_event) {
+                CloseHandle(entry->stop_event);
+            }
+            ret = LINUX_ENOMEM;
+            break;
+        }
+
+        tbl.timers[id] = std::move(entry);
+        *timerid_ptr = id;
+        ret = 0;
+        break;
+    }
+
+    case 223: { // sys_timer_settime(timerid, flags, new_value, old_value)
+        int id = static_cast<int>(a1);
+        auto *new_val = reinterpret_cast<const LinuxItimerspec *>(a3);
+        auto *old_val = reinterpret_cast<LinuxItimerspec *>(a4);
+        if (!new_val) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+
+        auto &tbl = PosixTimerTable::Instance();
+        std::lock_guard<std::mutex> lock(tbl.mtx);
+        auto it = tbl.timers.find(id);
+        if (it == tbl.timers.end() || !it->second) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+        auto &entry = it->second;
+
+        if (old_val) {
+            *old_val = entry->current_value;
+        }
+        entry->current_value = *new_val;
+
+        entry->active.store(false, std::memory_order_relaxed);
+        CancelWaitableTimer(entry->win_timer);
+
+        int64_t ns = (new_val->it_value.tv_sec * 1'000'000'000LL) + new_val->it_value.tv_nsec;
+        if (ns <= 0) {
+            ret = 0;
+            break;
+        }
+
+        LARGE_INTEGER due;
+        due.QuadPart = -(ns / 100);
+        if (due.QuadPart == 0) {
+            due.QuadPart = -1;
+        }
+        int64_t period_ms = (new_val->it_interval.tv_sec * 1000LL) +
+                            (new_val->it_interval.tv_nsec / 1'000'000LL);
+        if (new_val->it_interval.tv_sec == 0 && new_val->it_interval.tv_nsec > 0 && period_ms == 0) {
+            period_ms = 1;
+        }
+
+        ResetEvent(entry->stop_event);
+        entry->active.store(true, std::memory_order_relaxed);
+        SetWaitableTimer(entry->win_timer, &due,
+                         static_cast<LONG>(period_ms > 0 ? period_ms : 0),
+                         nullptr, nullptr, FALSE);
+
+        if (entry->notify == LINUX_SIGEV_SIGNAL && !entry->worker_thread) {
+            entry->worker_thread = CreateThread(nullptr, 0, PosixTimerWorker,
+                                                entry.get(), 0, nullptr);
+        }
+        ret = 0;
+        break;
+    }
+
+    case 224: { // sys_timer_gettime(timerid, curr_value)
+        int id = static_cast<int>(a1);
+        auto *curr = reinterpret_cast<LinuxItimerspec *>(a2);
+        if (!curr) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+        auto &tbl = PosixTimerTable::Instance();
+        std::lock_guard<std::mutex> lock(tbl.mtx);
+        auto it = tbl.timers.find(id);
+        if (it == tbl.timers.end() || !it->second) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+        *curr = it->second->current_value;
+        ret = 0;
+        break;
+    }
+
+    case 225: { // sys_timer_delete(timerid)
+        int id = static_cast<int>(a1);
+        auto &tbl = PosixTimerTable::Instance();
+        std::lock_guard<std::mutex> lock(tbl.mtx);
+        auto it = tbl.timers.find(id);
+        if (it == tbl.timers.end() || !it->second) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+        auto &entry = it->second;
+        entry->active.store(false, std::memory_order_relaxed);
+        if (entry->stop_event) {
+            SetEvent(entry->stop_event);
+        }
+        if (entry->win_timer) {
+            CancelWaitableTimer(entry->win_timer);
+        }
+        if (entry->worker_thread) {
+            WaitForSingleObject(entry->worker_thread, 200);
+            CloseHandle(entry->worker_thread);
+            entry->worker_thread = nullptr;
+        }
+        if (entry->stop_event) {
+            CloseHandle(entry->stop_event);
+            entry->stop_event = nullptr;
+        }
+        if (entry->win_timer) {
+            CloseHandle(entry->win_timer);
+            entry->win_timer = nullptr;
+        }
+        tbl.timers.erase(it);
+        ret = 0;
+        break;
+    }
+
+    case 226: { // sys_timer_getoverrun(timerid)
+        int id = static_cast<int>(a1);
+        auto &tbl = PosixTimerTable::Instance();
+        std::lock_guard<std::mutex> lock(tbl.mtx);
+        auto it = tbl.timers.find(id);
+        if (it == tbl.timers.end() || !it->second) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+        ret = it->second->overrun.exchange(0, std::memory_order_relaxed);
         break;
     }
 
@@ -2923,7 +3468,16 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             }
         }
 
-        auto resolved = vfs_->ResolveAt(dfd, pathname, dirfd_path);
+        bool follow = (flags & 0x20000 /* O_NOFOLLOW */) == 0;
+        auto resolved = vfs_->ResolveAt(dfd, pathname, dirfd_path, follow);
+        if (resolved.status != 0) {
+            ret = resolved.status;
+            break;
+        }
+        if (!follow && resolved.is_symlink) {
+            ret = LINUX_ELOOP;
+            break;
+        }
 
         if (resolved.dev_type == fs::DeviceType::DevNull ||
             resolved.dev_type == fs::DeviceType::DevZero ||
@@ -3203,8 +3757,23 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 dirfd_path = dfd_desc->guest_path;
         }
 
-        auto resolved = vfs_->ResolveAt(dfd, filename, dirfd_path);
+        bool follow = (flag & 0x100 /* AT_SYMLINK_NOFOLLOW */) == 0;
+        auto resolved = vfs_->ResolveAt(dfd, filename, dirfd_path, follow);
+        if (resolved.status != 0) {
+            ret = resolved.status;
+            break;
+        }
         std::memset(sb, 0, sizeof(LinuxStat64));
+
+        if (resolved.is_symlink) {
+            sb->st_mode = LINUX_S_IFLNK | 0777;
+            sb->st_size = static_cast<int64_t>(resolved.symlink_target.length());
+            sb->st_nlink = 1;
+            sb->st_blksize = 4096;
+            sb->st_blocks = (sb->st_size + 511) / 512;
+            ret = 0;
+            break;
+        }
 
         if (resolved.dev_type == fs::DeviceType::SyntheticProc) {
             std::string target_path = resolved.host_path.string();
@@ -3322,6 +3891,15 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             filetime_to_unix(attr.ftLastWriteTime, sb->st_mtime, sb->st_mtime_nsec);
             filetime_to_unix(attr.ftCreationTime, sb->st_ctime, sb->st_ctime_nsec);
 
+            std::string full_guest =
+                (filename[0] == '/' || dfd == -100 || dirfd_path.empty())
+                    ? std::string(filename)
+                    : (dirfd_path == "/" ? "/" + std::string(filename)
+                                         : dirfd_path + "/" + std::string(filename));
+            if (auto custom_mode = vfs_->GetMode(full_guest)) {
+                sb->st_mode = (sb->st_mode & ~07777U) | (*custom_mode & 07777U);
+            }
+
             ret = 0;
         } else {
             ret = LINUX_ENOENT;
@@ -3346,13 +3924,20 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             if (dfd_desc)
                 dirfd_path = dfd_desc->guest_path;
         }
-        auto resolved = vfs_->ResolveAt(dfd, pathname, dirfd_path);
-        if (!std::filesystem::exists(resolved.host_path)) {
-            ret = LINUX_ENOENT;
+        auto resolved = vfs_->ResolveAt(dfd, pathname, dirfd_path, false);
+        if (resolved.status != 0) {
+            ret = resolved.status;
             break;
         }
+        bool removed_virtual = vfs_->RemoveSymlink(pathname, dfd, dirfd_path);
         std::error_code ec;
-        if (std::filesystem::remove(resolved.host_path, ec)) {
+        bool exists_on_disk = std::filesystem::exists(resolved.host_path, ec) ||
+                              std::filesystem::is_symlink(resolved.host_path, ec);
+        if (!exists_on_disk) {
+            ret = removed_virtual ? 0 : LINUX_ENOENT;
+            break;
+        }
+        if (std::filesystem::remove(resolved.host_path, ec) || removed_virtual) {
             ret = 0;
         } else {
             ret = LINUX_EIO;
@@ -3387,21 +3972,43 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 new_dirfd_path = new_desc->guest_path;
         }
 
-        auto old_resolved = vfs_->ResolveAt(olddfd, oldname, old_dirfd_path);
-        auto new_resolved = vfs_->ResolveAt(newdfd, newname, new_dirfd_path);
+        auto old_resolved = vfs_->ResolveAt(olddfd, oldname, old_dirfd_path, false);
+        auto new_resolved = vfs_->ResolveAt(newdfd, newname, new_dirfd_path, false);
+        if (old_resolved.status != 0) {
+            ret = old_resolved.status;
+            break;
+        }
+        if (new_resolved.status != 0) {
+            ret = new_resolved.status;
+            break;
+        }
+
+        std::string full_old =
+            (oldname[0] == '/' || olddfd == -100 || old_dirfd_path.empty())
+                ? std::string(oldname)
+                : (old_dirfd_path == "/" ? "/" + std::string(oldname)
+                                         : old_dirfd_path + "/" + std::string(oldname));
+        std::string full_new =
+            (newname[0] == '/' || newdfd == -100 || new_dirfd_path.empty())
+                ? std::string(newname)
+                : (new_dirfd_path == "/" ? "/" + std::string(newname)
+                                         : new_dirfd_path + "/" + std::string(newname));
+        bool renamed_virtual = vfs_->RenameSymlink(full_old, full_new);
 
         if (old_resolved.host_path.empty() || new_resolved.host_path.empty()) {
-            ret = LINUX_ENOENT;
+            ret = renamed_virtual ? 0 : LINUX_ENOENT;
             break;
         }
-        if (!std::filesystem::exists(old_resolved.host_path)) {
-            ret = LINUX_ENOENT;
+        std::error_code ec;
+        bool exists_on_disk = std::filesystem::exists(old_resolved.host_path, ec) ||
+                              std::filesystem::is_symlink(old_resolved.host_path, ec);
+        if (!exists_on_disk) {
+            ret = renamed_virtual ? 0 : LINUX_ENOENT;
             break;
         }
 
-        std::error_code ec;
         std::filesystem::rename(old_resolved.host_path, new_resolved.host_path, ec);
-        if (!ec) {
+        if (!ec || renamed_virtual) {
             ret = 0;
         } else {
             ret = LINUX_EIO;
@@ -3436,10 +4043,21 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 new_dirfd_path = new_desc->guest_path;
         }
 
-        auto old_resolved = vfs_->ResolveAt(olddfd, oldpath, old_dirfd_path);
-        auto new_resolved = vfs_->ResolveAt(newdfd, newpath, new_dirfd_path);
+        int flags = static_cast<int>(a5);
+        bool follow = (flags & 0x400 /* AT_SYMLINK_FOLLOW */) != 0;
+        auto old_resolved = vfs_->ResolveAt(olddfd, oldpath, old_dirfd_path, follow);
+        auto new_resolved = vfs_->ResolveAt(newdfd, newpath, new_dirfd_path, false);
+        if (old_resolved.status != 0) {
+            ret = old_resolved.status;
+            break;
+        }
+        if (new_resolved.status != 0) {
+            ret = new_resolved.status;
+            break;
+        }
 
-        if (!std::filesystem::exists(old_resolved.host_path)) {
+        std::error_code ec;
+        if (!std::filesystem::exists(old_resolved.host_path, ec)) {
             ret = LINUX_ENOENT;
             break;
         }
@@ -3452,6 +4070,8 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             DWORD err = GetLastError();
             if (err == ERROR_FILE_EXISTS || err == ERROR_ALREADY_EXISTS) {
                 ret = LINUX_EEXIST;
+            } else if (err == ERROR_NOT_SAME_DEVICE) {
+                ret = LINUX_EXDEV;
             } else if (err == ERROR_ACCESS_DENIED) {
                 ret = LINUX_EACCES;
             } else {
@@ -3481,30 +4101,10 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 new_dirfd_path = new_desc->guest_path;
         }
 
-        auto new_resolved = vfs_->ResolveAt(newdfd, linkpath, new_dirfd_path);
-        auto target_resolved = vfs_->Resolve(target);
-
-        std::wstring target_wpath = target_resolved.host_path.wstring();
-        std::wstring link_wpath = new_resolved.host_path.wstring();
-
-        DWORD symlink_flags = SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
-        if (std::filesystem::is_directory(target_resolved.host_path)) {
-            symlink_flags |= SYMBOLIC_LINK_FLAG_DIRECTORY;
-        }
-
-        if (CreateSymbolicLinkW(link_wpath.c_str(), target_wpath.c_str(), symlink_flags)) {
+        if (vfs_->CreateSymlink(target, linkpath, newdfd, new_dirfd_path)) {
             ret = 0;
         } else {
-            DWORD err = GetLastError();
-            if (err == ERROR_PRIVILEGE_NOT_HELD) {
-                ret = LINUX_EPERM;
-            } else if (err == ERROR_FILE_EXISTS || err == ERROR_ALREADY_EXISTS) {
-                ret = LINUX_EEXIST;
-            } else if (err == ERROR_ACCESS_DENIED) {
-                ret = LINUX_EACCES;
-            } else {
-                ret = LINUX_EIO;
-            }
+            ret = LINUX_EEXIST;
         }
         break;
     }
@@ -3561,6 +4161,8 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 target_link = "anon_inode:[timerfd]";
             } else if (desc->dev == fs::DeviceType::SyncFence) {
                 target_link = "anon_inode:[sync_fence]";
+            } else if (desc->dev == fs::DeviceType::Signalfd) {
+                target_link = "anon_inode:[signalfd]";
             } else {
                 target_link = "anon_inode:[fd" + std::to_string(target_fd) + "]";
             }
@@ -3577,19 +4179,26 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 if (dfd_desc)
                     dirfd_path = dfd_desc->guest_path;
             }
-            auto resolved = vfs_->ResolveAt(dfd, pathname, dirfd_path);
-            if (std::filesystem::exists(resolved.host_path) &&
-                std::filesystem::is_symlink(resolved.host_path)) {
-                std::error_code ec;
-                auto target = std::filesystem::read_symlink(resolved.host_path, ec);
-                if (!ec) {
-                    std::string target_str = target.string();
-                    size_t copy_len = std::min(bufsiz, target_str.size());
-                    std::memcpy(buf, target_str.data(), copy_len);
-                    ret = static_cast<int64_t>(copy_len);
-                    break;
-                }
+            if (auto target = vfs_->Readlink(pathname, dfd, dirfd_path)) {
+                size_t copy_len = std::min(bufsiz, target->size());
+                std::memcpy(buf, target->data(), copy_len);
+                ret = static_cast<int64_t>(copy_len);
+                break;
             }
+            auto resolved = vfs_->ResolveAt(dfd, pathname, dirfd_path, false);
+            if (resolved.status != 0) {
+                ret = resolved.status;
+                break;
+            }
+            std::error_code ec;
+            if (resolved.dev_type != fs::DeviceType::None &&
+                (resolved.dev_type != fs::DeviceType::Regular ||
+                 std::filesystem::exists(resolved.host_path, ec))) {
+                ret = LINUX_EINVAL;
+                break;
+            }
+            ret = LINUX_ENOENT;
+            break;
         }
 
         ret = LINUX_EINVAL;
@@ -3615,10 +4224,22 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 dirfd_path = dfd_desc->guest_path;
         }
         auto resolved = vfs_->ResolveAt(dfd, pathname, dirfd_path);
-        if (!std::filesystem::exists(resolved.host_path)) {
+        if (resolved.status != 0) {
+            ret = resolved.status;
+            break;
+        }
+        std::error_code ec;
+        if (!std::filesystem::exists(resolved.host_path, ec)) {
             ret = LINUX_ENOENT;
             break;
         }
+
+        std::string full_guest =
+            (pathname[0] == '/' || dfd == -100 || dirfd_path.empty())
+                ? std::string(pathname)
+                : (dirfd_path == "/" ? "/" + std::string(pathname)
+                                     : dirfd_path + "/" + std::string(pathname));
+        vfs_->SetMode(full_guest, mode);
 
         std::wstring host_wpath = resolved.host_path.wstring();
         DWORD attrs = GetFileAttributesW(host_wpath.c_str());
@@ -4136,6 +4757,51 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         break;
     }
 
+    case 289: { // sys_signalfd4(ufd, user_mask, sizemask, flags)
+        int ufd = static_cast<int>(a1);
+        const uint64_t *user_mask = reinterpret_cast<const uint64_t *>(a2);
+        size_t sizemask = static_cast<size_t>(a3);
+        int flags = static_cast<int>(a4);
+
+        if (!user_mask) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+        if (sizemask != sizeof(uint64_t)) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+        constexpr int valid_flags = signal::LINUX_SFD_NONBLOCK | signal::LINUX_SFD_CLOEXEC;
+        if ((flags & ~valid_flags) != 0) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+        if (!fd_table_) {
+            ret = LINUX_EMFILE;
+            break;
+        }
+        if (ufd == -1) {
+            int fd_flags = 0;
+            if (flags & signal::LINUX_SFD_NONBLOCK)
+                fd_flags |= LINUX_O_NONBLOCK;
+            if (flags & signal::LINUX_SFD_CLOEXEC)
+                fd_flags |= LINUX_O_CLOEXEC;
+            ret = fd_table_->AllocateSignalfd(*user_mask, fd_flags);
+        } else {
+            auto desc = fd_table_->Get(ufd);
+            if (!desc || desc->dev != fs::DeviceType::Signalfd || !desc->signalfd) {
+                ret = LINUX_EINVAL;
+                break;
+            }
+            {
+                std::lock_guard<std::mutex> lock(desc->signalfd->mutex);
+                desc->signalfd->mask = *user_mask;
+            }
+            ret = ufd;
+        }
+        break;
+    }
+
     case 290: { // sys_eventfd2(initval, flags)
         uint64_t initval = a1;
         int flags = static_cast<int>(a2);
@@ -4229,6 +4895,51 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         break;
     }
 
+    case 296: { // sys_pwritev(fd, iov, iovcnt, offset)
+        int fd = static_cast<int>(a1);
+        const auto *iov = reinterpret_cast<const LinuxIovec *>(a2);
+        int iovcnt = static_cast<int>(a3);
+        uint64_t offset = a4;
+
+        if (!iov || iovcnt < 0) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+
+        int64_t total_written = 0;
+        for (int i = 0; i < iovcnt; i++) {
+            if (iov[i].iov_len == 0) {
+                continue;
+            }
+            if (!iov[i].iov_base) {
+                if (total_written > 0) {
+                    ret = total_written;
+                } else {
+                    ret = LINUX_EFAULT;
+                }
+                break;
+            }
+            int64_t r = Dispatch(18, static_cast<uint64_t>(fd),
+                                 reinterpret_cast<uint64_t>(iov[i].iov_base),
+                                 iov[i].iov_len, offset, 0, 0);
+            if (r < 0) {
+                if (total_written > 0) {
+                    ret = total_written;
+                } else {
+                    ret = r;
+                }
+                break;
+            }
+            total_written += r;
+            offset += static_cast<uint64_t>(r);
+            if (static_cast<size_t>(r) < iov[i].iov_len) {
+                break;
+            }
+        }
+        ret = total_written;
+        break;
+    }
+
     case 299: { // sys_recvmmsg(sockfd, msgvec, vlen, flags, timeout)
         int sockfd = static_cast<int>(a1);
         auto *msgvec = reinterpret_cast<LinuxMmsghdr *>(a2);
@@ -4285,6 +4996,11 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         break;
     }
 
+    case 305: { // sys_clock_adjtime(clockid, timex)
+        ret = 0;
+        break;
+    }
+
     case 307: { // sys_sendmmsg(sockfd, msgvec, vlen, flags)
         int sockfd = static_cast<int>(a1);
         auto *msgvec = reinterpret_cast<LinuxMmsghdr *>(a2);
@@ -4316,6 +5032,120 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         }
         if (count > 0) {
             ret = static_cast<int64_t>(count);
+        }
+        break;
+    }
+
+    case 310: { // sys_process_vm_readv(pid, local_iov, liovcnt, remote_iov, riovcnt, flags)
+        int pid = static_cast<int>(a1);
+        if (pid != 0 && static_cast<DWORD>(pid) != GetCurrentProcessId()) {
+            ret = LINUX_EPERM;
+            break;
+        }
+        const auto *local_iov = reinterpret_cast<const LinuxIovec *>(a2);
+        int liovcnt = static_cast<int>(a3);
+        const auto *remote_iov = reinterpret_cast<const LinuxIovec *>(a4);
+        int riovcnt = static_cast<int>(a5);
+
+        if ((liovcnt > 0 && !local_iov) || (riovcnt > 0 && !remote_iov)) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+        if (liovcnt < 0 || riovcnt < 0) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+
+        int64_t total = 0;
+        int ri = 0;
+        size_t ri_off = 0;
+        for (int li = 0; li < liovcnt && ri < riovcnt; ++li) {
+            auto *dst = static_cast<uint8_t *>(local_iov[li].iov_base);
+            size_t left = local_iov[li].iov_len;
+            if (left > 0 && !dst) {
+                ret = LINUX_EFAULT;
+                break;
+            }
+            while (left > 0 && ri < riovcnt) {
+                const auto *src = static_cast<const uint8_t *>(remote_iov[ri].iov_base) + ri_off;
+                if (remote_iov[ri].iov_len > 0 && !remote_iov[ri].iov_base) {
+                    ret = LINUX_EFAULT;
+                    break;
+                }
+                size_t chunk = std::min(left, remote_iov[ri].iov_len - ri_off);
+                std::memcpy(dst, src, chunk);
+                dst += chunk;
+                left -= chunk;
+                total += chunk;
+                ri_off += chunk;
+                if (ri_off >= remote_iov[ri].iov_len) {
+                    ++ri;
+                    ri_off = 0;
+                }
+            }
+            if (ret == LINUX_EFAULT) {
+                break;
+            }
+        }
+        if (ret != LINUX_EFAULT) {
+            ret = total;
+        }
+        break;
+    }
+
+    case 311: { // sys_process_vm_writev(pid, local_iov, liovcnt, remote_iov, riovcnt, flags)
+        int pid = static_cast<int>(a1);
+        if (pid != 0 && static_cast<DWORD>(pid) != GetCurrentProcessId()) {
+            ret = LINUX_EPERM;
+            break;
+        }
+        const auto *local_iov = reinterpret_cast<const LinuxIovec *>(a2);
+        int liovcnt = static_cast<int>(a3);
+        const auto *remote_iov = reinterpret_cast<const LinuxIovec *>(a4);
+        int riovcnt = static_cast<int>(a5);
+
+        if ((liovcnt > 0 && !local_iov) || (riovcnt > 0 && !remote_iov)) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+        if (liovcnt < 0 || riovcnt < 0) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+
+        int64_t total = 0;
+        int ri = 0;
+        size_t ri_off = 0;
+        for (int li = 0; li < liovcnt && ri < riovcnt; ++li) {
+            const auto *src = static_cast<const uint8_t *>(local_iov[li].iov_base);
+            size_t left = local_iov[li].iov_len;
+            if (left > 0 && !src) {
+                ret = LINUX_EFAULT;
+                break;
+            }
+            while (left > 0 && ri < riovcnt) {
+                auto *dst = static_cast<uint8_t *>(remote_iov[ri].iov_base) + ri_off;
+                if (remote_iov[ri].iov_len > 0 && !remote_iov[ri].iov_base) {
+                    ret = LINUX_EFAULT;
+                    break;
+                }
+                size_t chunk = std::min(left, remote_iov[ri].iov_len - ri_off);
+                std::memcpy(dst, src, chunk);
+                src += chunk;
+                left -= chunk;
+                total += chunk;
+                ri_off += chunk;
+                if (ri_off >= remote_iov[ri].iov_len) {
+                    ++ri;
+                    ri_off = 0;
+                }
+            }
+            if (ret == LINUX_EFAULT) {
+                break;
+            }
+        }
+        if (ret != LINUX_EFAULT) {
+            ret = total;
         }
         break;
     }
@@ -4512,6 +5342,11 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         }
 
         ret = static_cast<int64_t>(total_copied);
+        break;
+    }
+
+    case 328: { // sys_pwritev2(fd, iov, iovcnt, offset, flags)
+        ret = Dispatch(296, a1, a2, a3, a4, 0, 0);
         break;
     }
 

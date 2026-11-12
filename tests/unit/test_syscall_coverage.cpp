@@ -262,3 +262,82 @@ TEST_F(SyscallCoverageTest, SendmsgRecvmsgLoopback)
 
     SyscallDispatcher::Dispatch(3, static_cast<uint64_t>(sock), 0, 0, 0, 0, 0);
 }
+
+TEST_F(SyscallCoverageTest, GetpgidReturnsPid)
+{
+    int64_t pid = SyscallDispatcher::Dispatch(39, 0, 0, 0, 0, 0, 0);
+    int64_t pgid = SyscallDispatcher::Dispatch(121, 0, 0, 0, 0, 0, 0);
+    EXPECT_EQ(pgid, pid);
+}
+
+TEST_F(SyscallCoverageTest, SetsidReturnsPositive)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(112, 0, 0, 0, 0, 0, 0);
+    EXPECT_GT(ret, 0);
+}
+
+TEST_F(SyscallCoverageTest, CapgetReturnsZero)
+{
+    uint8_t buf[64]{};
+    int64_t ret = SyscallDispatcher::Dispatch(125, 0, reinterpret_cast<uint64_t>(buf), 0, 0, 0, 0);
+    EXPECT_EQ(ret, 0);
+}
+
+TEST_F(SyscallCoverageTest, CapsetReturnsZero)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(126, 0, 0, 0, 0, 0, 0);
+    EXPECT_EQ(ret, 0);
+}
+
+TEST_F(SyscallCoverageTest, GetpriorityReturnsZero)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(140, 0, 0, 0, 0, 0, 0);
+    EXPECT_EQ(ret, 0);
+}
+
+TEST_F(SyscallCoverageTest, SetpriorityReturnsZero)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(141, 0, 0, 0, 0, 0, 0);
+    EXPECT_EQ(ret, 0);
+}
+
+TEST_F(SyscallCoverageTest, SchedSetparamReturnZeroAndNullFaults)
+{
+    LinuxSchedParam param{.sched_priority = 50};
+    EXPECT_EQ(SyscallDispatcher::Dispatch(143, 0, reinterpret_cast<uint64_t>(&param), 0, 0, 0, 0), 0);
+    EXPECT_EQ(SyscallDispatcher::Dispatch(143, 0, 0, 0, 0, 0, 0), LINUX_EFAULT);
+}
+
+TEST_F(SyscallCoverageTest, ClockAdjtimeReturnsZero)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(305, 0, 0, 0, 0, 0, 0);
+    EXPECT_EQ(ret, 0);
+}
+
+TEST_F(SyscallCoverageTest, PrctlGetDumpable)
+{
+    EXPECT_EQ(SyscallDispatcher::Dispatch(157, LINUX_PR_GET_DUMPABLE, 0, 0, 0, 0, 0), 1);
+}
+
+TEST_F(SyscallCoverageTest, PrctlSetDumpable)
+{
+    EXPECT_EQ(SyscallDispatcher::Dispatch(157, LINUX_PR_SET_DUMPABLE, 1, 0, 0, 0, 0), 0);
+}
+
+TEST_F(SyscallCoverageTest, PrctlChildSubreaper)
+{
+    EXPECT_EQ(SyscallDispatcher::Dispatch(157, LINUX_PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0, 0), 0);
+    int val = -1;
+    EXPECT_EQ(SyscallDispatcher::Dispatch(157, LINUX_PR_GET_CHILD_SUBREAPER,
+                                          reinterpret_cast<uint64_t>(&val), 0, 0, 0, 0), 0);
+    EXPECT_EQ(val, 0);
+}
+
+TEST_F(SyscallCoverageTest, PrctlPdeathsig)
+{
+    EXPECT_EQ(SyscallDispatcher::Dispatch(157, LINUX_PR_SET_PDEATHSIG, 15, 0, 0, 0, 0), 0);
+    int sig = -1;
+    EXPECT_EQ(SyscallDispatcher::Dispatch(157, LINUX_PR_GET_PDEATHSIG,
+                                          reinterpret_cast<uint64_t>(&sig), 0, 0, 0, 0), 0);
+    EXPECT_EQ(sig, 0);
+}

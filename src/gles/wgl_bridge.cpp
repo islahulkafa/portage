@@ -55,6 +55,7 @@ bool WglBridge::Initialize() noexcept
     table_.wglGetCurrentContext =
         LoadProc<PFN_wglGetCurrentContext>(opengl_module_, "wglGetCurrentContext");
     table_.wglGetCurrentDC = LoadProc<PFN_wglGetCurrentDC>(opengl_module_, "wglGetCurrentDC");
+    table_.wglShareLists = LoadProc<PFN_wglShareLists>(opengl_module_, "wglShareLists");
 
     // Standard Core OpenGL 1.1 functions
     table_.glClear = LoadProc<PFN_glClear>(opengl_module_, "glClear");
@@ -258,6 +259,166 @@ bool WglBridge::Initialize() noexcept
         reinterpret_cast<PFN_glDispatchCompute>(load_fn("glDispatchCompute"));
     table_.glMemoryBarrier = reinterpret_cast<PFN_glMemoryBarrier>(load_fn("glMemoryBarrier"));
 
+    // WGL ARB & Desktop Depth Fallbacks
+    table_.wglCreateContextAttribsARB = reinterpret_cast<PFN_wglCreateContextAttribsARB>(
+        load_fn("wglCreateContextAttribsARB"));
+    table_.wglGetExtensionsStringARB = reinterpret_cast<PFN_wglGetExtensionsStringARB>(
+        load_fn("wglGetExtensionsStringARB"));
+    table_.glClearDepth = reinterpret_cast<PFN_glClearDepth>(load_fn("glClearDepth"));
+    table_.glDepthRange = reinterpret_cast<PFN_glDepthRange>(load_fn("glDepthRange"));
+
+    // Pipeline State
+    table_.glDepthFunc = reinterpret_cast<PFN_glDepthFunc>(load_fn("glDepthFunc"));
+    table_.glDepthMask = reinterpret_cast<PFN_glDepthMask>(load_fn("glDepthMask"));
+    table_.glClearDepthf = reinterpret_cast<PFN_glClearDepthf>(load_fn("glClearDepthf"));
+    table_.glDepthRangef = reinterpret_cast<PFN_glDepthRangef>(load_fn("glDepthRangef"));
+    table_.glColorMask = reinterpret_cast<PFN_glColorMask>(load_fn("glColorMask"));
+    table_.glBlendFunc = reinterpret_cast<PFN_glBlendFunc>(load_fn("glBlendFunc"));
+    table_.glBlendFuncSeparate =
+        reinterpret_cast<PFN_glBlendFuncSeparate>(load_fn("glBlendFuncSeparate"));
+    table_.glBlendEquation = reinterpret_cast<PFN_glBlendEquation>(load_fn("glBlendEquation"));
+    table_.glBlendEquationSeparate =
+        reinterpret_cast<PFN_glBlendEquationSeparate>(load_fn("glBlendEquationSeparate"));
+    table_.glBlendColor = reinterpret_cast<PFN_glBlendColor>(load_fn("glBlendColor"));
+    table_.glCullFace = reinterpret_cast<PFN_glCullFace>(load_fn("glCullFace"));
+    table_.glFrontFace = reinterpret_cast<PFN_glFrontFace>(load_fn("glFrontFace"));
+    table_.glScissor = reinterpret_cast<PFN_glScissor>(load_fn("glScissor"));
+    table_.glStencilFunc = reinterpret_cast<PFN_glStencilFunc>(load_fn("glStencilFunc"));
+    table_.glStencilFuncSeparate =
+        reinterpret_cast<PFN_glStencilFuncSeparate>(load_fn("glStencilFuncSeparate"));
+    table_.glStencilOp = reinterpret_cast<PFN_glStencilOp>(load_fn("glStencilOp"));
+    table_.glStencilOpSeparate =
+        reinterpret_cast<PFN_glStencilOpSeparate>(load_fn("glStencilOpSeparate"));
+    table_.glStencilMask = reinterpret_cast<PFN_glStencilMask>(load_fn("glStencilMask"));
+    table_.glStencilMaskSeparate =
+        reinterpret_cast<PFN_glStencilMaskSeparate>(load_fn("glStencilMaskSeparate"));
+    table_.glLineWidth = reinterpret_cast<PFN_glLineWidth>(load_fn("glLineWidth"));
+    table_.glPolygonOffset = reinterpret_cast<PFN_glPolygonOffset>(load_fn("glPolygonOffset"));
+    table_.glSampleCoverage = reinterpret_cast<PFN_glSampleCoverage>(load_fn("glSampleCoverage"));
+    table_.glFlush = reinterpret_cast<PFN_glFlush>(load_fn("glFlush"));
+    table_.glFinish = reinterpret_cast<PFN_glFinish>(load_fn("glFinish"));
+    table_.glHint = reinterpret_cast<PFN_glHint>(load_fn("glHint"));
+
+    // Renderbuffers & Framebuffers
+    table_.glGenRenderbuffers =
+        reinterpret_cast<PFN_glGenRenderbuffers>(load_fn("glGenRenderbuffers"));
+    table_.glBindRenderbuffer =
+        reinterpret_cast<PFN_glBindRenderbuffer>(load_fn("glBindRenderbuffer"));
+    table_.glDeleteRenderbuffers =
+        reinterpret_cast<PFN_glDeleteRenderbuffers>(load_fn("glDeleteRenderbuffers"));
+    table_.glIsRenderbuffer = reinterpret_cast<PFN_glIsRenderbuffer>(load_fn("glIsRenderbuffer"));
+    table_.glRenderbufferStorage =
+        reinterpret_cast<PFN_glRenderbufferStorage>(load_fn("glRenderbufferStorage"));
+    table_.glRenderbufferStorageMultisample =
+        reinterpret_cast<PFN_glRenderbufferStorageMultisample>(
+            load_fn("glRenderbufferStorageMultisample"));
+    table_.glFramebufferRenderbuffer =
+        reinterpret_cast<PFN_glFramebufferRenderbuffer>(load_fn("glFramebufferRenderbuffer"));
+    table_.glBlitFramebuffer =
+        reinterpret_cast<PFN_glBlitFramebuffer>(load_fn("glBlitFramebuffer"));
+    table_.glDrawBuffers = reinterpret_cast<PFN_glDrawBuffers>(load_fn("glDrawBuffers"));
+    table_.glReadBuffer = reinterpret_cast<PFN_glReadBuffer>(load_fn("glReadBuffer"));
+    table_.glInvalidateFramebuffer =
+        reinterpret_cast<PFN_glInvalidateFramebuffer>(load_fn("glInvalidateFramebuffer"));
+    table_.glFramebufferTextureLayer =
+        reinterpret_cast<PFN_glFramebufferTextureLayer>(load_fn("glFramebufferTextureLayer"));
+
+    // Textures & Mipmaps
+    table_.glTexSubImage2D = reinterpret_cast<PFN_glTexSubImage2D>(load_fn("glTexSubImage2D"));
+    table_.glCopyTexImage2D = reinterpret_cast<PFN_glCopyTexImage2D>(load_fn("glCopyTexImage2D"));
+    table_.glCopyTexSubImage2D =
+        reinterpret_cast<PFN_glCopyTexSubImage2D>(load_fn("glCopyTexSubImage2D"));
+    table_.glCompressedTexImage2D =
+        reinterpret_cast<PFN_glCompressedTexImage2D>(load_fn("glCompressedTexImage2D"));
+    table_.glCompressedTexSubImage2D =
+        reinterpret_cast<PFN_glCompressedTexSubImage2D>(load_fn("glCompressedTexSubImage2D"));
+    table_.glGenerateMipmap = reinterpret_cast<PFN_glGenerateMipmap>(load_fn("glGenerateMipmap"));
+    table_.glTexParameterf = reinterpret_cast<PFN_glTexParameterf>(load_fn("glTexParameterf"));
+    table_.glTexParameterfv = reinterpret_cast<PFN_glTexParameterfv>(load_fn("glTexParameterfv"));
+    table_.glTexParameteriv = reinterpret_cast<PFN_glTexParameteriv>(load_fn("glTexParameteriv"));
+
+    // Uniforms, Attributes & Program
+    table_.glUniform2i = reinterpret_cast<PFN_glUniform2i>(load_fn("glUniform2i"));
+    table_.glUniform3i = reinterpret_cast<PFN_glUniform3i>(load_fn("glUniform3i"));
+    table_.glUniform4i = reinterpret_cast<PFN_glUniform4i>(load_fn("glUniform4i"));
+    table_.glUniform1iv = reinterpret_cast<PFN_glUniform1iv>(load_fn("glUniform1iv"));
+    table_.glUniform2iv = reinterpret_cast<PFN_glUniform2iv>(load_fn("glUniform2iv"));
+    table_.glUniform3iv = reinterpret_cast<PFN_glUniform3iv>(load_fn("glUniform3iv"));
+    table_.glUniform4iv = reinterpret_cast<PFN_glUniform4iv>(load_fn("glUniform4iv"));
+    table_.glUniform2f = reinterpret_cast<PFN_glUniform2f>(load_fn("glUniform2f"));
+    table_.glUniform3f = reinterpret_cast<PFN_glUniform3f>(load_fn("glUniform3f"));
+    table_.glUniform1fv = reinterpret_cast<PFN_glUniform1fv>(load_fn("glUniform1fv"));
+    table_.glUniform2fv = reinterpret_cast<PFN_glUniform2fv>(load_fn("glUniform2fv"));
+    table_.glUniform3fv = reinterpret_cast<PFN_glUniform3fv>(load_fn("glUniform3fv"));
+    table_.glUniform4fv = reinterpret_cast<PFN_glUniform4fv>(load_fn("glUniform4fv"));
+    table_.glUniform1uiv = reinterpret_cast<PFN_glUniform1uiv>(load_fn("glUniform1uiv"));
+    table_.glUniform2uiv = reinterpret_cast<PFN_glUniform2uiv>(load_fn("glUniform2uiv"));
+    table_.glUniform3uiv = reinterpret_cast<PFN_glUniform3uiv>(load_fn("glUniform3uiv"));
+    table_.glUniform4uiv = reinterpret_cast<PFN_glUniform4uiv>(load_fn("glUniform4uiv"));
+    table_.glUniformMatrix2fv =
+        reinterpret_cast<PFN_glUniformMatrix2fv>(load_fn("glUniformMatrix2fv"));
+    table_.glUniformMatrix3fv =
+        reinterpret_cast<PFN_glUniformMatrix3fv>(load_fn("glUniformMatrix3fv"));
+    table_.glVertexAttribIPointer =
+        reinterpret_cast<PFN_glVertexAttribIPointer>(load_fn("glVertexAttribIPointer"));
+    table_.glVertexAttrib1f = reinterpret_cast<PFN_glVertexAttrib1f>(load_fn("glVertexAttrib1f"));
+    table_.glVertexAttrib2f = reinterpret_cast<PFN_glVertexAttrib2f>(load_fn("glVertexAttrib2f"));
+    table_.glVertexAttrib3f = reinterpret_cast<PFN_glVertexAttrib3f>(load_fn("glVertexAttrib3f"));
+    table_.glVertexAttrib4f = reinterpret_cast<PFN_glVertexAttrib4f>(load_fn("glVertexAttrib4f"));
+    table_.glBindAttribLocation =
+        reinterpret_cast<PFN_glBindAttribLocation>(load_fn("glBindAttribLocation"));
+    table_.glGetActiveUniform =
+        reinterpret_cast<PFN_glGetActiveUniform>(load_fn("glGetActiveUniform"));
+    table_.glGetActiveAttrib =
+        reinterpret_cast<PFN_glGetActiveAttrib>(load_fn("glGetActiveAttrib"));
+    table_.glDetachShader = reinterpret_cast<PFN_glDetachShader>(load_fn("glDetachShader"));
+    table_.glValidateProgram =
+        reinterpret_cast<PFN_glValidateProgram>(load_fn("glValidateProgram"));
+    table_.glIsShader = reinterpret_cast<PFN_glIsShader>(load_fn("glIsShader"));
+    table_.glIsProgram = reinterpret_cast<PFN_glIsProgram>(load_fn("glIsProgram"));
+    table_.glIsBuffer = reinterpret_cast<PFN_glIsBuffer>(load_fn("glIsBuffer"));
+    table_.glIsTexture = reinterpret_cast<PFN_glIsTexture>(load_fn("glIsTexture"));
+    table_.glIsFramebuffer = reinterpret_cast<PFN_glIsFramebuffer>(load_fn("glIsFramebuffer"));
+    table_.glIsVertexArray = reinterpret_cast<PFN_glIsVertexArray>(load_fn("glIsVertexArray"));
+    table_.glIsSampler = reinterpret_cast<PFN_glIsSampler>(load_fn("glIsSampler"));
+
+    // Clear Buffers
+    table_.glClearBufferfv = reinterpret_cast<PFN_glClearBufferfv>(load_fn("glClearBufferfv"));
+    table_.glClearBufferiv = reinterpret_cast<PFN_glClearBufferiv>(load_fn("glClearBufferiv"));
+    table_.glClearBufferuiv = reinterpret_cast<PFN_glClearBufferuiv>(load_fn("glClearBufferuiv"));
+    table_.glClearBufferfi = reinterpret_cast<PFN_glClearBufferfi>(load_fn("glClearBufferfi"));
+
+    // State & Queries
+    table_.glGetIntegerv = reinterpret_cast<PFN_glGetIntegerv>(load_fn("glGetIntegerv"));
+    table_.glGetInteger64v = reinterpret_cast<PFN_glGetInteger64v>(load_fn("glGetInteger64v"));
+    table_.glGetFloatv = reinterpret_cast<PFN_glGetFloatv>(load_fn("glGetFloatv"));
+    table_.glGetBooleanv = reinterpret_cast<PFN_glGetBooleanv>(load_fn("glGetBooleanv"));
+    table_.glGetStringi = reinterpret_cast<PFN_glGetStringi>(load_fn("glGetStringi"));
+    table_.glGetTexParameteriv =
+        reinterpret_cast<PFN_glGetTexParameteriv>(load_fn("glGetTexParameteriv"));
+    table_.glGetTexParameterfv =
+        reinterpret_cast<PFN_glGetTexParameterfv>(load_fn("glGetTexParameterfv"));
+    table_.glGetFramebufferAttachmentParameteriv =
+        reinterpret_cast<PFN_glGetFramebufferAttachmentParameteriv>(
+            load_fn("glGetFramebufferAttachmentParameteriv"));
+    table_.glGetRenderbufferParameteriv =
+        reinterpret_cast<PFN_glGetRenderbufferParameteriv>(load_fn("glGetRenderbufferParameteriv"));
+    table_.glGetBufferParameteriv =
+        reinterpret_cast<PFN_glGetBufferParameteriv>(load_fn("glGetBufferParameteriv"));
+    table_.glGetVertexAttribiv =
+        reinterpret_cast<PFN_glGetVertexAttribiv>(load_fn("glGetVertexAttribiv"));
+    table_.glIsEnabled = reinterpret_cast<PFN_glIsEnabled>(load_fn("glIsEnabled"));
+
+    // Query ES compatibility support while dummy context is active
+    if (table_.glGetString) {
+        const char *exts = reinterpret_cast<const char *>(table_.glGetString(GL_EXTENSIONS));
+        if (exts) {
+            std::string_view sv(exts);
+            table_.has_es2_compat = (sv.find("GL_ARB_ES2_compatibility") != std::string_view::npos);
+            table_.has_es3_compat = (sv.find("GL_ARB_ES3_compatibility") != std::string_view::npos);
+        }
+    }
+
     if (table_.wglMakeCurrent) {
         table_.wglMakeCurrent(nullptr, nullptr);
     }
@@ -360,12 +521,33 @@ void WglBridge::DestroyOffscreenDc(HDC hdc, HBITMAP bitmap) noexcept
     }
 }
 
-HGLRC WglBridge::CreateContext(HDC hdc, int gles_version) noexcept
+HGLRC WglBridge::CreateContext(HDC hdc, int gles_version, HGLRC share_context) noexcept
 {
-    (void)gles_version;
-    if (!table_.wglCreateContext || !hdc)
+    if (!hdc)
         return nullptr;
-    return table_.wglCreateContext(hdc);
+
+    if (table_.wglCreateContextAttribsARB) {
+        int major = (gles_version >= 3) ? 3 : 2;
+        int minor = (gles_version >= 3) ? 2 : 0;
+        int attribs[] = {
+            0x2091, major,      // WGL_CONTEXT_MAJOR_VERSION_ARB
+            0x2092, minor,      // WGL_CONTEXT_MINOR_VERSION_ARB
+            0x9126, 0x00000002, // WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB
+            0
+        };
+        HGLRC ctx = table_.wglCreateContextAttribsARB(hdc, share_context, attribs);
+        if (ctx)
+            return ctx;
+    }
+
+    if (!table_.wglCreateContext)
+        return nullptr;
+
+    HGLRC ctx = table_.wglCreateContext(hdc);
+    if (ctx && share_context && table_.wglShareLists) {
+        table_.wglShareLists(share_context, ctx);
+    }
+    return ctx;
 }
 
 bool WglBridge::MakeCurrent(HDC hdc, HGLRC hglrc) noexcept

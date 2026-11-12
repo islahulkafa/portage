@@ -138,7 +138,32 @@ struct AHardwareBuffer;
 typedef const struct ASensor *ASensorRef;
 typedef ASensorRef const *ASensorList;
 
+namespace portage::mem {
+struct SharedMemoryRegion;
+}
+
 namespace portage::ndk {
+
+struct DirectReportConfig {
+    int token{0};
+    int rate_level{ASENSOR_DIRECT_RATE_STOP};
+    int64_t interval_us{20000};
+    int64_t next_sample_ns{0};
+};
+
+struct DirectChannelDescriptor {
+    int channel_id{0};
+    int channel_type{0};
+    uint8_t *mapped_ptr{nullptr};
+    size_t buffer_size{0};
+    size_t max_events{0};
+    size_t write_offset{0};
+    int32_t sequence_number{1};
+    bool owns_mapping{false};
+    std::shared_ptr<portage::mem::SharedMemoryRegion> shm_region{nullptr};
+    AHardwareBuffer *hardware_buffer{nullptr};
+    std::unordered_map<int, DirectReportConfig> active_reports{};
+};
 
 struct SensorDescriptor {
     int handle{0};
@@ -223,6 +248,14 @@ class SensorManagerImpl {
                                            ALooper_callbackFunc callback, void *data);
     int DestroyEventQueue(SensorEventQueueImpl *queue);
 
+    int CreateSharedMemoryDirectChannel(int fd, size_t size);
+    int CreateHardwareBufferDirectChannel(const AHardwareBuffer *buffer, size_t size);
+    int DestroyDirectChannel(int channel_id);
+    int ConfigureDirectReport(const SensorDescriptor *sensor, int channel_id, int rate);
+    [[nodiscard]] bool IsDirectChannelTypeSupported(const SensorDescriptor *sensor,
+                                                    int channel_type) const noexcept;
+    [[nodiscard]] int GetHighestDirectReportRateLevel(const SensorDescriptor *sensor) const noexcept;
+
     // Host pose control APIs
     void ResetPose();
     void SetOrientationEuler(float pitch_rad, float roll_rad, float yaw_rad);
@@ -242,6 +275,8 @@ class SensorManagerImpl {
     void InitializeCatalog();
     void SamplingWorkerLoop();
     void GenerateEventsForPose(const DevicePose &pose, int64_t timestamp_ns);
+    [[nodiscard]] bool HasAnyActiveDirectReport() const noexcept;
+    [[nodiscard]] const SensorDescriptor *FindSensorByHandle(int handle) const noexcept;
 
     mutable std::mutex catalog_mutex_{};
     std::vector<std::unique_ptr<SensorDescriptor>> catalog_{};
@@ -249,6 +284,11 @@ class SensorManagerImpl {
 
     mutable std::mutex queue_mutex_{};
     std::vector<std::shared_ptr<SensorEventQueueImpl>> queues_{};
+
+    mutable std::mutex direct_channel_mutex_{};
+    std::unordered_map<int, std::unique_ptr<DirectChannelDescriptor>> direct_channels_{};
+    std::atomic<int32_t> next_channel_id_{1};
+    std::atomic<int32_t> next_report_token_{1};
 
     mutable std::mutex pose_mutex_{};
     DevicePose pose_{};

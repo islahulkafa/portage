@@ -1,4 +1,11 @@
 #include "ndk/performance_hint.hpp"
+#include "thread/thread_manager.hpp"
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <processthreadsapi.h>
 
 #include <algorithm>
 
@@ -10,6 +17,59 @@ PerformanceHintSession::PerformanceHintSession(const int32_t *thread_ids, size_t
 {
     if (thread_ids && size > 0) {
         thread_ids_.assign(thread_ids, thread_ids + size);
+    }
+}
+
+PerformanceHintSession::~PerformanceHintSession() noexcept
+{
+    RevertThreadQos();
+}
+
+void PerformanceHintSession::ApplyThreadQos(bool boost, bool power_efficient) noexcept
+{
+    for (int32_t tid : thread_ids_) {
+        auto th = thread::ThreadManager::Instance().GetThread(tid);
+        if (!th || th->win32_handle == INVALID_HANDLE_VALUE) {
+            continue;
+        }
+
+        int priority = THREAD_PRIORITY_NORMAL;
+        if (boost) {
+            priority = THREAD_PRIORITY_HIGHEST;
+        } else if (power_efficient) {
+            priority = THREAD_PRIORITY_BELOW_NORMAL;
+        }
+        SetThreadPriority(th->win32_handle, priority);
+
+        THREAD_POWER_THROTTLING_STATE throttling{};
+        throttling.Version = THREAD_POWER_THROTTLING_CURRENT_VERSION;
+        throttling.ControlMask = THREAD_POWER_THROTTLING_EXECUTION_SPEED;
+        if (power_efficient && !boost) {
+            throttling.StateMask = THREAD_POWER_THROTTLING_EXECUTION_SPEED;
+        } else {
+            throttling.StateMask = 0;
+        }
+        SetThreadInformation(th->win32_handle, ThreadPowerThrottling, &throttling,
+                             sizeof(throttling));
+    }
+}
+
+void PerformanceHintSession::RevertThreadQos() noexcept
+{
+    for (int32_t tid : thread_ids_) {
+        auto th = thread::ThreadManager::Instance().GetThread(tid);
+        if (!th || th->win32_handle == INVALID_HANDLE_VALUE) {
+            continue;
+        }
+
+        SetThreadPriority(th->win32_handle, THREAD_PRIORITY_NORMAL);
+
+        THREAD_POWER_THROTTLING_STATE throttling{};
+        throttling.Version = THREAD_POWER_THROTTLING_CURRENT_VERSION;
+        throttling.ControlMask = THREAD_POWER_THROTTLING_EXECUTION_SPEED;
+        throttling.StateMask = 0;
+        SetThreadInformation(th->win32_handle, ThreadPowerThrottling, &throttling,
+                             sizeof(throttling));
     }
 }
 
@@ -41,6 +101,50 @@ int PerformanceHintSession::ReportActualWorkDuration(int64_t actual_duration_nan
         undershoot_count_++;
         is_boosted_ = false;
     }
+    ApplyThreadQos(is_boosted_, is_power_efficient_);
+    return 0;
+}
+
+int PerformanceHintSession::ReportActualWorkDuration2(const AWorkDuration *work_duration) noexcept
+{
+    if (!work_duration || work_duration->actual_total_duration_nanos <= 0) {
+        return -22; // -EINVAL
+    }
+    return ReportActualWorkDuration(work_duration->actual_total_duration_nanos);
+}
+
+int PerformanceHintSession::SendHint(SessionHint hint) noexcept
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (hint == SESSION_CPU_LOAD_UP || hint == SESSION_GPU_LOAD_UP) {
+        is_boosted_ = true;
+        ApplyThreadQos(true, is_power_efficient_);
+        return 0;
+    }
+    if (hint == SESSION_CPU_LOAD_DOWN || hint == SESSION_GPU_LOAD_DOWN) {
+        is_boosted_ = false;
+        ApplyThreadQos(false, is_power_efficient_);
+        return 0;
+    }
+    if (hint == SESSION_CPU_LOAD_RESET || hint == SESSION_GPU_LOAD_RESET) {
+        is_boosted_ = false;
+        overshoot_count_ = 0;
+        undershoot_count_ = 0;
+        ApplyThreadQos(false, is_power_efficient_);
+        return 0;
+    }
+    if (hint == SESSION_CPU_LOAD_RESUME) {
+        ApplyThreadQos(is_boosted_, is_power_efficient_);
+        return 0;
+    }
+    return -22; // -EINVAL
+}
+
+int PerformanceHintSession::SetPreferPowerEfficiency(bool enabled) noexcept
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    is_power_efficient_ = enabled;
+    ApplyThreadQos(is_boosted_, is_power_efficient_);
     return 0;
 }
 
@@ -51,7 +155,9 @@ int PerformanceHintSession::SetThreads(const int32_t *thread_ids, size_t size) n
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
+    RevertThreadQos();
     thread_ids_.assign(thread_ids, thread_ids + size);
+    ApplyThreadQos(is_boosted_, is_power_efficient_);
     return 0;
 }
 
@@ -79,6 +185,12 @@ bool PerformanceHintSession::IsBoosted() const noexcept
     return is_boosted_;
 }
 
+bool PerformanceHintSession::IsPowerEfficiencyPreferred() const noexcept
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return is_power_efficient_;
+}
+
 uint32_t PerformanceHintSession::GetOvershootCount() const noexcept
 {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -94,6 +206,11 @@ PerformanceHintManager &PerformanceHintManager::Instance() noexcept
 void PerformanceHintManager::Reset() noexcept
 {
     std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto &s : active_sessions_) {
+        if (s) {
+            s->RevertThreadQos();
+        }
+    }
     active_sessions_.clear();
 }
 
@@ -120,6 +237,12 @@ void PerformanceHintManager::CloseSession(APerformanceHintSession *session) noex
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
+    for (auto &s : active_sessions_) {
+        if (reinterpret_cast<APerformanceHintSession *>(s.get()) == session) {
+            s->RevertThreadQos();
+            break;
+        }
+    }
     auto it =
         std::remove_if(active_sessions_.begin(), active_sessions_.end(),
                        [&](const std::shared_ptr<PerformanceHintSession> &s) {
@@ -141,6 +264,52 @@ size_t PerformanceHintManager::GetActiveSessionCount() const noexcept
 } // namespace portage::ndk
 
 extern "C" {
+
+__attribute__((sysv_abi)) AWorkDuration *AWorkDuration_create(void)
+{
+    return new AWorkDuration{};
+}
+
+__attribute__((sysv_abi)) void AWorkDuration_release(AWorkDuration *aWorkDuration)
+{
+    delete aWorkDuration;
+}
+
+__attribute__((sysv_abi)) void
+AWorkDuration_setWorkPeriodStartTimestampNanos(AWorkDuration *aWorkDuration,
+                                               int64_t workPeriodStartTimestampNanos)
+{
+    if (aWorkDuration) {
+        aWorkDuration->work_period_start_timestamp_nanos = workPeriodStartTimestampNanos;
+    }
+}
+
+__attribute__((sysv_abi)) void
+AWorkDuration_setActualTotalDurationNanos(AWorkDuration *aWorkDuration,
+                                          int64_t actualTotalDurationNanos)
+{
+    if (aWorkDuration) {
+        aWorkDuration->actual_total_duration_nanos = actualTotalDurationNanos;
+    }
+}
+
+__attribute__((sysv_abi)) void
+AWorkDuration_setActualCpuDurationNanos(AWorkDuration *aWorkDuration,
+                                        int64_t actualCpuDurationNanos)
+{
+    if (aWorkDuration) {
+        aWorkDuration->actual_cpu_duration_nanos = actualCpuDurationNanos;
+    }
+}
+
+__attribute__((sysv_abi)) void
+AWorkDuration_setActualGpuDurationNanos(AWorkDuration *aWorkDuration,
+                                        int64_t actualGpuDurationNanos)
+{
+    if (aWorkDuration) {
+        aWorkDuration->actual_gpu_duration_nanos = actualGpuDurationNanos;
+    }
+}
 
 __attribute__((sysv_abi)) APerformanceHintManager *APerformanceHintManager_create(void)
 {
@@ -183,6 +352,37 @@ APerformanceHintSession_reportActualWorkDuration(APerformanceHintSession *sessio
     }
     auto *s = reinterpret_cast<portage::ndk::PerformanceHintSession *>(session);
     return s->ReportActualWorkDuration(actualDurationNanos);
+}
+
+__attribute__((sysv_abi)) int
+APerformanceHintSession_reportActualWorkDuration2(APerformanceHintSession *session,
+                                                  AWorkDuration *workDuration)
+{
+    if (!session || !workDuration) {
+        return -22;
+    }
+    auto *s = reinterpret_cast<portage::ndk::PerformanceHintSession *>(session);
+    return s->ReportActualWorkDuration2(workDuration);
+}
+
+__attribute__((sysv_abi)) int
+APerformanceHintSession_sendHint(APerformanceHintSession *session, SessionHint hint)
+{
+    if (!session) {
+        return -22;
+    }
+    auto *s = reinterpret_cast<portage::ndk::PerformanceHintSession *>(session);
+    return s->SendHint(hint);
+}
+
+__attribute__((sysv_abi)) int
+APerformanceHintSession_setPreferPowerEfficiency(APerformanceHintSession *session, bool enabled)
+{
+    if (!session) {
+        return -22;
+    }
+    auto *s = reinterpret_cast<portage::ndk::PerformanceHintSession *>(session);
+    return s->SetPreferPowerEfficiency(enabled);
 }
 
 __attribute__((sysv_abi)) void APerformanceHintSession_close(APerformanceHintSession *session)

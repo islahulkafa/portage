@@ -24,6 +24,15 @@ constexpr int LINUX_SIGCHLD = 17;
 constexpr int LINUX_SIGCONT = 18;
 constexpr int LINUX_SIGSTOP = 19;
 constexpr int LINUX_SIGTSTP = 20;
+constexpr int LINUX_SIGRTMIN = 32;
+constexpr int LINUX_SIGRTMAX = 64;
+
+constexpr int LINUX_SFD_CLOEXEC = 02000000;
+constexpr int LINUX_SFD_NONBLOCK = 04000;
+
+constexpr int LINUX_SI_USER = 0;
+constexpr int LINUX_SI_QUEUE = -1;
+constexpr int LINUX_SI_TIMER = -2;
 
 constexpr uint64_t LINUX_SA_NOCLDSTOP = 0x00000001;
 constexpr uint64_t LINUX_SA_NOCLDWAIT = 0x00000002;
@@ -60,9 +69,43 @@ struct LinuxSiginfo {
             int32_t si_pid;
             uint32_t si_uid;
         } sigchld;
+        struct {
+            int32_t si_pid;
+            uint32_t si_uid;
+            union {
+                int32_t sival_int;
+                void *sival_ptr;
+            } si_sigval;
+        } rt;
         uint8_t _pad[112];
     } _sifields;
 };
+
+struct LinuxSignalfdSiginfo {
+    uint32_t ssi_signo{0};
+    int32_t ssi_errno{0};
+    int32_t ssi_code{0};
+    uint32_t ssi_pid{0};
+    uint32_t ssi_uid{0};
+    int32_t ssi_fd{0};
+    uint32_t ssi_tid{0};
+    uint32_t ssi_band{0};
+    uint32_t ssi_overrun{0};
+    uint32_t ssi_trapno{0};
+    int32_t ssi_status{0};
+    int32_t ssi_int{0};
+    uint64_t ssi_ptr{0};
+    uint64_t ssi_utime{0};
+    uint64_t ssi_stime{0};
+    uint64_t ssi_addr{0};
+    uint16_t ssi_addr_lsb{0};
+    uint16_t __pad2{0};
+    int32_t ssi_syscall{0};
+    uint64_t ssi_call_addr{0};
+    uint32_t ssi_arch{0};
+    uint8_t __pad[28]{0};
+};
+static_assert(sizeof(LinuxSignalfdSiginfo) == 128, "LinuxSignalfdSiginfo must be exactly 128 bytes");
 
 struct LinuxStackT {
     void *ss_sp{nullptr};

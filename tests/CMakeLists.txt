@@ -52,6 +52,7 @@ set(UNIT_TEST_SOURCES
     unit/test_play_services.cpp
     unit/test_multinetwork.cpp
     unit/test_adpf.cpp
+    unit/test_signal_realtime.cpp
     unit/test_audio_recording.cpp
     unit/test_swappy.cpp
     unit/test_camera.cpp

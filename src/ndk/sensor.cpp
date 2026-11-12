@@ -1,4 +1,8 @@
-#include "sensor.hpp"
+#include "ndk/sensor.hpp"
+#include "fs/fd_table.hpp"
+#include "mem/shared_memory.hpp"
+#include "ndk/hardware_buffer.hpp"
+#include "syscall/syscall_dispatcher.hpp"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -6,6 +10,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstring>
 
@@ -42,6 +47,97 @@ void RotateVectorByQuaternion(float qx, float qy, float qz, float qw, float vx, 
     out_x = vx + iw * tx + (iy * tz - iz * ty);
     out_y = vy + iw * ty + (iz * tx - ix * tz);
     out_z = vz + iw * tz + (ix * ty - iy * tx);
+}
+
+bool IsDirectSupportedSensorType(int type) noexcept
+{
+    switch (type) {
+    case ASENSOR_TYPE_ACCELEROMETER:
+    case ASENSOR_TYPE_MAGNETIC_FIELD:
+    case ASENSOR_TYPE_GYROSCOPE:
+    case ASENSOR_TYPE_LINEAR_ACCELERATION:
+    case ASENSOR_TYPE_GAME_ROTATION_VECTOR:
+        return true;
+    default:
+        return false;
+    }
+}
+
+int64_t DirectRateToIntervalUs(int rate_level) noexcept
+{
+    switch (rate_level) {
+    case ASENSOR_DIRECT_RATE_NORMAL:
+        return 20000; // ~50 Hz
+    case ASENSOR_DIRECT_RATE_FAST:
+        return 5000; // ~200 Hz
+    case ASENSOR_DIRECT_RATE_VERY_FAST:
+        return 1250; // ~800 Hz
+    default:
+        return 0;
+    }
+}
+
+void PopulateSensorEvent(const SensorDescriptor &desc, const DevicePose &pose, float gx, float gy,
+                         float gz, float mx, float my, float mz, int64_t timestamp_ns,
+                         int32_t reserved0, ASensorEvent &ev) noexcept
+{
+    std::memset(&ev, 0, sizeof(ev));
+    ev.version = sizeof(ASensorEvent);
+    ev.sensor = desc.handle;
+    ev.type = desc.type;
+    ev.reserved0 = reserved0;
+    ev.timestamp = timestamp_ns;
+
+    switch (desc.type) {
+    case ASENSOR_TYPE_ACCELEROMETER:
+        ev.acceleration.x = gx + pose.lin_accel_x;
+        ev.acceleration.y = gy + pose.lin_accel_y;
+        ev.acceleration.z = gz + pose.lin_accel_z;
+        ev.acceleration.status = ASENSOR_STATUS_ACCURACY_HIGH;
+        break;
+    case ASENSOR_TYPE_MAGNETIC_FIELD:
+        ev.magnetic.x = mx;
+        ev.magnetic.y = my;
+        ev.magnetic.z = mz;
+        ev.magnetic.status = ASENSOR_STATUS_ACCURACY_HIGH;
+        break;
+    case ASENSOR_TYPE_GYROSCOPE:
+        ev.gyro.x = pose.gyro_x;
+        ev.gyro.y = pose.gyro_y;
+        ev.gyro.z = pose.gyro_z;
+        ev.gyro.status = ASENSOR_STATUS_ACCURACY_HIGH;
+        break;
+    case ASENSOR_TYPE_LIGHT:
+        ev.light = pose.ambient_light_lux;
+        break;
+    case ASENSOR_TYPE_GRAVITY:
+        ev.vector.x = gx;
+        ev.vector.y = gy;
+        ev.vector.z = gz;
+        ev.vector.status = ASENSOR_STATUS_ACCURACY_HIGH;
+        break;
+    case ASENSOR_TYPE_LINEAR_ACCELERATION:
+        ev.vector.x = pose.lin_accel_x;
+        ev.vector.y = pose.lin_accel_y;
+        ev.vector.z = pose.lin_accel_z;
+        ev.vector.status = ASENSOR_STATUS_ACCURACY_HIGH;
+        break;
+    case ASENSOR_TYPE_ROTATION_VECTOR:
+        ev.data[0] = pose.qx;
+        ev.data[1] = pose.qy;
+        ev.data[2] = pose.qz;
+        ev.data[3] = pose.qw;
+        ev.data[4] = 0.05f;
+        break;
+    case ASENSOR_TYPE_GAME_ROTATION_VECTOR:
+        ev.data[0] = pose.qx;
+        ev.data[1] = pose.qy;
+        ev.data[2] = pose.qz;
+        ev.data[3] = pose.qw;
+        break;
+    default:
+        break;
+    }
 }
 
 } // namespace
@@ -264,6 +360,19 @@ SensorManagerImpl::~SensorManagerImpl()
     if (worker_thread_.joinable()) {
         worker_thread_.join();
     }
+
+    std::lock_guard<std::mutex> lock(direct_channel_mutex_);
+    for (auto &[id, ch] : direct_channels_) {
+        if (ch->owns_mapping && ch->mapped_ptr) {
+            mem::SharedMemoryManager::Instance().UnmapShared(ch->mapped_ptr);
+            ch->mapped_ptr = nullptr;
+        }
+        if (ch->hardware_buffer) {
+            HardwareBufferManager::Instance().Release(ch->hardware_buffer);
+            ch->hardware_buffer = nullptr;
+        }
+    }
+    direct_channels_.clear();
 }
 
 void SensorManagerImpl::InitializeCatalog()
@@ -489,6 +598,230 @@ DevicePose SensorManagerImpl::GetPose() const
 
 void SensorManagerImpl::NotifyQueuesConfigChanged() { worker_cv_.notify_all(); }
 
+bool SensorManagerImpl::HasAnyActiveDirectReport() const noexcept
+{
+    std::lock_guard<std::mutex> lock(direct_channel_mutex_);
+    for (const auto &[id, ch] : direct_channels_) {
+        if (!ch->active_reports.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const SensorDescriptor *SensorManagerImpl::FindSensorByHandle(int handle) const noexcept
+{
+    std::lock_guard<std::mutex> lock(catalog_mutex_);
+    for (const auto &desc : catalog_) {
+        if (desc->handle == handle) {
+            return desc.get();
+        }
+    }
+    return nullptr;
+}
+
+int SensorManagerImpl::CreateSharedMemoryDirectChannel(int fd, size_t size)
+{
+    if (fd < 0 || size < sizeof(ASensorEvent)) {
+        return -22; // -EINVAL
+    }
+
+    auto *fd_table = syscall::SyscallDispatcher::GetFdTable();
+    if (!fd_table) {
+        return -22; // -EINVAL
+    }
+
+    auto entry = fd_table->Get(fd);
+    if (!entry || !entry->shared_memory) {
+        return -22; // -EINVAL
+    }
+
+    auto shm = entry->shared_memory;
+    if (shm->size < size || shm->mapping_handle == INVALID_HANDLE_VALUE) {
+        return -22; // -EINVAL
+    }
+
+    void *mapped = mem::SharedMemoryManager::Instance().MapShared(
+        *shm, nullptr, size, 3 /* PROT_READ | PROT_WRITE */, 1 /* MAP_SHARED */, 0);
+    if (!mapped) {
+        return -12; // -ENOMEM
+    }
+
+    auto ch = std::make_unique<DirectChannelDescriptor>();
+    ch->channel_id = next_channel_id_.fetch_add(1, std::memory_order_relaxed);
+    ch->channel_type = ASENSOR_DIRECT_CHANNEL_TYPE_SHARED_MEMORY;
+    ch->mapped_ptr = static_cast<uint8_t *>(mapped);
+    ch->buffer_size = size;
+    ch->max_events = size / sizeof(ASensorEvent);
+    ch->write_offset = 0;
+    ch->sequence_number = 1;
+    ch->owns_mapping = true;
+    ch->shm_region = shm;
+
+    std::memset(ch->mapped_ptr, 0, ch->max_events * sizeof(ASensorEvent));
+
+    int assigned_id = ch->channel_id;
+    {
+        std::lock_guard<std::mutex> lock(direct_channel_mutex_);
+        direct_channels_[assigned_id] = std::move(ch);
+    }
+    return assigned_id;
+}
+
+int SensorManagerImpl::CreateHardwareBufferDirectChannel(const AHardwareBuffer *buffer, size_t size)
+{
+    if (!buffer || size < sizeof(ASensorEvent)) {
+        return -22; // -EINVAL
+    }
+
+    if (!HardwareBufferManager::Instance().IsValid(buffer)) {
+        return -22; // -EINVAL
+    }
+
+    if (buffer->desc.format != AHARDWAREBUFFER_FORMAT_BLOB ||
+        (buffer->desc.usage & AHARDWAREBUFFER_USAGE_SENSOR_DIRECT_DATA) == 0 ||
+        buffer->total_size < size) {
+        return -22; // -EINVAL
+    }
+
+    uint8_t *mapped_ptr = nullptr;
+    bool owns_mapping = false;
+    if (buffer->shared_memory) {
+        void *view = mem::SharedMemoryManager::Instance().MapShared(
+            *buffer->shared_memory, nullptr, size, 3 /* PROT_READ | PROT_WRITE */,
+            1 /* MAP_SHARED */, 0);
+        if (!view) {
+            return -12; // -ENOMEM
+        }
+        mapped_ptr = static_cast<uint8_t *>(view);
+        owns_mapping = true;
+    } else if (buffer->mapped_address) {
+        mapped_ptr = static_cast<uint8_t *>(buffer->mapped_address);
+        owns_mapping = false;
+    } else {
+        return -22; // -EINVAL
+    }
+
+    auto *mutable_buf = const_cast<AHardwareBuffer *>(buffer);
+    HardwareBufferManager::Instance().Acquire(mutable_buf);
+
+    auto ch = std::make_unique<DirectChannelDescriptor>();
+    ch->channel_id = next_channel_id_.fetch_add(1, std::memory_order_relaxed);
+    ch->channel_type = ASENSOR_DIRECT_CHANNEL_TYPE_HARDWARE_BUFFER;
+    ch->mapped_ptr = mapped_ptr;
+    ch->buffer_size = size;
+    ch->max_events = size / sizeof(ASensorEvent);
+    ch->write_offset = 0;
+    ch->sequence_number = 1;
+    ch->owns_mapping = owns_mapping;
+    ch->shm_region = buffer->shared_memory;
+    ch->hardware_buffer = mutable_buf;
+
+    std::memset(ch->mapped_ptr, 0, ch->max_events * sizeof(ASensorEvent));
+
+    int assigned_id = ch->channel_id;
+    {
+        std::lock_guard<std::mutex> lock(direct_channel_mutex_);
+        direct_channels_[assigned_id] = std::move(ch);
+    }
+    return assigned_id;
+}
+
+int SensorManagerImpl::DestroyDirectChannel(int channel_id)
+{
+    if (channel_id <= 0) {
+        return -22; // -EINVAL
+    }
+
+    std::unique_ptr<DirectChannelDescriptor> removed;
+    {
+        std::lock_guard<std::mutex> lock(direct_channel_mutex_);
+        auto it = direct_channels_.find(channel_id);
+        if (it == direct_channels_.end()) {
+            return -22; // -EINVAL
+        }
+        removed = std::move(it->second);
+        direct_channels_.erase(it);
+    }
+
+    if (removed->owns_mapping && removed->mapped_ptr) {
+        mem::SharedMemoryManager::Instance().UnmapShared(removed->mapped_ptr);
+        removed->mapped_ptr = nullptr;
+    }
+    if (removed->hardware_buffer) {
+        HardwareBufferManager::Instance().Release(removed->hardware_buffer);
+        removed->hardware_buffer = nullptr;
+    }
+
+    worker_cv_.notify_all();
+    return 0;
+}
+
+int SensorManagerImpl::ConfigureDirectReport(const SensorDescriptor *sensor, int channel_id,
+                                             int rate)
+{
+    if (channel_id <= 0 || !sensor) {
+        return -22; // -EINVAL
+    }
+
+    if (!IsDirectSupportedSensorType(sensor->type)) {
+        return -38; // -ENOSYS / unsupported
+    }
+
+    int result_token = 0;
+    {
+        std::lock_guard<std::mutex> lock(direct_channel_mutex_);
+        auto it = direct_channels_.find(channel_id);
+        if (it == direct_channels_.end()) {
+            return -22; // -EINVAL
+        }
+
+        auto &ch = *it->second;
+        if (rate == ASENSOR_DIRECT_RATE_STOP) {
+            ch.active_reports.erase(sensor->handle);
+            result_token = 0;
+        } else {
+            int64_t interval_us = DirectRateToIntervalUs(rate);
+            if (interval_us <= 0) {
+                return -22; // -EINVAL
+            }
+            int token = next_report_token_.fetch_add(1, std::memory_order_relaxed);
+            ch.active_reports[sensor->handle] = DirectReportConfig{
+                .token = token,
+                .rate_level = rate,
+                .interval_us = interval_us,
+                .next_sample_ns = 0,
+            };
+            result_token = token;
+        }
+    }
+
+    worker_cv_.notify_all();
+    return result_token;
+}
+
+bool SensorManagerImpl::IsDirectChannelTypeSupported(const SensorDescriptor *sensor,
+                                                     int channel_type) const noexcept
+{
+    if (!sensor) {
+        return false;
+    }
+    if (channel_type != ASENSOR_DIRECT_CHANNEL_TYPE_SHARED_MEMORY &&
+        channel_type != ASENSOR_DIRECT_CHANNEL_TYPE_HARDWARE_BUFFER) {
+        return false;
+    }
+    return IsDirectSupportedSensorType(sensor->type);
+}
+
+int SensorManagerImpl::GetHighestDirectReportRateLevel(
+    const SensorDescriptor *sensor) const noexcept
+{
+    if (!sensor || !IsDirectSupportedSensorType(sensor->type)) {
+        return ASENSOR_DIRECT_RATE_STOP;
+    }
+    return ASENSOR_DIRECT_RATE_VERY_FAST;
+}
+
 void SensorManagerImpl::SamplingWorkerLoop()
 {
     std::unordered_map<int64_t, int64_t> next_sample_times{};
@@ -509,6 +842,18 @@ void SensorManagerImpl::SamplingWorkerLoop()
             }
         }
 
+        {
+            std::lock_guard<std::mutex> lock(direct_channel_mutex_);
+            for (const auto &[id, ch] : direct_channels_) {
+                for (const auto &[handle, cfg] : ch->active_reports) {
+                    (void)handle;
+                    has_active_sensors = true;
+                    min_period_us =
+                        std::min(min_period_us, static_cast<int32_t>(cfg.interval_us));
+                }
+            }
+        }
+
         if (!has_active_sensors) {
             std::unique_lock<std::mutex> lock(queue_mutex_);
             worker_cv_.wait(lock, [this]() {
@@ -518,13 +863,15 @@ void SensorManagerImpl::SamplingWorkerLoop()
                     if (q->HasAnySensorEnabled())
                         return true;
                 }
+                if (HasAnyActiveDirectReport())
+                    return true;
                 return false;
             });
             next_sample_times.clear();
             continue;
         }
 
-        min_period_us = std::clamp(min_period_us, 2000, 200000);
+        min_period_us = std::clamp(min_period_us, 1000, 200000);
         int64_t now_ns = GetMonotonicNanos();
 
         DevicePose current_pose = GetPose();
@@ -571,64 +918,41 @@ void SensorManagerImpl::SamplingWorkerLoop()
                 next_sample_times[key] = now_ns + period_ns;
 
                 ASensorEvent ev{};
-                std::memset(&ev, 0, sizeof(ev));
-                ev.version = sizeof(ASensorEvent);
-                ev.sensor = desc->handle;
-                ev.type = desc->type;
-                ev.timestamp = now_ns;
-
-                switch (desc->type) {
-                case ASENSOR_TYPE_ACCELEROMETER:
-                    ev.acceleration.x = gx + current_pose.lin_accel_x;
-                    ev.acceleration.y = gy + current_pose.lin_accel_y;
-                    ev.acceleration.z = gz + current_pose.lin_accel_z;
-                    ev.acceleration.status = ASENSOR_STATUS_ACCURACY_HIGH;
-                    break;
-                case ASENSOR_TYPE_MAGNETIC_FIELD:
-                    ev.magnetic.x = mx;
-                    ev.magnetic.y = my;
-                    ev.magnetic.z = mz;
-                    ev.magnetic.status = ASENSOR_STATUS_ACCURACY_HIGH;
-                    break;
-                case ASENSOR_TYPE_GYROSCOPE:
-                    ev.gyro.x = current_pose.gyro_x;
-                    ev.gyro.y = current_pose.gyro_y;
-                    ev.gyro.z = current_pose.gyro_z;
-                    ev.gyro.status = ASENSOR_STATUS_ACCURACY_HIGH;
-                    break;
-                case ASENSOR_TYPE_LIGHT:
-                    ev.light = current_pose.ambient_light_lux;
-                    break;
-                case ASENSOR_TYPE_GRAVITY:
-                    ev.vector.x = gx;
-                    ev.vector.y = gy;
-                    ev.vector.z = gz;
-                    ev.vector.status = ASENSOR_STATUS_ACCURACY_HIGH;
-                    break;
-                case ASENSOR_TYPE_LINEAR_ACCELERATION:
-                    ev.vector.x = current_pose.lin_accel_x;
-                    ev.vector.y = current_pose.lin_accel_y;
-                    ev.vector.z = current_pose.lin_accel_z;
-                    ev.vector.status = ASENSOR_STATUS_ACCURACY_HIGH;
-                    break;
-                case ASENSOR_TYPE_ROTATION_VECTOR:
-                    ev.data[0] = current_pose.qx;
-                    ev.data[1] = current_pose.qy;
-                    ev.data[2] = current_pose.qz;
-                    ev.data[3] = current_pose.qw;
-                    ev.data[4] = 0.05f;
-                    break;
-                case ASENSOR_TYPE_GAME_ROTATION_VECTOR:
-                    ev.data[0] = current_pose.qx;
-                    ev.data[1] = current_pose.qy;
-                    ev.data[2] = current_pose.qz;
-                    ev.data[3] = current_pose.qw;
-                    break;
-                default:
-                    break;
-                }
-
+                PopulateSensorEvent(*desc, current_pose, gx, gy, gz, mx, my, mz, now_ns, 0, ev);
                 queue->PushEvent(ev);
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(direct_channel_mutex_);
+            for (auto &[id, ch] : direct_channels_) {
+                if (!ch->mapped_ptr || ch->max_events == 0) {
+                    continue;
+                }
+                size_t ring_bytes = ch->max_events * sizeof(ASensorEvent);
+                for (auto &[handle, cfg] : ch->active_reports) {
+                    if (now_ns < cfg.next_sample_ns) {
+                        continue;
+                    }
+                    const auto *desc = FindSensorByHandle(handle);
+                    if (!desc) {
+                        continue;
+                    }
+
+                    cfg.next_sample_ns = now_ns + cfg.interval_us * US_TO_NS;
+
+                    int32_t seq = ch->sequence_number;
+                    ch->sequence_number = (seq == INT32_MAX) ? 1 : (seq + 1);
+
+                    ASensorEvent ev{};
+                    PopulateSensorEvent(*desc, current_pose, gx, gy, gz, mx, my, mz, now_ns, seq,
+                                        ev);
+
+                    std::memcpy(ch->mapped_ptr + ch->write_offset, &ev, sizeof(ASensorEvent));
+                    std::atomic_thread_fence(std::memory_order_release);
+
+                    ch->write_offset = (ch->write_offset + sizeof(ASensorEvent)) % ring_bytes;
+                }
             }
         }
 
@@ -702,39 +1026,40 @@ __attribute__((sysv_abi)) int ASensorManager_destroyEventQueue(ASensorManager *m
 __attribute__((sysv_abi)) int
 ASensorManager_createSharedMemoryDirectChannel(ASensorManager *manager, int fd, size_t size)
 {
-    (void)manager;
-    (void)fd;
-    (void)size;
-    return -38; // -ENOSYS
+    if (!manager)
+        return -22; // -EINVAL
+    return reinterpret_cast<portage::ndk::SensorManagerImpl *>(manager)
+        ->CreateSharedMemoryDirectChannel(fd, size);
 }
 
 __attribute__((sysv_abi)) int
 ASensorManager_createHardwareBufferDirectChannel(ASensorManager *manager,
                                                  struct AHardwareBuffer const *buffer, size_t size)
 {
-    (void)manager;
-    (void)buffer;
-    (void)size;
-    return -38; // -ENOSYS
+    if (!manager)
+        return -22; // -EINVAL
+    return reinterpret_cast<portage::ndk::SensorManagerImpl *>(manager)
+        ->CreateHardwareBufferDirectChannel(buffer, size);
 }
 
 __attribute__((sysv_abi)) int ASensorManager_destroyDirectChannel(ASensorManager *manager,
                                                                   int channelId)
 {
-    (void)manager;
-    (void)channelId;
-    return -38; // -ENOSYS
+    if (!manager)
+        return -22; // -EINVAL
+    return reinterpret_cast<portage::ndk::SensorManagerImpl *>(manager)
+        ->DestroyDirectChannel(channelId);
 }
 
 __attribute__((sysv_abi)) int ASensorManager_configureDirectReport(ASensorManager *manager,
                                                                    ASensor const *sensor,
                                                                    int channelId, int rate)
 {
-    (void)manager;
-    (void)sensor;
-    (void)channelId;
-    (void)rate;
-    return -38; // -ENOSYS
+    if (!manager)
+        return -22; // -EINVAL
+    auto *s = reinterpret_cast<const portage::ndk::SensorDescriptor *>(sensor);
+    return reinterpret_cast<portage::ndk::SensorManagerImpl *>(manager)
+        ->ConfigureDirectReport(s, channelId, rate);
 }
 
 __attribute__((sysv_abi)) int ASensorEventQueue_registerSensor(ASensorEventQueue *queue,
@@ -868,15 +1193,15 @@ __attribute__((sysv_abi)) bool ASensor_isWakeUpSensor(ASensor const *sensor)
 __attribute__((sysv_abi)) bool ASensor_isDirectChannelTypeSupported(ASensor const *sensor,
                                                                     int channelType)
 {
-    (void)sensor;
-    (void)channelType;
-    return false;
+    auto *s = reinterpret_cast<const portage::ndk::SensorDescriptor *>(sensor);
+    return portage::ndk::SensorManagerImpl::Instance().IsDirectChannelTypeSupported(s,
+                                                                                     channelType);
 }
 
 __attribute__((sysv_abi)) int ASensor_getHighestDirectReportRateLevel(ASensor const *sensor)
 {
-    (void)sensor;
-    return ASENSOR_DIRECT_RATE_STOP;
+    auto *s = reinterpret_cast<const portage::ndk::SensorDescriptor *>(sensor);
+    return portage::ndk::SensorManagerImpl::Instance().GetHighestDirectReportRateLevel(s);
 }
 
 __attribute__((sysv_abi)) int ASensor_getHandle(ASensor const *sensor)

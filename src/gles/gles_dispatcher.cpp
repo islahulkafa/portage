@@ -15,13 +15,45 @@ namespace portage::gles {
 static std::string SanitizeGlesShaderSource(std::string_view src)
 {
     std::string out(src);
+    const auto &tbl = WglBridge::Instance().GetDispatchTable();
 
-    // Replace precision qualifiers with spaces
+    // Check if shader specifies an ES version
+    bool is_es_version = false;
+    size_t ver_pos = out.find("#version");
+    if (ver_pos != std::string::npos) {
+        size_t eol = out.find('\n', ver_pos);
+        if (eol == std::string::npos)
+            eol = out.size();
+        std::string line = out.substr(ver_pos, eol - ver_pos);
+        if (line.find("300 es") != std::string::npos ||
+            line.find("310 es") != std::string::npos ||
+            line.find("320 es") != std::string::npos) {
+            if (!tbl.has_es3_compat) {
+                out.replace(ver_pos, eol - ver_pos, "#version 330 compatibility");
+            } else {
+                is_es_version = true;
+            }
+        } else if (line.find("100") != std::string::npos) {
+            if (!tbl.has_es2_compat) {
+                out.replace(ver_pos, eol - ver_pos, "#version 120");
+            } else {
+                is_es_version = true;
+            }
+        }
+    }
+
+    // If native ES version is preserved with ARB_ES_compatibility, keep precision qualifiers
+    if (is_es_version) {
+        return out;
+    }
+
+    // Compiling under desktop GLSL: strip precision qualifiers
     size_t pos = 0;
     while ((pos = out.find("precision", pos)) != std::string::npos) {
         bool before_ok =
             (pos == 0 || isspace(static_cast<unsigned char>(out[pos - 1])) || out[pos - 1] == ';');
-        bool after_ok = (pos + 9 < out.size() && isspace(static_cast<unsigned char>(out[pos + 9])));
+        bool after_ok =
+            (pos + 9 < out.size() && isspace(static_cast<unsigned char>(out[pos + 9])));
         if (before_ok && after_ok) {
             size_t semi = out.find(';', pos);
             if (semi != std::string::npos) {
@@ -44,7 +76,7 @@ static std::string SanitizeGlesShaderSource(std::string_view src)
                          "#define highp\n"
                          "#endif\n";
 
-    size_t ver_pos = out.find("#version");
+    ver_pos = out.find("#version");
     if (ver_pos != std::string::npos) {
         size_t eol = out.find('\n', ver_pos);
         if (eol != std::string::npos) {
@@ -177,6 +209,116 @@ void InitializeGlesDispatcher() noexcept
     REG_PROC(glDispatchCompute);
     REG_PROC(glMemoryBarrier);
 
+    // Pipeline State
+    REG_PROC(glDepthFunc);
+    REG_PROC(glDepthMask);
+    REG_PROC(glClearDepthf);
+    REG_PROC(glDepthRangef);
+    REG_PROC(glColorMask);
+    REG_PROC(glBlendFunc);
+    REG_PROC(glBlendFuncSeparate);
+    REG_PROC(glBlendEquation);
+    REG_PROC(glBlendEquationSeparate);
+    REG_PROC(glBlendColor);
+    REG_PROC(glCullFace);
+    REG_PROC(glFrontFace);
+    REG_PROC(glScissor);
+    REG_PROC(glStencilFunc);
+    REG_PROC(glStencilFuncSeparate);
+    REG_PROC(glStencilOp);
+    REG_PROC(glStencilOpSeparate);
+    REG_PROC(glStencilMask);
+    REG_PROC(glStencilMaskSeparate);
+    REG_PROC(glLineWidth);
+    REG_PROC(glPolygonOffset);
+    REG_PROC(glSampleCoverage);
+    REG_PROC(glFlush);
+    REG_PROC(glFinish);
+    REG_PROC(glHint);
+
+    // Renderbuffers & Framebuffers
+    REG_PROC(glGenRenderbuffers);
+    REG_PROC(glBindRenderbuffer);
+    REG_PROC(glDeleteRenderbuffers);
+    REG_PROC(glIsRenderbuffer);
+    REG_PROC(glRenderbufferStorage);
+    REG_PROC(glRenderbufferStorageMultisample);
+    REG_PROC(glFramebufferRenderbuffer);
+    REG_PROC(glBlitFramebuffer);
+    REG_PROC(glDrawBuffers);
+    REG_PROC(glReadBuffer);
+    REG_PROC(glInvalidateFramebuffer);
+    REG_PROC(glFramebufferTextureLayer);
+
+    // Textures & Mipmaps
+    REG_PROC(glTexSubImage2D);
+    REG_PROC(glCopyTexImage2D);
+    REG_PROC(glCopyTexSubImage2D);
+    REG_PROC(glCompressedTexImage2D);
+    REG_PROC(glCompressedTexSubImage2D);
+    REG_PROC(glGenerateMipmap);
+    REG_PROC(glTexParameterf);
+    REG_PROC(glTexParameterfv);
+    REG_PROC(glTexParameteriv);
+
+    // Uniforms, Attributes & Program
+    REG_PROC(glUniform2i);
+    REG_PROC(glUniform3i);
+    REG_PROC(glUniform4i);
+    REG_PROC(glUniform1iv);
+    REG_PROC(glUniform2iv);
+    REG_PROC(glUniform3iv);
+    REG_PROC(glUniform4iv);
+    REG_PROC(glUniform2f);
+    REG_PROC(glUniform3f);
+    REG_PROC(glUniform1fv);
+    REG_PROC(glUniform2fv);
+    REG_PROC(glUniform3fv);
+    REG_PROC(glUniform4fv);
+    REG_PROC(glUniform1uiv);
+    REG_PROC(glUniform2uiv);
+    REG_PROC(glUniform3uiv);
+    REG_PROC(glUniform4uiv);
+    REG_PROC(glUniformMatrix2fv);
+    REG_PROC(glUniformMatrix3fv);
+    REG_PROC(glVertexAttribIPointer);
+    REG_PROC(glVertexAttrib1f);
+    REG_PROC(glVertexAttrib2f);
+    REG_PROC(glVertexAttrib3f);
+    REG_PROC(glVertexAttrib4f);
+    REG_PROC(glBindAttribLocation);
+    REG_PROC(glGetActiveUniform);
+    REG_PROC(glGetActiveAttrib);
+    REG_PROC(glDetachShader);
+    REG_PROC(glValidateProgram);
+    REG_PROC(glIsShader);
+    REG_PROC(glIsProgram);
+    REG_PROC(glIsBuffer);
+    REG_PROC(glIsTexture);
+    REG_PROC(glIsFramebuffer);
+    REG_PROC(glIsVertexArray);
+    REG_PROC(glIsSampler);
+
+    // Clear Buffers
+    REG_PROC(glClearBufferfv);
+    REG_PROC(glClearBufferiv);
+    REG_PROC(glClearBufferuiv);
+    REG_PROC(glClearBufferfi);
+
+    // State & Queries
+    REG_PROC(glGetIntegerv);
+    REG_PROC(glGetInteger64v);
+    REG_PROC(glGetFloatv);
+    REG_PROC(glGetBooleanv);
+    REG_PROC(glGetStringi);
+    REG_PROC(glGetTexParameteriv);
+    REG_PROC(glGetTexParameterfv);
+    REG_PROC(glGetFramebufferAttachmentParameteriv);
+    REG_PROC(glGetRenderbufferParameteriv);
+    REG_PROC(glGetBufferParameteriv);
+    REG_PROC(glGetVertexAttribiv);
+    REG_PROC(glIsEnabled);
+
 #undef REG_PROC
 }
 
@@ -191,6 +333,11 @@ std::unordered_set<GLsync> &FallbackSyncSet()
     static std::unordered_set<GLsync> s;
     return s;
 }
+std::unordered_set<GLuint> &FallbackRenderbufferSet()
+{
+    static std::unordered_set<GLuint> s;
+    return s;
+}
 std::atomic<uintptr_t> &FallbackSyncCounter()
 {
     static std::atomic<uintptr_t> c{0x10000};
@@ -201,6 +348,29 @@ std::atomic<GLuint> &FallbackIdCounter()
     static std::atomic<GLuint> c{10000};
     return c;
 }
+
+const char *const kGlesExtensions[] = {
+    "GL_OES_EGL_image",
+    "GL_OES_EGL_image_external",
+    "GL_OES_EGL_image_external_essl3",
+    "GL_OES_rgb8_rgba8",
+    "GL_OES_depth24",
+    "GL_OES_depth32",
+    "GL_OES_packed_depth_stencil",
+    "GL_OES_standard_derivatives",
+    "GL_OES_element_index_uint",
+    "GL_OES_texture_float",
+    "GL_OES_texture_half_float",
+    "GL_EXT_texture_filter_anisotropic",
+    "GL_EXT_color_buffer_float",
+    "GL_EXT_color_buffer_half_float",
+    "GL_KHR_debug",
+    "GL_EXT_discard_framebuffer",
+    "GL_EXT_draw_buffers",
+    "GL_EXT_multisampled_render_to_texture",
+};
+constexpr GLint kGlesExtensionCount =
+    static_cast<GLint>(sizeof(kGlesExtensions) / sizeof(kGlesExtensions[0]));
 } // namespace
 
 } // namespace portage::gles
@@ -600,6 +770,26 @@ __attribute__((sysv_abi)) const GLubyte *glGetString(GLenum name)
         return reinterpret_cast<const GLubyte *>("OpenGL ES 3.2 (Portage Desktop OpenGL)");
     if (name == GL_SHADING_LANGUAGE_VERSION)
         return reinterpret_cast<const GLubyte *>("OpenGL ES GLSL ES 3.20");
+    if (name == GL_EXTENSIONS) {
+        static std::string full_exts;
+        static std::once_flag flag;
+        std::call_once(flag, [&tbl]() {
+            if (tbl.glGetString) {
+                const auto *s = tbl.glGetString(GL_EXTENSIONS);
+                if (s && *s) {
+                    full_exts = reinterpret_cast<const char *>(s);
+                    full_exts += " ";
+                }
+            }
+            for (GLint i = 0; i < portage::gles::kGlesExtensionCount; ++i) {
+                if (full_exts.find(portage::gles::kGlesExtensions[i]) == std::string::npos) {
+                    full_exts += portage::gles::kGlesExtensions[i];
+                    full_exts += " ";
+                }
+            }
+        });
+        return reinterpret_cast<const GLubyte *>(full_exts.c_str());
+    }
     if (tbl.glGetString)
         return tbl.glGetString(name);
     return reinterpret_cast<const GLubyte *>("");
@@ -1028,6 +1218,861 @@ __attribute__((sysv_abi)) void glMemoryBarrier(GLbitfield barriers)
     if (tbl.glMemoryBarrier) {
         tbl.glMemoryBarrier(barriers);
     }
+}
+
+// Pipeline State
+__attribute__((sysv_abi)) void glDepthFunc(GLenum func)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glDepthFunc)
+        tbl.glDepthFunc(func);
+}
+
+__attribute__((sysv_abi)) void glDepthMask(GLboolean flag)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glDepthMask)
+        tbl.glDepthMask(flag);
+}
+
+__attribute__((sysv_abi)) void glClearDepthf(GLclampf depth)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glClearDepthf) {
+        tbl.glClearDepthf(depth);
+    } else if (tbl.glClearDepth) {
+        tbl.glClearDepth(static_cast<GLclampd>(depth));
+    }
+}
+
+__attribute__((sysv_abi)) void glDepthRangef(GLclampf near_val, GLclampf far_val)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glDepthRangef) {
+        tbl.glDepthRangef(near_val, far_val);
+    } else if (tbl.glDepthRange) {
+        tbl.glDepthRange(static_cast<GLclampd>(near_val), static_cast<GLclampd>(far_val));
+    }
+}
+
+__attribute__((sysv_abi)) void glColorMask(GLboolean red, GLboolean green, GLboolean blue,
+                                           GLboolean alpha)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glColorMask)
+        tbl.glColorMask(red, green, blue, alpha);
+}
+
+__attribute__((sysv_abi)) void glBlendFunc(GLenum sfactor, GLenum dfactor)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glBlendFunc)
+        tbl.glBlendFunc(sfactor, dfactor);
+}
+
+__attribute__((sysv_abi)) void glBlendFuncSeparate(GLenum srcRGB, GLenum dstRGB, GLenum srcAlpha,
+                                                   GLenum dstAlpha)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glBlendFuncSeparate)
+        tbl.glBlendFuncSeparate(srcRGB, dstRGB, srcAlpha, dstAlpha);
+}
+
+__attribute__((sysv_abi)) void glBlendEquation(GLenum mode)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glBlendEquation)
+        tbl.glBlendEquation(mode);
+}
+
+__attribute__((sysv_abi)) void glBlendEquationSeparate(GLenum modeRGB, GLenum modeAlpha)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glBlendEquationSeparate)
+        tbl.glBlendEquationSeparate(modeRGB, modeAlpha);
+}
+
+__attribute__((sysv_abi)) void glBlendColor(GLclampf red, GLclampf green, GLclampf blue,
+                                            GLclampf alpha)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glBlendColor)
+        tbl.glBlendColor(red, green, blue, alpha);
+}
+
+__attribute__((sysv_abi)) void glCullFace(GLenum mode)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glCullFace)
+        tbl.glCullFace(mode);
+}
+
+__attribute__((sysv_abi)) void glFrontFace(GLenum mode)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glFrontFace)
+        tbl.glFrontFace(mode);
+}
+
+__attribute__((sysv_abi)) void glScissor(GLint x, GLint y, GLsizei width, GLsizei height)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glScissor)
+        tbl.glScissor(x, y, width, height);
+}
+
+__attribute__((sysv_abi)) void glStencilFunc(GLenum func, GLint ref, GLuint mask)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glStencilFunc)
+        tbl.glStencilFunc(func, ref, mask);
+}
+
+__attribute__((sysv_abi)) void glStencilFuncSeparate(GLenum face, GLenum func, GLint ref,
+                                                     GLuint mask)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glStencilFuncSeparate)
+        tbl.glStencilFuncSeparate(face, func, ref, mask);
+}
+
+__attribute__((sysv_abi)) void glStencilOp(GLenum fail, GLenum zfail, GLenum zpass)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glStencilOp)
+        tbl.glStencilOp(fail, zfail, zpass);
+}
+
+__attribute__((sysv_abi)) void glStencilOpSeparate(GLenum face, GLenum fail, GLenum zfail,
+                                                   GLenum zpass)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glStencilOpSeparate)
+        tbl.glStencilOpSeparate(face, fail, zfail, zpass);
+}
+
+__attribute__((sysv_abi)) void glStencilMask(GLuint mask)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glStencilMask)
+        tbl.glStencilMask(mask);
+}
+
+__attribute__((sysv_abi)) void glStencilMaskSeparate(GLenum face, GLuint mask)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glStencilMaskSeparate)
+        tbl.glStencilMaskSeparate(face, mask);
+}
+
+__attribute__((sysv_abi)) void glLineWidth(GLfloat width)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glLineWidth)
+        tbl.glLineWidth(width);
+}
+
+__attribute__((sysv_abi)) void glPolygonOffset(GLfloat factor, GLfloat units)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glPolygonOffset)
+        tbl.glPolygonOffset(factor, units);
+}
+
+__attribute__((sysv_abi)) void glSampleCoverage(GLclampf value, GLboolean invert)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glSampleCoverage)
+        tbl.glSampleCoverage(value, invert);
+}
+
+__attribute__((sysv_abi)) void glFlush(void)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glFlush)
+        tbl.glFlush();
+}
+
+__attribute__((sysv_abi)) void glFinish(void)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glFinish)
+        tbl.glFinish();
+}
+
+__attribute__((sysv_abi)) void glHint(GLenum target, GLenum mode)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glHint)
+        tbl.glHint(target, mode);
+}
+
+// Renderbuffers & Framebuffers
+__attribute__((sysv_abi)) void glGenRenderbuffers(GLsizei n, GLuint *renderbuffers)
+{
+    if (!renderbuffers || n <= 0)
+        return;
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glGenRenderbuffers) {
+        tbl.glGenRenderbuffers(n, renderbuffers);
+        return;
+    }
+    std::lock_guard<std::mutex> lock(portage::gles::FallbackSyncMutex());
+    for (GLsizei i = 0; i < n; ++i) {
+        renderbuffers[i] = portage::gles::FallbackIdCounter().fetch_add(1);
+        portage::gles::FallbackRenderbufferSet().insert(renderbuffers[i]);
+    }
+}
+
+__attribute__((sysv_abi)) void glBindRenderbuffer(GLenum target, GLuint renderbuffer)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glBindRenderbuffer)
+        tbl.glBindRenderbuffer(target, renderbuffer);
+}
+
+__attribute__((sysv_abi)) void glDeleteRenderbuffers(GLsizei n, const GLuint *renderbuffers)
+{
+    if (!renderbuffers || n <= 0)
+        return;
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glDeleteRenderbuffers) {
+        tbl.glDeleteRenderbuffers(n, renderbuffers);
+        return;
+    }
+    std::lock_guard<std::mutex> lock(portage::gles::FallbackSyncMutex());
+    for (GLsizei i = 0; i < n; ++i) {
+        portage::gles::FallbackRenderbufferSet().erase(renderbuffers[i]);
+    }
+}
+
+__attribute__((sysv_abi)) GLboolean glIsRenderbuffer(GLuint renderbuffer)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glIsRenderbuffer)
+        return tbl.glIsRenderbuffer(renderbuffer);
+    std::lock_guard<std::mutex> lock(portage::gles::FallbackSyncMutex());
+    return portage::gles::FallbackRenderbufferSet().contains(renderbuffer) ? GL_TRUE : GL_FALSE;
+}
+
+__attribute__((sysv_abi)) void glRenderbufferStorage(GLenum target, GLenum internalformat,
+                                                     GLsizei width, GLsizei height)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glRenderbufferStorage)
+        tbl.glRenderbufferStorage(target, internalformat, width, height);
+}
+
+__attribute__((sysv_abi)) void glRenderbufferStorageMultisample(GLenum target, GLsizei samples,
+                                                              GLenum internalformat, GLsizei width,
+                                                              GLsizei height)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glRenderbufferStorageMultisample)
+        tbl.glRenderbufferStorageMultisample(target, samples, internalformat, width, height);
+}
+
+__attribute__((sysv_abi)) void glFramebufferRenderbuffer(GLenum target, GLenum attachment,
+                                                        GLenum renderbuffertarget,
+                                                        GLuint renderbuffer)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glFramebufferRenderbuffer)
+        tbl.glFramebufferRenderbuffer(target, attachment, renderbuffertarget, renderbuffer);
+}
+
+__attribute__((sysv_abi)) void glBlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1,
+                                                 GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1,
+                                                 GLbitfield mask, GLenum filter)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glBlitFramebuffer)
+        tbl.glBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
+}
+
+__attribute__((sysv_abi)) void glDrawBuffers(GLsizei n, const GLenum *bufs)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glDrawBuffers)
+        tbl.glDrawBuffers(n, bufs);
+}
+
+__attribute__((sysv_abi)) void glReadBuffer(GLenum mode)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glReadBuffer)
+        tbl.glReadBuffer(mode);
+}
+
+__attribute__((sysv_abi)) void glInvalidateFramebuffer(GLenum target, GLsizei numAttachments,
+                                                       const GLenum *attachments)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glInvalidateFramebuffer)
+        tbl.glInvalidateFramebuffer(target, numAttachments, attachments);
+}
+
+__attribute__((sysv_abi)) void glFramebufferTextureLayer(GLenum target, GLenum attachment,
+                                                         GLuint texture, GLint level, GLint layer)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glFramebufferTextureLayer)
+        tbl.glFramebufferTextureLayer(target, attachment, texture, level, layer);
+}
+
+// Textures & Mipmaps
+__attribute__((sysv_abi)) void glTexSubImage2D(GLenum target, GLint level, GLint xoffset,
+                                               GLint yoffset, GLsizei width, GLsizei height,
+                                               GLenum format, GLenum type, const void *pixels)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glTexSubImage2D)
+        tbl.glTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type, pixels);
+}
+
+__attribute__((sysv_abi)) void glCopyTexImage2D(GLenum target, GLint level, GLenum internalformat,
+                                                GLint x, GLint y, GLsizei width, GLsizei height,
+                                                GLint border)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glCopyTexImage2D)
+        tbl.glCopyTexImage2D(target, level, internalformat, x, y, width, height, border);
+}
+
+__attribute__((sysv_abi)) void glCopyTexSubImage2D(GLenum target, GLint level, GLint xoffset,
+                                                   GLint yoffset, GLint x, GLint y, GLsizei width,
+                                                   GLsizei height)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glCopyTexSubImage2D)
+        tbl.glCopyTexSubImage2D(target, level, xoffset, yoffset, x, y, width, height);
+}
+
+__attribute__((sysv_abi)) void glCompressedTexImage2D(GLenum target, GLint level,
+                                                      GLenum internalformat, GLsizei width,
+                                                      GLsizei height, GLint border,
+                                                      GLsizei imageSize, const void *data)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glCompressedTexImage2D)
+        tbl.glCompressedTexImage2D(target, level, internalformat, width, height, border, imageSize,
+                                   data);
+}
+
+__attribute__((sysv_abi)) void glCompressedTexSubImage2D(GLenum target, GLint level, GLint xoffset,
+                                                         GLint yoffset, GLsizei width,
+                                                         GLsizei height, GLenum format,
+                                                         GLsizei imageSize, const void *data)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glCompressedTexSubImage2D)
+        tbl.glCompressedTexSubImage2D(target, level, xoffset, yoffset, width, height, format,
+                                      imageSize, data);
+}
+
+__attribute__((sysv_abi)) void glGenerateMipmap(GLenum target)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glGenerateMipmap)
+        tbl.glGenerateMipmap(target);
+}
+
+__attribute__((sysv_abi)) void glTexParameterf(GLenum target, GLenum pname, GLfloat param)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glTexParameterf)
+        tbl.glTexParameterf(target, pname, param);
+}
+
+__attribute__((sysv_abi)) void glTexParameterfv(GLenum target, GLenum pname,
+                                                const GLfloat *params)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glTexParameterfv)
+        tbl.glTexParameterfv(target, pname, params);
+}
+
+__attribute__((sysv_abi)) void glTexParameteriv(GLenum target, GLenum pname, const GLint *params)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glTexParameteriv)
+        tbl.glTexParameteriv(target, pname, params);
+}
+
+// Uniforms, Attributes & Program
+__attribute__((sysv_abi)) void glUniform2i(GLint location, GLint v0, GLint v1)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform2i)
+        tbl.glUniform2i(location, v0, v1);
+}
+
+__attribute__((sysv_abi)) void glUniform3i(GLint location, GLint v0, GLint v1, GLint v2)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform3i)
+        tbl.glUniform3i(location, v0, v1, v2);
+}
+
+__attribute__((sysv_abi)) void glUniform4i(GLint location, GLint v0, GLint v1, GLint v2, GLint v3)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform4i)
+        tbl.glUniform4i(location, v0, v1, v2, v3);
+}
+
+__attribute__((sysv_abi)) void glUniform1iv(GLint location, GLsizei count, const GLint *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform1iv)
+        tbl.glUniform1iv(location, count, value);
+}
+
+__attribute__((sysv_abi)) void glUniform2iv(GLint location, GLsizei count, const GLint *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform2iv)
+        tbl.glUniform2iv(location, count, value);
+}
+
+__attribute__((sysv_abi)) void glUniform3iv(GLint location, GLsizei count, const GLint *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform3iv)
+        tbl.glUniform3iv(location, count, value);
+}
+
+__attribute__((sysv_abi)) void glUniform4iv(GLint location, GLsizei count, const GLint *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform4iv)
+        tbl.glUniform4iv(location, count, value);
+}
+
+__attribute__((sysv_abi)) void glUniform2f(GLint location, GLfloat v0, GLfloat v1)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform2f)
+        tbl.glUniform2f(location, v0, v1);
+}
+
+__attribute__((sysv_abi)) void glUniform3f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform3f)
+        tbl.glUniform3f(location, v0, v1, v2);
+}
+
+__attribute__((sysv_abi)) void glUniform1fv(GLint location, GLsizei count, const GLfloat *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform1fv)
+        tbl.glUniform1fv(location, count, value);
+}
+
+__attribute__((sysv_abi)) void glUniform2fv(GLint location, GLsizei count, const GLfloat *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform2fv)
+        tbl.glUniform2fv(location, count, value);
+}
+
+__attribute__((sysv_abi)) void glUniform3fv(GLint location, GLsizei count, const GLfloat *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform3fv)
+        tbl.glUniform3fv(location, count, value);
+}
+
+__attribute__((sysv_abi)) void glUniform4fv(GLint location, GLsizei count, const GLfloat *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform4fv)
+        tbl.glUniform4fv(location, count, value);
+}
+
+__attribute__((sysv_abi)) void glUniform1uiv(GLint location, GLsizei count, const GLuint *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform1uiv)
+        tbl.glUniform1uiv(location, count, value);
+}
+
+__attribute__((sysv_abi)) void glUniform2uiv(GLint location, GLsizei count, const GLuint *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform2uiv)
+        tbl.glUniform2uiv(location, count, value);
+}
+
+__attribute__((sysv_abi)) void glUniform3uiv(GLint location, GLsizei count, const GLuint *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform3uiv)
+        tbl.glUniform3uiv(location, count, value);
+}
+
+__attribute__((sysv_abi)) void glUniform4uiv(GLint location, GLsizei count, const GLuint *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniform4uiv)
+        tbl.glUniform4uiv(location, count, value);
+}
+
+__attribute__((sysv_abi)) void glUniformMatrix2fv(GLint location, GLsizei count,
+                                                  GLboolean transpose, const GLfloat *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniformMatrix2fv)
+        tbl.glUniformMatrix2fv(location, count, transpose, value);
+}
+
+__attribute__((sysv_abi)) void glUniformMatrix3fv(GLint location, GLsizei count,
+                                                  GLboolean transpose, const GLfloat *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glUniformMatrix3fv)
+        tbl.glUniformMatrix3fv(location, count, transpose, value);
+}
+
+__attribute__((sysv_abi)) void glVertexAttribIPointer(GLuint index, GLint size, GLenum type,
+                                                      GLsizei stride, const void *pointer)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glVertexAttribIPointer)
+        tbl.glVertexAttribIPointer(index, size, type, stride, pointer);
+}
+
+__attribute__((sysv_abi)) void glVertexAttrib1f(GLuint index, GLfloat x)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glVertexAttrib1f)
+        tbl.glVertexAttrib1f(index, x);
+}
+
+__attribute__((sysv_abi)) void glVertexAttrib2f(GLuint index, GLfloat x, GLfloat y)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glVertexAttrib2f)
+        tbl.glVertexAttrib2f(index, x, y);
+}
+
+__attribute__((sysv_abi)) void glVertexAttrib3f(GLuint index, GLfloat x, GLfloat y, GLfloat z)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glVertexAttrib3f)
+        tbl.glVertexAttrib3f(index, x, y, z);
+}
+
+__attribute__((sysv_abi)) void glVertexAttrib4f(GLuint index, GLfloat x, GLfloat y, GLfloat z,
+                                                GLfloat w)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glVertexAttrib4f)
+        tbl.glVertexAttrib4f(index, x, y, z, w);
+}
+
+__attribute__((sysv_abi)) void glBindAttribLocation(GLuint program, GLuint index,
+                                                    const GLchar *name)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glBindAttribLocation)
+        tbl.glBindAttribLocation(program, index, name);
+}
+
+__attribute__((sysv_abi)) void glGetActiveUniform(GLuint program, GLuint index, GLsizei bufSize,
+                                                 GLsizei *length, GLint *size, GLenum *type,
+                                                 GLchar *name)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glGetActiveUniform)
+        tbl.glGetActiveUniform(program, index, bufSize, length, size, type, name);
+}
+
+__attribute__((sysv_abi)) void glGetActiveAttrib(GLuint program, GLuint index, GLsizei bufSize,
+                                                GLsizei *length, GLint *size, GLenum *type,
+                                                GLchar *name)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glGetActiveAttrib)
+        tbl.glGetActiveAttrib(program, index, bufSize, length, size, type, name);
+}
+
+__attribute__((sysv_abi)) void glDetachShader(GLuint program, GLuint shader)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glDetachShader)
+        tbl.glDetachShader(program, shader);
+}
+
+__attribute__((sysv_abi)) void glValidateProgram(GLuint program)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glValidateProgram)
+        tbl.glValidateProgram(program);
+}
+
+__attribute__((sysv_abi)) GLboolean glIsShader(GLuint shader)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glIsShader)
+        return tbl.glIsShader(shader);
+    return shader != 0 ? GL_TRUE : GL_FALSE;
+}
+
+__attribute__((sysv_abi)) GLboolean glIsProgram(GLuint program)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glIsProgram)
+        return tbl.glIsProgram(program);
+    return program != 0 ? GL_TRUE : GL_FALSE;
+}
+
+__attribute__((sysv_abi)) GLboolean glIsBuffer(GLuint buffer)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glIsBuffer)
+        return tbl.glIsBuffer(buffer);
+    return buffer != 0 ? GL_TRUE : GL_FALSE;
+}
+
+__attribute__((sysv_abi)) GLboolean glIsTexture(GLuint texture)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glIsTexture)
+        return tbl.glIsTexture(texture);
+    return texture != 0 ? GL_TRUE : GL_FALSE;
+}
+
+__attribute__((sysv_abi)) GLboolean glIsFramebuffer(GLuint framebuffer)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glIsFramebuffer)
+        return tbl.glIsFramebuffer(framebuffer);
+    return framebuffer != 0 ? GL_TRUE : GL_FALSE;
+}
+
+__attribute__((sysv_abi)) GLboolean glIsVertexArray(GLuint array)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glIsVertexArray)
+        return tbl.glIsVertexArray(array);
+    return array != 0 ? GL_TRUE : GL_FALSE;
+}
+
+__attribute__((sysv_abi)) GLboolean glIsSampler(GLuint sampler)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glIsSampler)
+        return tbl.glIsSampler(sampler);
+    return sampler != 0 ? GL_TRUE : GL_FALSE;
+}
+
+// Clear Buffers (GLES 3.0)
+__attribute__((sysv_abi)) void glClearBufferfv(GLenum buffer, GLint drawbuffer,
+                                              const GLfloat *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glClearBufferfv)
+        tbl.glClearBufferfv(buffer, drawbuffer, value);
+}
+
+__attribute__((sysv_abi)) void glClearBufferiv(GLenum buffer, GLint drawbuffer,
+                                              const GLint *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glClearBufferiv)
+        tbl.glClearBufferiv(buffer, drawbuffer, value);
+}
+
+__attribute__((sysv_abi)) void glClearBufferuiv(GLenum buffer, GLint drawbuffer,
+                                               const GLuint *value)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glClearBufferuiv)
+        tbl.glClearBufferuiv(buffer, drawbuffer, value);
+}
+
+__attribute__((sysv_abi)) void glClearBufferfi(GLenum buffer, GLint drawbuffer, GLfloat depth,
+                                              GLint stencil)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glClearBufferfi)
+        tbl.glClearBufferfi(buffer, drawbuffer, depth, stencil);
+}
+
+// State & Queries
+__attribute__((sysv_abi)) void glGetIntegerv(GLenum pname, GLint *data)
+{
+    if (!data)
+        return;
+    if (pname == GL_NUM_EXTENSIONS) {
+        *data = portage::gles::kGlesExtensionCount;
+        return;
+    }
+    if (pname == GL_MAJOR_VERSION) {
+        *data = 3;
+        return;
+    }
+    if (pname == GL_MINOR_VERSION) {
+        *data = 2;
+        return;
+    }
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glGetIntegerv) {
+        tbl.glGetIntegerv(pname, data);
+        return;
+    }
+    switch (pname) {
+    case GL_MAX_TEXTURE_SIZE:
+        *data = 4096;
+        break;
+    case GL_MAX_COLOR_ATTACHMENTS:
+        *data = 8;
+        break;
+    case GL_MAX_DRAW_BUFFERS:
+        *data = 8;
+        break;
+    case GL_MAX_RENDERBUFFER_SIZE:
+        *data = 4096;
+        break;
+    case GL_MAX_SAMPLES:
+        *data = 4;
+        break;
+    case GL_MAX_VERTEX_ATTRIBS:
+        *data = 16;
+        break;
+    case GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS:
+        *data = 32;
+        break;
+    default:
+        *data = 0;
+        break;
+    }
+}
+
+__attribute__((sysv_abi)) void glGetInteger64v(GLenum pname, GLint64 *data)
+{
+    if (!data)
+        return;
+    if (pname == GL_NUM_EXTENSIONS) {
+        *data = portage::gles::kGlesExtensionCount;
+        return;
+    }
+    if (pname == GL_MAJOR_VERSION) {
+        *data = 3;
+        return;
+    }
+    if (pname == GL_MINOR_VERSION) {
+        *data = 2;
+        return;
+    }
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glGetInteger64v) {
+        tbl.glGetInteger64v(pname, data);
+        return;
+    }
+    GLint tmp = 0;
+    glGetIntegerv(pname, &tmp);
+    *data = static_cast<GLint64>(tmp);
+}
+
+__attribute__((sysv_abi)) void glGetFloatv(GLenum pname, GLfloat *data)
+{
+    if (!data)
+        return;
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glGetFloatv) {
+        tbl.glGetFloatv(pname, data);
+        return;
+    }
+    GLint tmp = 0;
+    glGetIntegerv(pname, &tmp);
+    *data = static_cast<GLfloat>(tmp);
+}
+
+__attribute__((sysv_abi)) void glGetBooleanv(GLenum pname, GLboolean *data)
+{
+    if (!data)
+        return;
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glGetBooleanv) {
+        tbl.glGetBooleanv(pname, data);
+        return;
+    }
+    GLint tmp = 0;
+    glGetIntegerv(pname, &tmp);
+    *data = (tmp != 0) ? GL_TRUE : GL_FALSE;
+}
+
+__attribute__((sysv_abi)) const GLubyte *glGetStringi(GLenum name, GLuint index)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (name == GL_EXTENSIONS) {
+        if (index < static_cast<GLuint>(portage::gles::kGlesExtensionCount)) {
+            return reinterpret_cast<const GLubyte *>(portage::gles::kGlesExtensions[index]);
+        }
+        if (tbl.glGetStringi) {
+            return tbl.glGetStringi(name, index);
+        }
+        return nullptr;
+    }
+    if (tbl.glGetStringi)
+        return tbl.glGetStringi(name, index);
+    return nullptr;
+}
+
+__attribute__((sysv_abi)) void glGetTexParameteriv(GLenum target, GLenum pname, GLint *params)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glGetTexParameteriv)
+        tbl.glGetTexParameteriv(target, pname, params);
+}
+
+__attribute__((sysv_abi)) void glGetTexParameterfv(GLenum target, GLenum pname, GLfloat *params)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glGetTexParameterfv)
+        tbl.glGetTexParameterfv(target, pname, params);
+}
+
+__attribute__((sysv_abi)) void glGetFramebufferAttachmentParameteriv(GLenum target,
+                                                                     GLenum attachment,
+                                                                     GLenum pname, GLint *params)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glGetFramebufferAttachmentParameteriv)
+        tbl.glGetFramebufferAttachmentParameteriv(target, attachment, pname, params);
+}
+
+__attribute__((sysv_abi)) void glGetRenderbufferParameteriv(GLenum target, GLenum pname,
+                                                            GLint *params)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glGetRenderbufferParameteriv)
+        tbl.glGetRenderbufferParameteriv(target, pname, params);
+}
+
+__attribute__((sysv_abi)) void glGetBufferParameteriv(GLenum target, GLenum pname, GLint *params)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glGetBufferParameteriv)
+        tbl.glGetBufferParameteriv(target, pname, params);
+}
+
+__attribute__((sysv_abi)) void glGetVertexAttribiv(GLuint index, GLenum pname, GLint *params)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glGetVertexAttribiv)
+        tbl.glGetVertexAttribiv(index, pname, params);
+}
+
+__attribute__((sysv_abi)) GLboolean glIsEnabled(GLenum cap)
+{
+    const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
+    if (tbl.glIsEnabled)
+        return tbl.glIsEnabled(cap);
+    return GL_FALSE;
 }
 
 } // extern "C"

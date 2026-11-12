@@ -74,6 +74,18 @@ struct SyncFenceState {
     void Signal() noexcept;
 };
 
+struct SignalfdState {
+    uint64_t mask{0};
+    HANDLE wake_event{nullptr};
+    std::mutex mutex{};
+
+    explicit SignalfdState(uint64_t m);
+    ~SignalfdState();
+
+    SignalfdState(const SignalfdState &) = delete;
+    SignalfdState &operator=(const SignalfdState &) = delete;
+};
+
 struct FileDescriptor {
     int fd{-1};
     HANDLE handle{INVALID_HANDLE_VALUE};
@@ -110,6 +122,9 @@ struct FileDescriptor {
 
     // Sync fence support
     std::shared_ptr<SyncFenceState> sync_fence{nullptr};
+
+    // Signalfd support
+    std::shared_ptr<SignalfdState> signalfd{nullptr};
 };
 
 class FileDescriptorTable {
@@ -147,6 +162,8 @@ class FileDescriptorTable {
     int AllocateTimerFd(int clockid, int flags);
 
     int AllocateSyncFence(void *gl_sync, HANDLE wake_event, bool signaled, int flags = 0);
+
+    int AllocateSignalfd(uint64_t mask, int flags = 0);
 
     int CreatePipe(int fds[2], int flags = 0);
 

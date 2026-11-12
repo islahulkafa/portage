@@ -819,6 +819,7 @@ add_custom_command(
         "-L${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64"
         "${CMAKE_CURRENT_SOURCE_DIR}/test_ndk_showcase.c"
         -landroid
+        -lnativewindow
         -ljnigraphics
         -lGLESv2
         -lz
@@ -828,6 +829,7 @@ add_custom_command(
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/test_ndk_showcase.c"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libandroid.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libnativewindow.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libjnigraphics.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libGLESv2.so"
         "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libz.so"

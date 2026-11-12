@@ -476,6 +476,119 @@ void NdkSymbolRegistry::RegisterAll()
     Register("glDispatchCompute", reinterpret_cast<uintptr_t>(&glDispatchCompute));
     Register("glMemoryBarrier", reinterpret_cast<uintptr_t>(&glMemoryBarrier));
 
+    // Pipeline State
+    Register("glDepthFunc", reinterpret_cast<uintptr_t>(&glDepthFunc));
+    Register("glDepthMask", reinterpret_cast<uintptr_t>(&glDepthMask));
+    Register("glClearDepthf", reinterpret_cast<uintptr_t>(&glClearDepthf));
+    Register("glDepthRangef", reinterpret_cast<uintptr_t>(&glDepthRangef));
+    Register("glColorMask", reinterpret_cast<uintptr_t>(&glColorMask));
+    Register("glBlendFunc", reinterpret_cast<uintptr_t>(&glBlendFunc));
+    Register("glBlendFuncSeparate", reinterpret_cast<uintptr_t>(&glBlendFuncSeparate));
+    Register("glBlendEquation", reinterpret_cast<uintptr_t>(&glBlendEquation));
+    Register("glBlendEquationSeparate", reinterpret_cast<uintptr_t>(&glBlendEquationSeparate));
+    Register("glBlendColor", reinterpret_cast<uintptr_t>(&glBlendColor));
+    Register("glCullFace", reinterpret_cast<uintptr_t>(&glCullFace));
+    Register("glFrontFace", reinterpret_cast<uintptr_t>(&glFrontFace));
+    Register("glScissor", reinterpret_cast<uintptr_t>(&glScissor));
+    Register("glStencilFunc", reinterpret_cast<uintptr_t>(&glStencilFunc));
+    Register("glStencilFuncSeparate", reinterpret_cast<uintptr_t>(&glStencilFuncSeparate));
+    Register("glStencilOp", reinterpret_cast<uintptr_t>(&glStencilOp));
+    Register("glStencilOpSeparate", reinterpret_cast<uintptr_t>(&glStencilOpSeparate));
+    Register("glStencilMask", reinterpret_cast<uintptr_t>(&glStencilMask));
+    Register("glStencilMaskSeparate", reinterpret_cast<uintptr_t>(&glStencilMaskSeparate));
+    Register("glLineWidth", reinterpret_cast<uintptr_t>(&glLineWidth));
+    Register("glPolygonOffset", reinterpret_cast<uintptr_t>(&glPolygonOffset));
+    Register("glSampleCoverage", reinterpret_cast<uintptr_t>(&glSampleCoverage));
+    Register("glFlush", reinterpret_cast<uintptr_t>(&glFlush));
+    Register("glFinish", reinterpret_cast<uintptr_t>(&glFinish));
+    Register("glHint", reinterpret_cast<uintptr_t>(&glHint));
+
+    // Renderbuffers & Framebuffers
+    Register("glGenRenderbuffers", reinterpret_cast<uintptr_t>(&glGenRenderbuffers));
+    Register("glBindRenderbuffer", reinterpret_cast<uintptr_t>(&glBindRenderbuffer));
+    Register("glDeleteRenderbuffers", reinterpret_cast<uintptr_t>(&glDeleteRenderbuffers));
+    Register("glIsRenderbuffer", reinterpret_cast<uintptr_t>(&glIsRenderbuffer));
+    Register("glRenderbufferStorage", reinterpret_cast<uintptr_t>(&glRenderbufferStorage));
+    Register("glRenderbufferStorageMultisample",
+             reinterpret_cast<uintptr_t>(&glRenderbufferStorageMultisample));
+    Register("glFramebufferRenderbuffer", reinterpret_cast<uintptr_t>(&glFramebufferRenderbuffer));
+    Register("glBlitFramebuffer", reinterpret_cast<uintptr_t>(&glBlitFramebuffer));
+    Register("glDrawBuffers", reinterpret_cast<uintptr_t>(&glDrawBuffers));
+    Register("glReadBuffer", reinterpret_cast<uintptr_t>(&glReadBuffer));
+    Register("glInvalidateFramebuffer", reinterpret_cast<uintptr_t>(&glInvalidateFramebuffer));
+    Register("glFramebufferTextureLayer", reinterpret_cast<uintptr_t>(&glFramebufferTextureLayer));
+
+    // Textures & Mipmaps
+    Register("glTexSubImage2D", reinterpret_cast<uintptr_t>(&glTexSubImage2D));
+    Register("glCopyTexImage2D", reinterpret_cast<uintptr_t>(&glCopyTexImage2D));
+    Register("glCopyTexSubImage2D", reinterpret_cast<uintptr_t>(&glCopyTexSubImage2D));
+    Register("glCompressedTexImage2D", reinterpret_cast<uintptr_t>(&glCompressedTexImage2D));
+    Register("glCompressedTexSubImage2D", reinterpret_cast<uintptr_t>(&glCompressedTexSubImage2D));
+    Register("glGenerateMipmap", reinterpret_cast<uintptr_t>(&glGenerateMipmap));
+    Register("glTexParameterf", reinterpret_cast<uintptr_t>(&glTexParameterf));
+    Register("glTexParameterfv", reinterpret_cast<uintptr_t>(&glTexParameterfv));
+    Register("glTexParameteriv", reinterpret_cast<uintptr_t>(&glTexParameteriv));
+
+    // Uniforms, Attributes & Program
+    Register("glUniform2i", reinterpret_cast<uintptr_t>(&glUniform2i));
+    Register("glUniform3i", reinterpret_cast<uintptr_t>(&glUniform3i));
+    Register("glUniform4i", reinterpret_cast<uintptr_t>(&glUniform4i));
+    Register("glUniform1iv", reinterpret_cast<uintptr_t>(&glUniform1iv));
+    Register("glUniform2iv", reinterpret_cast<uintptr_t>(&glUniform2iv));
+    Register("glUniform3iv", reinterpret_cast<uintptr_t>(&glUniform3iv));
+    Register("glUniform4iv", reinterpret_cast<uintptr_t>(&glUniform4iv));
+    Register("glUniform2f", reinterpret_cast<uintptr_t>(&glUniform2f));
+    Register("glUniform3f", reinterpret_cast<uintptr_t>(&glUniform3f));
+    Register("glUniform1fv", reinterpret_cast<uintptr_t>(&glUniform1fv));
+    Register("glUniform2fv", reinterpret_cast<uintptr_t>(&glUniform2fv));
+    Register("glUniform3fv", reinterpret_cast<uintptr_t>(&glUniform3fv));
+    Register("glUniform4fv", reinterpret_cast<uintptr_t>(&glUniform4fv));
+    Register("glUniform1uiv", reinterpret_cast<uintptr_t>(&glUniform1uiv));
+    Register("glUniform2uiv", reinterpret_cast<uintptr_t>(&glUniform2uiv));
+    Register("glUniform3uiv", reinterpret_cast<uintptr_t>(&glUniform3uiv));
+    Register("glUniform4uiv", reinterpret_cast<uintptr_t>(&glUniform4uiv));
+    Register("glUniformMatrix2fv", reinterpret_cast<uintptr_t>(&glUniformMatrix2fv));
+    Register("glUniformMatrix3fv", reinterpret_cast<uintptr_t>(&glUniformMatrix3fv));
+    Register("glVertexAttribIPointer", reinterpret_cast<uintptr_t>(&glVertexAttribIPointer));
+    Register("glVertexAttrib1f", reinterpret_cast<uintptr_t>(&glVertexAttrib1f));
+    Register("glVertexAttrib2f", reinterpret_cast<uintptr_t>(&glVertexAttrib2f));
+    Register("glVertexAttrib3f", reinterpret_cast<uintptr_t>(&glVertexAttrib3f));
+    Register("glVertexAttrib4f", reinterpret_cast<uintptr_t>(&glVertexAttrib4f));
+    Register("glBindAttribLocation", reinterpret_cast<uintptr_t>(&glBindAttribLocation));
+    Register("glGetActiveUniform", reinterpret_cast<uintptr_t>(&glGetActiveUniform));
+    Register("glGetActiveAttrib", reinterpret_cast<uintptr_t>(&glGetActiveAttrib));
+    Register("glDetachShader", reinterpret_cast<uintptr_t>(&glDetachShader));
+    Register("glValidateProgram", reinterpret_cast<uintptr_t>(&glValidateProgram));
+    Register("glIsShader", reinterpret_cast<uintptr_t>(&glIsShader));
+    Register("glIsProgram", reinterpret_cast<uintptr_t>(&glIsProgram));
+    Register("glIsBuffer", reinterpret_cast<uintptr_t>(&glIsBuffer));
+    Register("glIsTexture", reinterpret_cast<uintptr_t>(&glIsTexture));
+    Register("glIsFramebuffer", reinterpret_cast<uintptr_t>(&glIsFramebuffer));
+    Register("glIsVertexArray", reinterpret_cast<uintptr_t>(&glIsVertexArray));
+    Register("glIsSampler", reinterpret_cast<uintptr_t>(&glIsSampler));
+
+    // Clear Buffers
+    Register("glClearBufferfv", reinterpret_cast<uintptr_t>(&glClearBufferfv));
+    Register("glClearBufferiv", reinterpret_cast<uintptr_t>(&glClearBufferiv));
+    Register("glClearBufferuiv", reinterpret_cast<uintptr_t>(&glClearBufferuiv));
+    Register("glClearBufferfi", reinterpret_cast<uintptr_t>(&glClearBufferfi));
+
+    // State & Queries
+    Register("glGetIntegerv", reinterpret_cast<uintptr_t>(&glGetIntegerv));
+    Register("glGetInteger64v", reinterpret_cast<uintptr_t>(&glGetInteger64v));
+    Register("glGetFloatv", reinterpret_cast<uintptr_t>(&glGetFloatv));
+    Register("glGetBooleanv", reinterpret_cast<uintptr_t>(&glGetBooleanv));
+    Register("glGetStringi", reinterpret_cast<uintptr_t>(&glGetStringi));
+    Register("glGetTexParameteriv", reinterpret_cast<uintptr_t>(&glGetTexParameteriv));
+    Register("glGetTexParameterfv", reinterpret_cast<uintptr_t>(&glGetTexParameterfv));
+    Register("glGetFramebufferAttachmentParameteriv",
+             reinterpret_cast<uintptr_t>(&glGetFramebufferAttachmentParameteriv));
+    Register("glGetRenderbufferParameteriv",
+             reinterpret_cast<uintptr_t>(&glGetRenderbufferParameteriv));
+    Register("glGetBufferParameteriv", reinterpret_cast<uintptr_t>(&glGetBufferParameteriv));
+    Register("glGetVertexAttribiv", reinterpret_cast<uintptr_t>(&glGetVertexAttribiv));
+    Register("glIsEnabled", reinterpret_cast<uintptr_t>(&glIsEnabled));
+
     // AAudio
     Register("AAudio_createStreamBuilder",
              reinterpret_cast<uintptr_t>(&audio::AAudio_createStreamBuilder));
@@ -1184,10 +1297,28 @@ void NdkSymbolRegistry::RegisterAll()
              reinterpret_cast<uintptr_t>(&APerformanceHintSession_updateTargetWorkDuration));
     Register("APerformanceHintSession_reportActualWorkDuration",
              reinterpret_cast<uintptr_t>(&APerformanceHintSession_reportActualWorkDuration));
+    Register("APerformanceHintSession_reportActualWorkDuration2",
+             reinterpret_cast<uintptr_t>(&APerformanceHintSession_reportActualWorkDuration2));
+    Register("APerformanceHintSession_sendHint",
+             reinterpret_cast<uintptr_t>(&APerformanceHintSession_sendHint));
+    Register("APerformanceHintSession_setPreferPowerEfficiency",
+             reinterpret_cast<uintptr_t>(&APerformanceHintSession_setPreferPowerEfficiency));
     Register("APerformanceHintSession_close",
              reinterpret_cast<uintptr_t>(&APerformanceHintSession_close));
     Register("APerformanceHintSession_setThreads",
              reinterpret_cast<uintptr_t>(&APerformanceHintSession_setThreads));
+
+    // AWorkDuration
+    Register("AWorkDuration_create", reinterpret_cast<uintptr_t>(&AWorkDuration_create));
+    Register("AWorkDuration_release", reinterpret_cast<uintptr_t>(&AWorkDuration_release));
+    Register("AWorkDuration_setWorkPeriodStartTimestampNanos",
+             reinterpret_cast<uintptr_t>(&AWorkDuration_setWorkPeriodStartTimestampNanos));
+    Register("AWorkDuration_setActualTotalDurationNanos",
+             reinterpret_cast<uintptr_t>(&AWorkDuration_setActualTotalDurationNanos));
+    Register("AWorkDuration_setActualCpuDurationNanos",
+             reinterpret_cast<uintptr_t>(&AWorkDuration_setActualCpuDurationNanos));
+    Register("AWorkDuration_setActualGpuDurationNanos",
+             reinterpret_cast<uintptr_t>(&AWorkDuration_setActualGpuDurationNanos));
 
     portage::gles::InitializeGlesDispatcher();
 }

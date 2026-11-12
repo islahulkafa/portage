@@ -3,10 +3,12 @@
 #include "ndk/libandroid_thunks.hpp"
 
 #include <atomic>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <vector>
 
 enum AThermalStatus {
@@ -24,7 +26,8 @@ typedef enum AThermalStatus AThermalStatus;
 struct AThermalManager;
 typedef struct AThermalManager AThermalManager;
 
-typedef void (*AThermal_StatusCallback)(void *data, AThermalStatus status);
+typedef void (__attribute__((sysv_abi)) *AThermal_StatusCallback)(void *data,
+                                                                  AThermalStatus status);
 
 namespace portage::ndk {
 
@@ -53,9 +56,12 @@ class ThermalManager {
 
     double SampleHostCpuUtilization() noexcept;
 
+    void StartMonitorLocked() noexcept;
+    void StopMonitor() noexcept;
+
   private:
     ThermalManager() = default;
-    ~ThermalManager() = default;
+    ~ThermalManager() { StopMonitor(); }
 
     ThermalManager(const ThermalManager &) = delete;
     ThermalManager &operator=(const ThermalManager &) = delete;
@@ -70,6 +76,12 @@ class ThermalManager {
     uint64_t prev_idle_time_{0};
     uint64_t prev_kernel_time_{0};
     uint64_t prev_user_time_{0};
+
+    std::thread monitor_thread_{};
+    std::condition_variable monitor_cv_{};
+    bool monitor_running_{false};
+    bool monitor_stop_{false};
+    AThermalStatus last_notified_status_{ATHERMAL_STATUS_NONE};
 };
 
 } // namespace portage::ndk

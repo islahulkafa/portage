@@ -1,6 +1,7 @@
 #include "thread/thread_manager.hpp"
 #include "arch/guest_context.hpp"
 #include "elf/link_map.hpp"
+#include "syscall/syscall_dispatcher.hpp"
 #include "sync/futex.hpp"
 #include <algorithm>
 #include <cstring>
@@ -290,7 +291,9 @@ void ThreadManager::OnThreadExit(int tid, int exit_code) noexcept
 
     if (clear_tid_ptr != 0) {
         *reinterpret_cast<int *>(clear_tid_ptr) = 0;
-        WakeByAddressAll(reinterpret_cast<void *>(clear_tid_ptr));
+        syscall::SyscallDispatcher::GetFutexManager().Futex(
+            reinterpret_cast<uint32_t *>(clear_tid_ptr), sync::LINUX_FUTEX_WAKE, 1, nullptr,
+            nullptr, 0);
     }
 
     if (hThread != nullptr && hThread != INVALID_HANDLE_VALUE && hThread != GetCurrentThread()) {

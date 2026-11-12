@@ -6,6 +6,7 @@
 #include "binder/binder_driver.hpp"
 #include "gles/wgl_bridge.hpp"
 #include "poll/epoll_manager.hpp"
+#include "signal/signal_manager.hpp"
 #include <windows.h>
 #include <winsock2.h>
 
@@ -582,6 +583,41 @@ int FileDescriptorTable::AllocateSyncFence(void *gl_sync, HANDLE wake_event, boo
         fence_state->wake_event = CreateEventW(nullptr, TRUE, signaled ? TRUE : FALSE, nullptr);
     }
     desc->sync_fence = std::move(fence_state);
+
+    m_descriptors[assigned_fd] = std::move(desc);
+    return assigned_fd;
+}
+
+SignalfdState::SignalfdState(uint64_t m) : mask(m)
+{
+    wake_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    portage::signal::SignalManager::Instance().RegisterSignalfd(this);
+}
+
+SignalfdState::~SignalfdState()
+{
+    portage::signal::SignalManager::Instance().UnregisterSignalfd(this);
+    if (wake_event && wake_event != INVALID_HANDLE_VALUE) {
+        CloseHandle(wake_event);
+        wake_event = nullptr;
+    }
+}
+
+int FileDescriptorTable::AllocateSignalfd(uint64_t mask, int flags)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    int assigned_fd = m_next_fd++;
+    while (m_descriptors.contains(assigned_fd)) {
+        assigned_fd = m_next_fd++;
+    }
+
+    auto desc = std::make_shared<FileDescriptor>();
+    desc->fd = assigned_fd;
+    desc->handle = INVALID_HANDLE_VALUE;
+    desc->flags = flags;
+    desc->dev = DeviceType::Signalfd;
+    desc->is_pipe_or_console = false;
+    desc->signalfd = std::make_shared<SignalfdState>(mask);
 
     m_descriptors[assigned_fd] = std::move(desc);
     return assigned_fd;

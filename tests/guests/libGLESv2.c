@@ -487,3 +487,182 @@ EXPORT void glDispatchCompute(uint32_t num_groups_x, uint32_t num_groups_y, uint
     (void)num_groups_z;
 }
 EXPORT void glMemoryBarrier(uint32_t barriers) { (void)barriers; }
+
+// Pipeline State
+EXPORT void glDepthFunc(uint32_t func) { (void)func; }
+EXPORT void glDepthMask(uint8_t flag) { (void)flag; }
+EXPORT void glClearDepthf(float depth) { (void)depth; }
+EXPORT void glDepthRangef(float near_val, float far_val) { (void)near_val; (void)far_val; }
+EXPORT void glColorMask(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha)
+{
+    (void)red; (void)green; (void)blue; (void)alpha;
+}
+EXPORT void glBlendFunc(uint32_t sfactor, uint32_t dfactor) { (void)sfactor; (void)dfactor; }
+EXPORT void glBlendFuncSeparate(uint32_t srcRGB, uint32_t dstRGB, uint32_t srcAlpha, uint32_t dstAlpha)
+{
+    (void)srcRGB; (void)dstRGB; (void)srcAlpha; (void)dstAlpha;
+}
+EXPORT void glBlendEquation(uint32_t mode) { (void)mode; }
+EXPORT void glBlendEquationSeparate(uint32_t modeRGB, uint32_t modeAlpha)
+{
+    (void)modeRGB; (void)modeAlpha;
+}
+EXPORT void glBlendColor(float red, float green, float blue, float alpha)
+{
+    (void)red; (void)green; (void)blue; (void)alpha;
+}
+EXPORT void glCullFace(uint32_t mode) { (void)mode; }
+EXPORT void glFrontFace(uint32_t mode) { (void)mode; }
+EXPORT void glScissor(int32_t x, int32_t y, int32_t width, int32_t height)
+{
+    (void)x; (void)y; (void)width; (void)height;
+}
+EXPORT void glStencilFunc(uint32_t func, int32_t ref, uint32_t mask)
+{
+    (void)func; (void)ref; (void)mask;
+}
+EXPORT void glStencilFuncSeparate(uint32_t face, uint32_t func, int32_t ref, uint32_t mask)
+{
+    (void)face; (void)func; (void)ref; (void)mask;
+}
+EXPORT void glStencilOp(uint32_t fail, uint32_t zfail, uint32_t zpass)
+{
+    (void)fail; (void)zfail; (void)zpass;
+}
+EXPORT void glStencilOpSeparate(uint32_t face, uint32_t fail, uint32_t zfail, uint32_t zpass)
+{
+    (void)face; (void)fail; (void)zfail; (void)zpass;
+}
+EXPORT void glStencilMask(uint32_t mask) { (void)mask; }
+EXPORT void glStencilMaskSeparate(uint32_t face, uint32_t mask) { (void)face; (void)mask; }
+EXPORT void glLineWidth(float width) { (void)width; }
+EXPORT void glPolygonOffset(float factor, float units) { (void)factor; (void)units; }
+EXPORT void glSampleCoverage(float value, uint8_t invert) { (void)value; (void)invert; }
+EXPORT void glFlush(void) {}
+EXPORT void glFinish(void) {}
+EXPORT void glHint(uint32_t target, uint32_t mode) { (void)target; (void)mode; }
+
+// Renderbuffers & Framebuffers
+EXPORT void glGenRenderbuffers(int32_t n, uint32_t *renderbuffers) { (void)n; (void)renderbuffers; }
+EXPORT void glBindRenderbuffer(uint32_t target, uint32_t renderbuffer) { (void)target; (void)renderbuffer; }
+EXPORT void glDeleteRenderbuffers(int32_t n, const uint32_t *renderbuffers) { (void)n; (void)renderbuffers; }
+EXPORT uint8_t glIsRenderbuffer(uint32_t renderbuffer) { (void)renderbuffer; return 0; }
+EXPORT void glRenderbufferStorage(uint32_t target, uint32_t internalformat, int32_t width, int32_t height)
+{
+    (void)target; (void)internalformat; (void)width; (void)height;
+}
+EXPORT void glRenderbufferStorageMultisample(uint32_t target, int32_t samples, uint32_t internalformat, int32_t width, int32_t height)
+{
+    (void)target; (void)samples; (void)internalformat; (void)width; (void)height;
+}
+EXPORT void glFramebufferRenderbuffer(uint32_t target, uint32_t attachment, uint32_t renderbuffertarget, uint32_t renderbuffer)
+{
+    (void)target; (void)attachment; (void)renderbuffertarget; (void)renderbuffer;
+}
+EXPORT void glBlitFramebuffer(int32_t srcX0, int32_t srcY0, int32_t srcX1, int32_t srcY1, int32_t dstX0, int32_t dstY0, int32_t dstX1, int32_t dstY1, uint32_t mask, uint32_t filter)
+{
+    (void)srcX0; (void)srcY0; (void)srcX1; (void)srcY1; (void)dstX0; (void)dstY0; (void)dstX1; (void)dstY1; (void)mask; (void)filter;
+}
+EXPORT void glDrawBuffers(int32_t n, const uint32_t *bufs) { (void)n; (void)bufs; }
+EXPORT void glReadBuffer(uint32_t mode) { (void)mode; }
+EXPORT void glInvalidateFramebuffer(uint32_t target, int32_t numAttachments, const uint32_t *attachments)
+{
+    (void)target; (void)numAttachments; (void)attachments;
+}
+EXPORT void glFramebufferTextureLayer(uint32_t target, uint32_t attachment, uint32_t texture, int32_t level, int32_t layer)
+{
+    (void)target; (void)attachment; (void)texture; (void)level; (void)layer;
+}
+
+// Textures & Mipmaps
+EXPORT void glTexSubImage2D(uint32_t target, int32_t level, int32_t xoffset, int32_t yoffset, int32_t width, int32_t height, uint32_t format, uint32_t type, const void *pixels)
+{
+    (void)target; (void)level; (void)xoffset; (void)yoffset; (void)width; (void)height; (void)format; (void)type; (void)pixels;
+}
+EXPORT void glCopyTexImage2D(uint32_t target, int32_t level, uint32_t internalformat, int32_t x, int32_t y, int32_t width, int32_t height, int32_t border)
+{
+    (void)target; (void)level; (void)internalformat; (void)x; (void)y; (void)width; (void)height; (void)border;
+}
+EXPORT void glCopyTexSubImage2D(uint32_t target, int32_t level, int32_t xoffset, int32_t yoffset, int32_t x, int32_t y, int32_t width, int32_t height)
+{
+    (void)target; (void)level; (void)xoffset; (void)yoffset; (void)x; (void)y; (void)width; (void)height;
+}
+EXPORT void glCompressedTexImage2D(uint32_t target, int32_t level, uint32_t internalformat, int32_t width, int32_t height, int32_t border, int32_t imageSize, const void *data)
+{
+    (void)target; (void)level; (void)internalformat; (void)width; (void)height; (void)border; (void)imageSize; (void)data;
+}
+EXPORT void glCompressedTexSubImage2D(uint32_t target, int32_t level, int32_t xoffset, int32_t yoffset, int32_t width, int32_t height, uint32_t format, int32_t imageSize, const void *data)
+{
+    (void)target; (void)level; (void)xoffset; (void)yoffset; (void)width; (void)height; (void)format; (void)imageSize; (void)data;
+}
+EXPORT void glGenerateMipmap(uint32_t target) { (void)target; }
+EXPORT void glTexParameterf(uint32_t target, uint32_t pname, float param) { (void)target; (void)pname; (void)param; }
+EXPORT void glTexParameterfv(uint32_t target, uint32_t pname, const float *params) { (void)target; (void)pname; (void)params; }
+EXPORT void glTexParameteriv(uint32_t target, uint32_t pname, const int32_t *params) { (void)target; (void)pname; (void)params; }
+
+// Uniforms, Attributes & Program
+EXPORT void glUniform2i(int32_t location, int32_t v0, int32_t v1) { (void)location; (void)v0; (void)v1; }
+EXPORT void glUniform3i(int32_t location, int32_t v0, int32_t v1, int32_t v2) { (void)location; (void)v0; (void)v1; (void)v2; }
+EXPORT void glUniform4i(int32_t location, int32_t v0, int32_t v1, int32_t v2, int32_t v3) { (void)location; (void)v0; (void)v1; (void)v2; (void)v3; }
+EXPORT void glUniform1iv(int32_t location, int32_t count, const int32_t *value) { (void)location; (void)count; (void)value; }
+EXPORT void glUniform2iv(int32_t location, int32_t count, const int32_t *value) { (void)location; (void)count; (void)value; }
+EXPORT void glUniform3iv(int32_t location, int32_t count, const int32_t *value) { (void)location; (void)count; (void)value; }
+EXPORT void glUniform4iv(int32_t location, int32_t count, const int32_t *value) { (void)location; (void)count; (void)value; }
+EXPORT void glUniform2f(int32_t location, float v0, float v1) { (void)location; (void)v0; (void)v1; }
+EXPORT void glUniform3f(int32_t location, float v0, float v1, float v2) { (void)location; (void)v0; (void)v1; (void)v2; }
+EXPORT void glUniform1fv(int32_t location, int32_t count, const float *value) { (void)location; (void)count; (void)value; }
+EXPORT void glUniform2fv(int32_t location, int32_t count, const float *value) { (void)location; (void)count; (void)value; }
+EXPORT void glUniform3fv(int32_t location, int32_t count, const float *value) { (void)location; (void)count; (void)value; }
+EXPORT void glUniform4fv(int32_t location, int32_t count, const float *value) { (void)location; (void)count; (void)value; }
+EXPORT void glUniform1uiv(int32_t location, int32_t count, const uint32_t *value) { (void)location; (void)count; (void)value; }
+EXPORT void glUniform2uiv(int32_t location, int32_t count, const uint32_t *value) { (void)location; (void)count; (void)value; }
+EXPORT void glUniform3uiv(int32_t location, int32_t count, const uint32_t *value) { (void)location; (void)count; (void)value; }
+EXPORT void glUniform4uiv(int32_t location, int32_t count, const uint32_t *value) { (void)location; (void)count; (void)value; }
+EXPORT void glUniformMatrix2fv(int32_t location, int32_t count, uint8_t transpose, const float *value) { (void)location; (void)count; (void)transpose; (void)value; }
+EXPORT void glUniformMatrix3fv(int32_t location, int32_t count, uint8_t transpose, const float *value) { (void)location; (void)count; (void)transpose; (void)value; }
+EXPORT void glVertexAttribIPointer(uint32_t index, int32_t size, uint32_t type, int32_t stride, const void *pointer) { (void)index; (void)size; (void)type; (void)stride; (void)pointer; }
+EXPORT void glVertexAttrib1f(uint32_t index, float x) { (void)index; (void)x; }
+EXPORT void glVertexAttrib2f(uint32_t index, float x, float y) { (void)index; (void)x; (void)y; }
+EXPORT void glVertexAttrib3f(uint32_t index, float x, float y, float z) { (void)index; (void)x; (void)y; (void)z; }
+EXPORT void glVertexAttrib4f(uint32_t index, float x, float y, float z, float w) { (void)index; (void)x; (void)y; (void)z; (void)w; }
+EXPORT void glBindAttribLocation(uint32_t program, uint32_t index, const char *name) { (void)program; (void)index; (void)name; }
+EXPORT void glGetActiveUniform(uint32_t program, uint32_t index, int32_t bufSize, int32_t *length, int32_t *size, uint32_t *type, char *name)
+{
+    (void)program; (void)index; (void)bufSize; (void)length; (void)size; (void)type; (void)name;
+}
+EXPORT void glGetActiveAttrib(uint32_t program, uint32_t index, int32_t bufSize, int32_t *length, int32_t *size, uint32_t *type, char *name)
+{
+    (void)program; (void)index; (void)bufSize; (void)length; (void)size; (void)type; (void)name;
+}
+EXPORT void glDetachShader(uint32_t program, uint32_t shader) { (void)program; (void)shader; }
+EXPORT void glValidateProgram(uint32_t program) { (void)program; }
+EXPORT uint8_t glIsShader(uint32_t shader) { (void)shader; return 0; }
+EXPORT uint8_t glIsProgram(uint32_t program) { (void)program; return 0; }
+EXPORT uint8_t glIsBuffer(uint32_t buffer) { (void)buffer; return 0; }
+EXPORT uint8_t glIsTexture(uint32_t texture) { (void)texture; return 0; }
+EXPORT uint8_t glIsFramebuffer(uint32_t framebuffer) { (void)framebuffer; return 0; }
+EXPORT uint8_t glIsVertexArray(uint32_t array) { (void)array; return 0; }
+EXPORT uint8_t glIsSampler(uint32_t sampler) { (void)sampler; return 0; }
+
+// Clear Buffers
+EXPORT void glClearBufferfv(uint32_t buffer, int32_t drawbuffer, const float *value) { (void)buffer; (void)drawbuffer; (void)value; }
+EXPORT void glClearBufferiv(uint32_t buffer, int32_t drawbuffer, const int32_t *value) { (void)buffer; (void)drawbuffer; (void)value; }
+EXPORT void glClearBufferuiv(uint32_t buffer, int32_t drawbuffer, const uint32_t *value) { (void)buffer; (void)drawbuffer; (void)value; }
+EXPORT void glClearBufferfi(uint32_t buffer, int32_t drawbuffer, float depth, int32_t stencil) { (void)buffer; (void)drawbuffer; (void)depth; (void)stencil; }
+
+// State & Queries
+EXPORT void glGetIntegerv(uint32_t pname, int32_t *data) { (void)pname; (void)data; }
+EXPORT void glGetInteger64v(uint32_t pname, int64_t *data) { (void)pname; (void)data; }
+EXPORT void glGetFloatv(uint32_t pname, float *data) { (void)pname; (void)data; }
+EXPORT void glGetBooleanv(uint32_t pname, uint8_t *data) { (void)pname; (void)data; }
+EXPORT const uint8_t *glGetStringi(uint32_t name, uint32_t index) { (void)name; (void)index; return (const uint8_t *)""; }
+EXPORT void glGetTexParameteriv(uint32_t target, uint32_t pname, int32_t *params) { (void)target; (void)pname; (void)params; }
+EXPORT void glGetTexParameterfv(uint32_t target, uint32_t pname, float *params) { (void)target; (void)pname; (void)params; }
+EXPORT void glGetFramebufferAttachmentParameteriv(uint32_t target, uint32_t attachment, uint32_t pname, int32_t *params)
+{
+    (void)target; (void)attachment; (void)pname; (void)params;
+}
+EXPORT void glGetRenderbufferParameteriv(uint32_t target, uint32_t pname, int32_t *params) { (void)target; (void)pname; (void)params; }
+EXPORT void glGetBufferParameteriv(uint32_t target, uint32_t pname, int32_t *params) { (void)target; (void)pname; (void)params; }
+EXPORT void glGetVertexAttribiv(uint32_t index, uint32_t pname, int32_t *params) { (void)index; (void)pname; (void)params; }
+EXPORT uint8_t glIsEnabled(uint32_t cap) { (void)cap; return 0; }

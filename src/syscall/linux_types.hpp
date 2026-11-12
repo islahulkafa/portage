@@ -111,8 +111,18 @@ struct LinuxStatx {
     uint64_t __spare3[12];
 };
 
+constexpr int LINUX_PR_SET_PDEATHSIG = 1;
+constexpr int LINUX_PR_GET_PDEATHSIG = 2;
+constexpr int LINUX_PR_GET_DUMPABLE = 3;
+constexpr int LINUX_PR_SET_DUMPABLE = 4;
 constexpr int LINUX_PR_SET_NAME = 15;
 constexpr int LINUX_PR_GET_NAME = 16;
+constexpr int LINUX_PR_SET_CHILD_SUBREAPER = 36;
+constexpr int LINUX_PR_GET_CHILD_SUBREAPER = 37;
+
+constexpr int LINUX_PRIO_PROCESS = 0;
+constexpr int LINUX_PRIO_PGRP = 1;
+constexpr int LINUX_PRIO_USER = 2;
 
 constexpr int LINUX_SCHED_OTHER = 0;
 constexpr int LINUX_SCHED_FIFO = 1;

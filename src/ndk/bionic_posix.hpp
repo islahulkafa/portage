@@ -54,9 +54,16 @@ __attribute__((sysv_abi)) int portage_unlinkat(int dfd, const char *path, int fl
 __attribute__((sysv_abi)) int portage_remove(const char *path);
 __attribute__((sysv_abi)) int portage_rename(const char *oldpath, const char *newpath);
 __attribute__((sysv_abi)) int64_t portage_readlink(const char *path, char *buf, size_t bufsiz);
+__attribute__((sysv_abi)) int64_t portage_readlinkat(int dfd, const char *pathname, char *buf,
+                                                     size_t bufsiz);
 __attribute__((sysv_abi)) char *portage_realpath(const char *path, char *resolved_path);
 __attribute__((sysv_abi)) int portage_symlink(const char *target, const char *linkpath);
+__attribute__((sysv_abi)) int portage_symlinkat(const char *target, int newdfd,
+                                                const char *linkpath);
 __attribute__((sysv_abi)) int portage_link(const char *oldpath, const char *newpath);
+__attribute__((sysv_abi)) int portage_linkat(int olddfd, const char *oldpath, int newdfd,
+                                             const char *newpath, int flags);
+__attribute__((sysv_abi)) int portage_chmod(const char *path, int mode);
 __attribute__((sysv_abi)) int portage_fchmod(int fd, int mode);
 __attribute__((sysv_abi)) int portage_fchmodat(int dfd, const char *path, int mode, int flags);
 __attribute__((sysv_abi)) int portage_isatty(int fd);
@@ -100,5 +107,15 @@ __attribute__((sysv_abi)) int portage_pthread_rwlock_tryrdlock(void *rwlock);
 __attribute__((sysv_abi)) int portage_pthread_rwlock_wrlock(void *rwlock);
 __attribute__((sysv_abi)) int portage_pthread_rwlock_trywrlock(void *rwlock);
 __attribute__((sysv_abi)) int portage_pthread_rwlock_unlock(void *rwlock);
+
+// Real-time signals & signalfd
+__attribute__((sysv_abi)) int portage_sigwaitinfo(const uint64_t *set, void *info);
+__attribute__((sysv_abi)) int portage_sigtimedwait(const uint64_t *set, void *info,
+                                                   const portage::ndk::GuestTimespec *timeout);
+__attribute__((sysv_abi)) int portage_sigqueue(int pid, int sig, uintptr_t value);
+__attribute__((sysv_abi)) int portage_signalfd(int fd, const uint64_t *mask, int flags);
+__attribute__((sysv_abi)) int portage_signalfd4(int fd, const uint64_t *mask, size_t sizemask,
+                                                int flags);
+__attribute__((sysv_abi)) int portage_sigsuspend(const uint64_t *mask);
 
 } // extern "C"

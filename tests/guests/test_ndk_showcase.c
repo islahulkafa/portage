@@ -9,6 +9,20 @@ struct AImageDecoderHeaderInfo;
 struct AImageDecoderFrameInfo;
 struct ANativeWindow;
 struct AInputQueue;
+struct AHardwareBuffer;
+struct ASensorManager;
+struct ASensor;
+
+typedef struct AHardwareBuffer_Desc {
+    uint32_t width;
+    uint32_t height;
+    uint32_t layers;
+    uint32_t format;
+    uint64_t usage;
+    uint32_t stride;
+    uint32_t rfu0;
+    uint64_t rfu1;
+} AHardwareBuffer_Desc;
 
 struct ARect {
     int32_t left;
@@ -295,6 +309,22 @@ extern void glTexImage2D(uint32_t target, int32_t level, int32_t internalformat,
                          const void *pixels);
 extern void glDeleteTextures(int32_t n, const uint32_t *textures);
 
+extern int AHardwareBuffer_allocate(const AHardwareBuffer_Desc *desc,
+                                    struct AHardwareBuffer **outBuffer);
+extern void AHardwareBuffer_release(struct AHardwareBuffer *buffer);
+extern struct ASensorManager *ASensorManager_getInstance(void);
+extern const struct ASensor *ASensorManager_getDefaultSensor(struct ASensorManager *manager,
+                                                             int type);
+extern bool ASensor_isDirectChannelTypeSupported(const struct ASensor *sensor, int channelType);
+extern int ASensor_getHighestDirectReportRateLevel(const struct ASensor *sensor);
+extern int ASensorManager_createHardwareBufferDirectChannel(struct ASensorManager *manager,
+                                                            const struct AHardwareBuffer *buffer,
+                                                            size_t size);
+extern int ASensorManager_destroyDirectChannel(struct ASensorManager *manager, int channelId);
+extern int ASensorManager_configureDirectReport(struct ASensorManager *manager,
+                                                const struct ASensor *sensor, int channelId,
+                                                int rate);
+
 static void Fail(const char *msg)
 {
     __android_log_print(6, "ndk-showcase", "%s", msg);
@@ -459,6 +489,38 @@ ANativeActivity_onCreate(struct ANativeActivity *activity, void *savedState, siz
         pthread_join(th, &ret) != 0 || ret != (void *)0x42 || job.sum < 3.9f || job.sum > 4.1f) {
         Fail("pthread_create + libm failed");
     }
+
+    // Sensor direct channel over AHardwareBuffer across SysV ABI
+    struct ASensorManager *smgr = ASensorManager_getInstance();
+    const struct ASensor *accel = ASensorManager_getDefaultSensor(smgr, 1 /* ACCELEROMETER */);
+    if (!smgr || !accel ||
+        !ASensor_isDirectChannelTypeSupported(accel, 2 /* HARDWARE_BUFFER */) ||
+        ASensor_getHighestDirectReportRateLevel(accel) < 1) {
+        Fail("Sensor direct channel capability check failed");
+    }
+    AHardwareBuffer_Desc hb_desc = {0};
+    hb_desc.width = 4160;
+    hb_desc.height = 1;
+    hb_desc.layers = 1;
+    hb_desc.format = 0x21; // AHARDWAREBUFFER_FORMAT_BLOB
+    hb_desc.usage = (1ULL << 23) | 3ULL; // SENSOR_DIRECT_DATA | CPU_READ_OFTEN
+    struct AHardwareBuffer *hb = (struct AHardwareBuffer *)0;
+    if (AHardwareBuffer_allocate(&hb_desc, &hb) != 0 || !hb) {
+        Fail("AHardwareBuffer_allocate for sensor direct channel failed");
+    }
+    int direct_ch = ASensorManager_createHardwareBufferDirectChannel(smgr, hb, 4160);
+    if (direct_ch <= 0) {
+        Fail("ASensorManager_createHardwareBufferDirectChannel failed");
+    }
+    int direct_tok = ASensorManager_configureDirectReport(smgr, accel, direct_ch, 2 /* FAST */);
+    if (direct_tok <= 0) {
+        Fail("ASensorManager_configureDirectReport failed");
+    }
+    if (ASensorManager_configureDirectReport(smgr, accel, direct_ch, 0 /* STOP */) != 0 ||
+        ASensorManager_destroyDirectChannel(smgr, direct_ch) != 0) {
+        Fail("ASensorManager direct channel teardown failed");
+    }
+    AHardwareBuffer_release(hb);
 
     __android_log_print(4, "ndk-showcase", "[ndk-showcase] ALL CHECKS PASSED\n");
 }

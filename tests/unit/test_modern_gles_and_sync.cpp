@@ -360,3 +360,280 @@ TEST_F(ModernGlesAndSyncTest, EglSwapIntervalVsync)
     EXPECT_EQ(eglSwapInterval(display_, 1), EGL_TRUE);
     EXPECT_EQ(EglDispatcher::Instance().GetSwapInterval(), 1);
 }
+
+TEST_F(ModernGlesAndSyncTest, RenderbufferAndFramebufferBlit)
+{
+    EXPECT_NE(eglGetProcAddress("glGenRenderbuffers"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glBindRenderbuffer"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glRenderbufferStorage"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glFramebufferRenderbuffer"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glBlitFramebuffer"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glDrawBuffers"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glClearBufferfv"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glDeleteRenderbuffers"), nullptr);
+
+    GLuint rbo = 0;
+    glGenRenderbuffers(1, &rbo);
+    ASSERT_NE(rbo, 0u);
+    glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, 32, 32);
+    EXPECT_EQ(glIsRenderbuffer(rbo), GL_TRUE);
+
+    GLuint src_fbo = 0;
+    glGenFramebuffers(1, &src_fbo);
+    ASSERT_NE(src_fbo, 0u);
+    glBindFramebuffer(GL_FRAMEBUFFER, src_fbo);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rbo);
+
+    const GLenum draw_bufs[1] = {GL_COLOR_ATTACHMENT0};
+    glDrawBuffers(1, draw_bufs);
+
+    const float clear_color[4] = {0.2f, 0.8f, 0.3f, 1.0f};
+    glClearBufferfv(GL_COLOR, 0, clear_color);
+
+    GLuint dst_tex = 0;
+    glGenTextures(1, &dst_tex);
+    ASSERT_NE(dst_tex, 0u);
+    glBindTexture(GL_TEXTURE_2D, dst_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 32, 32, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+    GLuint dst_fbo = 0;
+    glGenFramebuffers(1, &dst_fbo);
+    ASSERT_NE(dst_fbo, 0u);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dst_fbo);
+    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, dst_tex, 0);
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, src_fbo);
+    glBlitFramebuffer(0, 0, 32, 32, 0, 0, 32, 32, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, dst_fbo);
+    uint8_t pixel[4] = {0};
+    glReadPixels(16, 16, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+    EXPECT_GE(pixel[1], 150);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &dst_fbo);
+    glDeleteTextures(1, &dst_tex);
+    glDeleteFramebuffers(1, &src_fbo);
+    glDeleteRenderbuffers(1, &rbo);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+}
+
+TEST_F(ModernGlesAndSyncTest, DepthBlendScissorAndStencilState)
+{
+    EXPECT_NE(eglGetProcAddress("glDepthFunc"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glDepthMask"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glClearDepthf"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glDepthRangef"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glBlendFuncSeparate"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glBlendEquation"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glScissor"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glStencilFuncSeparate"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glStencilOpSeparate"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glColorMask"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glCullFace"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glFrontFace"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glFlush"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glFinish"), nullptr);
+
+    glEnable(GL_DEPTH_TEST);
+    EXPECT_EQ(glIsEnabled(GL_DEPTH_TEST), GL_TRUE);
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_TRUE);
+    glClearDepthf(0.5f);
+    glDepthRangef(0.0f, 1.0f);
+
+    glEnable(GL_BLEND);
+    EXPECT_EQ(glIsEnabled(GL_BLEND), GL_TRUE);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendColor(0.1f, 0.2f, 0.3f, 0.4f);
+
+    glEnable(GL_SCISSOR_TEST);
+    EXPECT_EQ(glIsEnabled(GL_SCISSOR_TEST), GL_TRUE);
+    glScissor(10, 10, 40, 40);
+
+    glEnable(GL_STENCIL_TEST);
+    EXPECT_EQ(glIsEnabled(GL_STENCIL_TEST), GL_TRUE);
+    glStencilFuncSeparate(GL_FRONT, GL_EQUAL, 1, 0xFF);
+    glStencilOpSeparate(GL_FRONT, GL_KEEP, GL_INCR, GL_DECR);
+    glStencilMaskSeparate(GL_FRONT, 0xFF);
+
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+
+    glEnable(GL_CULL_FACE);
+    EXPECT_EQ(glIsEnabled(GL_CULL_FACE), GL_TRUE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
+
+    glLineWidth(2.0f);
+    glPolygonOffset(1.0f, 1.0f);
+    glSampleCoverage(0.5f, GL_FALSE);
+    glHint(GL_GENERATE_MIPMAP_HINT, GL_FASTEST);
+    glFlush();
+    glFinish();
+
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_CULL_FACE);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+}
+
+TEST_F(ModernGlesAndSyncTest, SubTextureUploadCompressedAndMipmap)
+{
+    EXPECT_NE(eglGetProcAddress("glTexSubImage2D"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glCopyTexSubImage2D"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glGenerateMipmap"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glTexParameterf"), nullptr);
+
+    GLuint tex = 0;
+    glGenTextures(1, &tex);
+    ASSERT_NE(tex, 0u);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 16, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+    std::vector<uint32_t> sub_pixels(8 * 8, 0xFF00FF00);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 4, 4, 8, 8, GL_RGBA, GL_UNSIGNED_BYTE, sub_pixels.data());
+
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_LOD, 0.0f);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_LOD, 4.0f);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, 4, 4);
+
+    glDeleteTextures(1, &tex);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+}
+
+TEST_F(ModernGlesAndSyncTest, UniformVariantsAndProgramReflection)
+{
+    EXPECT_NE(eglGetProcAddress("glUniform2f"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glUniform3f"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glUniform2i"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glUniformMatrix3fv"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glGetActiveUniform"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glValidateProgram"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glDetachShader"), nullptr);
+
+    const char *vs_src = "#version 300 es\n"
+                         "precision mediump float;\n"
+                         "in vec2 a_pos;\n"
+                         "uniform vec2 u_offset;\n"
+                         "uniform vec3 u_scale;\n"
+                         "uniform ivec2 u_indices;\n"
+                         "uniform mat3 u_matrix;\n"
+                         "void main() {\n"
+                         "    gl_Position = vec4((a_pos + u_offset) * u_scale.xy, 0.0, 1.0);\n"
+                         "}\n";
+
+    const char *fs_src = "#version 300 es\n"
+                         "precision mediump float;\n"
+                         "out vec4 fragColor;\n"
+                         "void main() {\n"
+                         "    fragColor = vec4(1.0, 0.0, 0.0, 1.0);\n"
+                         "}\n";
+
+    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vs, 1, &vs_src, nullptr);
+    glCompileShader(vs);
+    GLint compiled = 0;
+    glGetShaderiv(vs, GL_COMPILE_STATUS, &compiled);
+    EXPECT_EQ(compiled, 1);
+
+    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fs, 1, &fs_src, nullptr);
+    glCompileShader(fs);
+    glGetShaderiv(fs, GL_COMPILE_STATUS, &compiled);
+    EXPECT_EQ(compiled, 1);
+
+    GLuint prog = glCreateProgram();
+    ASSERT_NE(prog, 0u);
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    glLinkProgram(prog);
+    GLint linked = 0;
+    glGetProgramiv(prog, GL_LINK_STATUS, &linked);
+    EXPECT_EQ(linked, 1);
+
+    glUseProgram(prog);
+
+    GLint off_loc = glGetUniformLocation(prog, "u_offset");
+    if (off_loc >= 0) {
+        glUniform2f(off_loc, 1.0f, 2.0f);
+    }
+    GLint sca_loc = glGetUniformLocation(prog, "u_scale");
+    if (sca_loc >= 0) {
+        glUniform3f(sca_loc, 1.0f, 1.0f, 1.0f);
+    }
+    GLint ind_loc = glGetUniformLocation(prog, "u_indices");
+    if (ind_loc >= 0) {
+        glUniform2i(ind_loc, 4, 8);
+    }
+    GLint mat_loc = glGetUniformLocation(prog, "u_matrix");
+    if (mat_loc >= 0) {
+        const float m[9] = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+        glUniformMatrix3fv(mat_loc, 1, GL_FALSE, m);
+    }
+
+    GLint num_uniforms = 0;
+    glGetProgramiv(prog, GL_ACTIVE_UNIFORMS, &num_uniforms);
+    EXPECT_GE(num_uniforms, 1);
+
+    char name_buf[64] = {0};
+    GLsizei length = 0;
+    GLint size = 0;
+    GLenum type = 0;
+    glGetActiveUniform(prog, 0, sizeof(name_buf), &length, &size, &type, name_buf);
+    EXPECT_GT(length, 0);
+
+    glValidateProgram(prog);
+
+    glDetachShader(prog, vs);
+    glDetachShader(prog, fs);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    glDeleteProgram(prog);
+    EXPECT_EQ(glGetError(), GL_NO_ERROR);
+}
+
+TEST_F(ModernGlesAndSyncTest, GlesStateQueriesAndSharedContext)
+{
+    EXPECT_NE(eglGetProcAddress("glGetIntegerv"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glGetFloatv"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glGetBooleanv"), nullptr);
+    EXPECT_NE(eglGetProcAddress("glGetStringi"), nullptr);
+
+    GLint num_ext = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &num_ext);
+    EXPECT_GT(num_ext, 0);
+
+    GLint major = 0;
+    glGetIntegerv(GL_MAJOR_VERSION, &major);
+    EXPECT_EQ(major, 3);
+
+    GLint max_tex = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_tex);
+    EXPECT_GE(max_tex, 1024);
+
+    const GLubyte *first_ext = glGetStringi(GL_EXTENSIONS, 0);
+    ASSERT_NE(first_ext, nullptr);
+    EXPECT_GT(strlen(reinterpret_cast<const char *>(first_ext)), 0u);
+
+    GLfloat float_val[4] = {0};
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, float_val);
+
+    GLboolean bool_val = GL_FALSE;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &bool_val);
+
+    const EGLint attribs[] = {EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT, EGL_NONE};
+    EGLConfig config = nullptr;
+    EGLint num_configs = 0;
+    ASSERT_EQ(eglChooseConfig(display_, attribs, &config, 1, &num_configs), EGL_TRUE);
+
+    const EGLint ctx_attribs[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
+    EGLContext shared_ctx = eglCreateContext(display_, config, context_, ctx_attribs);
+    ASSERT_NE(shared_ctx, EGL_NO_CONTEXT);
+    EXPECT_EQ(eglDestroyContext(display_, shared_ctx), EGL_TRUE);
+}

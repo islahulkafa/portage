@@ -22,6 +22,7 @@ constexpr int64_t LINUX_ENOMEM = -12;
 constexpr int64_t LINUX_EACCES = -13;
 constexpr int64_t LINUX_EFAULT = -14;
 constexpr int64_t LINUX_EEXIST = -17;
+constexpr int64_t LINUX_EXDEV = -18;
 constexpr int64_t LINUX_ENODEV = -19;
 constexpr int64_t LINUX_ENOTDIR = -20;
 constexpr int64_t LINUX_EISDIR = -21;
@@ -29,6 +30,7 @@ constexpr int64_t LINUX_EINVAL = -22;
 constexpr int64_t LINUX_ENFILE = -23;
 constexpr int64_t LINUX_EMFILE = -24;
 constexpr int64_t LINUX_ENOSYS = -38;
+constexpr int64_t LINUX_ELOOP = -40;
 constexpr int64_t LINUX_ENOTSOCK = -88;
 constexpr int64_t LINUX_ETIMEDOUT = -110;
 
@@ -56,6 +58,7 @@ class SyscallDispatcher {
     [[nodiscard]] static int GetExitCode() noexcept { return exit_code_; }
     [[nodiscard]] static fs::FileDescriptorTable *GetFdTable() noexcept { return fd_table_; }
     [[nodiscard]] static fs::Vfs *GetVfs() noexcept { return vfs_; }
+    [[nodiscard]] static sync::FutexManager &GetFutexManager() noexcept { return futex_manager_; }
 
   private:
     static mem::AddressSpace *address_space_;

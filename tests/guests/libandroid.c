@@ -1108,7 +1108,7 @@ __attribute__((visibility("default"))) void android_freeaddrinfo(struct addrinfo
 
 enum AThermalStatus;
 struct AThermalManager;
-typedef void (*AThermal_StatusCallback)(void *data, int status);
+typedef void (__attribute__((sysv_abi)) *AThermal_StatusCallback)(void *data, int status);
 
 __attribute__((visibility("default"))) struct AThermalManager *AThermalManager_acquireManager(void)
 {
@@ -1153,6 +1153,40 @@ AThermalManager_getThermalHeadroom(struct AThermalManager *manager, int forecast
 
 struct APerformanceHintManager;
 struct APerformanceHintSession;
+struct AWorkDuration;
+
+__attribute__((visibility("default"))) struct AWorkDuration *AWorkDuration_create(void)
+{
+    return (struct AWorkDuration *)0x1;
+}
+__attribute__((visibility("default"))) void AWorkDuration_release(struct AWorkDuration *d)
+{
+    (void)d;
+}
+__attribute__((visibility("default"))) void
+AWorkDuration_setWorkPeriodStartTimestampNanos(struct AWorkDuration *d, int64_t t)
+{
+    (void)d;
+    (void)t;
+}
+__attribute__((visibility("default"))) void
+AWorkDuration_setActualTotalDurationNanos(struct AWorkDuration *d, int64_t t)
+{
+    (void)d;
+    (void)t;
+}
+__attribute__((visibility("default"))) void
+AWorkDuration_setActualCpuDurationNanos(struct AWorkDuration *d, int64_t t)
+{
+    (void)d;
+    (void)t;
+}
+__attribute__((visibility("default"))) void
+AWorkDuration_setActualGpuDurationNanos(struct AWorkDuration *d, int64_t t)
+{
+    (void)d;
+    (void)t;
+}
 
 __attribute__((visibility("default"))) struct APerformanceHintManager *
 APerformanceHintManager_create(void)
@@ -1190,6 +1224,29 @@ APerformanceHintSession_reportActualWorkDuration(struct APerformanceHintSession 
 {
     (void)session;
     (void)actualDurationNanos;
+    return 0;
+}
+__attribute__((visibility("default"))) int
+APerformanceHintSession_reportActualWorkDuration2(struct APerformanceHintSession *session,
+                                                  struct AWorkDuration *workDuration)
+{
+    (void)session;
+    (void)workDuration;
+    return 0;
+}
+__attribute__((visibility("default"))) int
+APerformanceHintSession_sendHint(struct APerformanceHintSession *session, int hint)
+{
+    (void)session;
+    (void)hint;
+    return 0;
+}
+__attribute__((visibility("default"))) int
+APerformanceHintSession_setPreferPowerEfficiency(struct APerformanceHintSession *session,
+                                                 int enabled)
+{
+    (void)session;
+    (void)enabled;
     return 0;
 }
 __attribute__((visibility("default"))) void

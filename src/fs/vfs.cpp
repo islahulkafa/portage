@@ -2,6 +2,11 @@
 #include "fs/proc_fs.hpp"
 #include "package/package_manager.hpp"
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+
 #include <algorithm>
 #include <sstream>
 #include <vector>
@@ -147,27 +152,289 @@ void Vfs::ClearMounts()
     m_mounts.clear();
 }
 
-ResolvedPath Vfs::ResolveAt(int dirfd, std::string_view guest_path,
-                            std::string_view dirfd_path) const
+std::string Vfs::CombineAtPath(int dirfd, std::string_view guest_path,
+                               std::string_view dirfd_path) const
+{
+    if (guest_path.starts_with('/')) {
+        return std::string(guest_path);
+    }
+    std::string base = (dirfd == -100 || dirfd_path.empty()) ? m_cwd : std::string(dirfd_path);
+    if (base == "/") {
+        return "/" + std::string(guest_path);
+    }
+    return base + "/" + std::string(guest_path);
+}
+
+bool Vfs::CreateSymlink(std::string_view target, std::string_view linkpath, int dirfd,
+                        std::string_view dirfd_path)
+{
+    if (target.empty() || linkpath.empty()) {
+        return false;
+    }
+
+    std::string combined = CombineAtPath(dirfd, linkpath, dirfd_path);
+    std::string normalized = NormalizePath(combined);
+
+    {
+        std::lock_guard<std::mutex> lock(m_symlink_mutex);
+        if (m_virtual_symlinks.contains(normalized)) {
+            return false;
+        }
+    }
+
+    ResolvedPath existing = ResolveNoSymlink(normalized);
+    std::error_code ec;
+    if (existing.dev_type == DeviceType::Regular && !existing.host_path.empty() &&
+        (std::filesystem::exists(existing.host_path, ec) ||
+         std::filesystem::is_symlink(existing.host_path, ec))) {
+        return false;
+    }
+
+    if (existing.dev_type == DeviceType::Regular && !existing.host_path.empty()) {
+        std::string target_combined =
+            target.starts_with('/')
+                ? std::string(target)
+                : NormalizePath(
+                      (normalized.rfind('/') == 0 ? "/" : normalized.substr(0, normalized.rfind('/'))) +
+                      "/" + std::string(target));
+        ResolvedPath target_resolved = Resolve(target_combined);
+
+        DWORD symlink_flags = SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
+        if (!target_resolved.host_path.empty() &&
+            std::filesystem::is_directory(target_resolved.host_path, ec)) {
+            symlink_flags |= SYMBOLIC_LINK_FLAG_DIRECTORY;
+        }
+
+        std::wstring link_wpath = existing.host_path.wstring();
+        std::wstring target_wpath = target_resolved.host_path.empty()
+                                        ? std::filesystem::path(target).wstring()
+                                        : target_resolved.host_path.wstring();
+        CreateSymbolicLinkW(link_wpath.c_str(), target_wpath.c_str(), symlink_flags);
+    }
+
+    std::lock_guard<std::mutex> lock(m_symlink_mutex);
+    m_virtual_symlinks[normalized] = std::string(target);
+    return true;
+}
+
+bool Vfs::RemoveSymlink(std::string_view linkpath, int dirfd, std::string_view dirfd_path)
+{
+    if (linkpath.empty()) {
+        return false;
+    }
+    std::string normalized = NormalizePath(CombineAtPath(dirfd, linkpath, dirfd_path));
+    std::lock_guard<std::mutex> lock(m_symlink_mutex);
+    return m_virtual_symlinks.erase(normalized) > 0;
+}
+
+bool Vfs::RenameSymlink(std::string_view oldpath, std::string_view newpath)
+{
+    if (oldpath.empty() || newpath.empty()) {
+        return false;
+    }
+    std::string norm_old = NormalizePath(CombineAtPath(-100, oldpath, ""));
+    std::string norm_new = NormalizePath(CombineAtPath(-100, newpath, ""));
+    std::lock_guard<std::mutex> lock(m_symlink_mutex);
+    auto it = m_virtual_symlinks.find(norm_old);
+    if (it == m_virtual_symlinks.end()) {
+        return false;
+    }
+    std::string target = std::move(it->second);
+    m_virtual_symlinks.erase(it);
+    m_virtual_symlinks[norm_new] = std::move(target);
+    return true;
+}
+
+std::optional<std::string> Vfs::Readlink(std::string_view linkpath, int dirfd,
+                                         std::string_view dirfd_path) const
+{
+    if (linkpath.empty()) {
+        return std::nullopt;
+    }
+
+    std::string combined = CombineAtPath(dirfd, linkpath, dirfd_path);
+    ResolvedPath resolved = Resolve(combined, false);
+    if (resolved.status != 0) {
+        return std::nullopt;
+    }
+    if (resolved.is_symlink) {
+        return resolved.symlink_target;
+    }
+
+    std::string normalized = NormalizePath(combined);
+    {
+        std::lock_guard<std::mutex> lock(m_symlink_mutex);
+        auto it = m_virtual_symlinks.find(normalized);
+        if (it != m_virtual_symlinks.end()) {
+            return it->second;
+        }
+    }
+
+    if (resolved.dev_type == DeviceType::Regular && !resolved.host_path.empty()) {
+        std::error_code ec;
+        if (std::filesystem::is_symlink(resolved.host_path, ec)) {
+            auto target = std::filesystem::read_symlink(resolved.host_path, ec);
+            if (!ec) {
+                return target.string();
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+bool Vfs::IsSymlink(std::string_view linkpath, int dirfd, std::string_view dirfd_path) const
+{
+    return Readlink(linkpath, dirfd, dirfd_path).has_value();
+}
+
+void Vfs::SetMode(std::string_view guest_path, uint32_t mode)
+{
+    std::string normalized = NormalizePath(guest_path);
+    std::lock_guard<std::mutex> lock(m_symlink_mutex);
+    m_custom_modes[normalized] = mode & 07777;
+}
+
+std::optional<uint32_t> Vfs::GetMode(std::string_view guest_path) const
+{
+    std::string normalized = NormalizePath(guest_path);
+    std::lock_guard<std::mutex> lock(m_symlink_mutex);
+    auto it = m_custom_modes.find(normalized);
+    if (it != m_custom_modes.end()) {
+        return it->second;
+    }
+    return std::nullopt;
+}
+
+ResolvedPath Vfs::ResolveAt(int dirfd, std::string_view guest_path, std::string_view dirfd_path,
+                            bool follow_symlinks) const
 {
     if (guest_path.empty()) {
         return {DeviceType::None, {}};
     }
-    if (guest_path.starts_with('/')) {
-        return Resolve(guest_path);
-    }
-
-    std::string base = (dirfd == -100 || dirfd_path.empty()) ? m_cwd : std::string(dirfd_path);
-    std::string combined;
-    if (base == "/") {
-        combined = "/" + std::string(guest_path);
-    } else {
-        combined = base + "/" + std::string(guest_path);
-    }
-    return Resolve(combined);
+    std::string combined = CombineAtPath(dirfd, guest_path, dirfd_path);
+    return Resolve(combined, follow_symlinks);
 }
 
-ResolvedPath Vfs::Resolve(std::string_view guest_path) const
+ResolvedPath Vfs::Resolve(std::string_view guest_path, bool follow_symlinks) const
+{
+    if (guest_path.empty()) {
+        return {DeviceType::None, {}};
+    }
+
+    std::string normalized = NormalizePath(guest_path);
+    if (normalized == "/storage/emulated/0") {
+        normalized = "/sdcard";
+    } else if (normalized.starts_with("/storage/emulated/0/")) {
+        normalized = "/sdcard" + normalized.substr(19);
+    }
+
+    constexpr int kMaxSymlinkHops = 40;
+    int hops = 0;
+
+    auto split_components = [](std::string_view path) {
+        std::vector<std::string> parts;
+        std::stringstream ss{std::string(path)};
+        std::string token;
+        while (std::getline(ss, token, '/')) {
+            if (!token.empty()) {
+                parts.push_back(std::move(token));
+            }
+        }
+        return parts;
+    };
+
+    bool is_abs = normalized.starts_with('/');
+    std::vector<std::string> components = split_components(normalized);
+    if (components.empty()) {
+        return ResolveNoSymlink(normalized);
+    }
+
+    std::string current;
+    for (size_t i = 0; i < components.size(); ++i) {
+        if (is_abs) {
+            current += "/" + components[i];
+        } else {
+            current += (current.empty() ? "" : "/") + components[i];
+        }
+
+        const bool is_last = (i + 1 == components.size());
+
+        std::optional<std::string> link_target;
+        {
+            std::lock_guard<std::mutex> lock(m_symlink_mutex);
+            auto it = m_virtual_symlinks.find(current);
+            if (it != m_virtual_symlinks.end()) {
+                link_target = it->second;
+            }
+        }
+
+        if (!link_target.has_value()) {
+            ResolvedPath partial = ResolveNoSymlink(current);
+            if (partial.dev_type == DeviceType::Regular && !partial.host_path.empty()) {
+                std::error_code ec;
+                if (std::filesystem::is_symlink(partial.host_path, ec)) {
+                    auto target = std::filesystem::read_symlink(partial.host_path, ec);
+                    if (!ec) {
+                        link_target = target.string();
+                    }
+                }
+            }
+        }
+
+        if (link_target.has_value()) {
+            if (is_last && !follow_symlinks) {
+                ResolvedPath res = ResolveNoSymlink(current);
+                res.is_symlink = true;
+                res.symlink_target = *link_target;
+                return res;
+            }
+
+            ++hops;
+            if (hops > kMaxSymlinkHops) {
+                return {DeviceType::None, {}, -40, false, {}};
+            }
+
+            std::string rebuilt;
+            if (link_target->starts_with('/')) {
+                rebuilt = *link_target;
+            } else {
+                auto pos = current.rfind('/');
+                std::string parent =
+                    (pos == std::string::npos) ? "" : (pos == 0 ? "/" : current.substr(0, pos));
+                if (parent.empty()) {
+                    rebuilt = *link_target;
+                } else if (parent == "/") {
+                    rebuilt = "/" + *link_target;
+                } else {
+                    rebuilt = parent + "/" + *link_target;
+                }
+            }
+
+            for (size_t j = i + 1; j < components.size(); ++j) {
+                rebuilt += "/" + components[j];
+            }
+
+            normalized = NormalizePath(rebuilt);
+            if (normalized == "/storage/emulated/0") {
+                normalized = "/sdcard";
+            } else if (normalized.starts_with("/storage/emulated/0/")) {
+                normalized = "/sdcard" + normalized.substr(19);
+            }
+
+            is_abs = normalized.starts_with('/');
+            components = split_components(normalized);
+            if (components.empty()) {
+                return ResolveNoSymlink(normalized);
+            }
+            current.clear();
+            i = static_cast<size_t>(-1);
+        }
+    }
+
+    return ResolveNoSymlink(current);
+}
+
+ResolvedPath Vfs::ResolveNoSymlink(std::string_view guest_path) const
 {
     if (guest_path.empty()) {
         return {DeviceType::None, {}};

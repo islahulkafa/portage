@@ -2,6 +2,12 @@
 #include "ndk/thermal.hpp"
 #include "ndk/libandroid_thunks.hpp"
 #include "package/jni_env.hpp"
+#include "thread/thread_manager.hpp"
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 
 #include <gtest/gtest.h>
 
@@ -47,7 +53,8 @@ TEST_F(AdpfTest, ThermalStatusListenerDispatch)
         std::atomic<int> calls{0};
         std::atomic<AThermalStatus> last_status{ATHERMAL_STATUS_NONE};
 
-        static void OnThermalStatus(void *data, AThermalStatus status)
+        __attribute__((sysv_abi)) static void OnThermalStatus(void *data,
+                                                              AThermalStatus status)
         {
             auto *s = static_cast<CallbackState *>(data);
             s->last_status.store(status);
@@ -182,6 +189,140 @@ TEST_F(AdpfTest, SyntheticAdpfJniReflection)
     EXPECT_EQ(rep_res, 0);
 }
 
+TEST_F(AdpfTest, WorkDurationAndReport2)
+{
+    APerformanceHintManager *mgr = APerformanceHintManager_create();
+    ASSERT_NE(mgr, nullptr);
+
+    int32_t tids[] = {3001};
+    APerformanceHintSession *session =
+        APerformanceHintManager_createSession(mgr, tids, 1, 16'666'666LL);
+    ASSERT_NE(session, nullptr);
+
+    auto *sess = reinterpret_cast<PerformanceHintSession *>(session);
+    EXPECT_FALSE(sess->IsBoosted());
+
+    AWorkDuration *wd = AWorkDuration_create();
+    ASSERT_NE(wd, nullptr);
+
+    AWorkDuration_setWorkPeriodStartTimestampNanos(wd, 1'000'000'000LL);
+    AWorkDuration_setActualTotalDurationNanos(wd, 25'000'000LL); // Overshoot > 115%
+    AWorkDuration_setActualCpuDurationNanos(wd, 20'000'000LL);
+    AWorkDuration_setActualGpuDurationNanos(wd, 5'000'000LL);
+
+    int rep_res = APerformanceHintSession_reportActualWorkDuration2(session, wd);
+    EXPECT_EQ(rep_res, 0);
+    EXPECT_TRUE(sess->IsBoosted());
+    EXPECT_EQ(sess->GetLastActualWorkDuration(), 25'000'000LL);
+
+    AWorkDuration_setActualTotalDurationNanos(wd, 10'000'000LL); // Normal / undershoot
+    rep_res = APerformanceHintSession_reportActualWorkDuration2(session, wd);
+    EXPECT_EQ(rep_res, 0);
+    EXPECT_FALSE(sess->IsBoosted());
+    EXPECT_EQ(sess->GetLastActualWorkDuration(), 10'000'000LL);
+
+    AWorkDuration_release(wd);
+    APerformanceHintSession_close(session);
+}
+
+TEST_F(AdpfTest, SendHintAndPowerEfficiencyMode)
+{
+    APerformanceHintManager *mgr = APerformanceHintManager_create();
+    ASSERT_NE(mgr, nullptr);
+
+    int32_t tids[] = {3002};
+    APerformanceHintSession *session =
+        APerformanceHintManager_createSession(mgr, tids, 1, 16'666'666LL);
+    ASSERT_NE(session, nullptr);
+
+    auto *sess = reinterpret_cast<PerformanceHintSession *>(session);
+
+    EXPECT_EQ(APerformanceHintSession_sendHint(session, SESSION_CPU_LOAD_UP), 0);
+    EXPECT_TRUE(sess->IsBoosted());
+
+    EXPECT_EQ(APerformanceHintSession_sendHint(session, SESSION_CPU_LOAD_DOWN), 0);
+    EXPECT_FALSE(sess->IsBoosted());
+
+    EXPECT_EQ(APerformanceHintSession_sendHint(session, SESSION_GPU_LOAD_UP), 0);
+    EXPECT_TRUE(sess->IsBoosted());
+
+    EXPECT_EQ(APerformanceHintSession_sendHint(session, SESSION_GPU_LOAD_RESET), 0);
+    EXPECT_FALSE(sess->IsBoosted());
+
+    EXPECT_FALSE(sess->IsPowerEfficiencyPreferred());
+    EXPECT_EQ(APerformanceHintSession_setPreferPowerEfficiency(session, true), 0);
+    EXPECT_TRUE(sess->IsPowerEfficiencyPreferred());
+
+    EXPECT_EQ(APerformanceHintSession_setPreferPowerEfficiency(session, false), 0);
+    EXPECT_FALSE(sess->IsPowerEfficiencyPreferred());
+
+    APerformanceHintSession_close(session);
+}
+
+TEST_F(AdpfTest, Win32ThreadQosBoostAndRevert)
+{
+    portage::thread::ThreadManager::Instance().RegisterMainThread();
+    int tid = portage::thread::ThreadManager::Instance().GetCurrentTid();
+    ASSERT_GT(tid, 0);
+
+    HANDLE cur_thread = GetCurrentThread();
+    int orig_priority = GetThreadPriority(cur_thread);
+
+    APerformanceHintManager *mgr = APerformanceHintManager_create();
+    ASSERT_NE(mgr, nullptr);
+
+    int32_t tids[] = {static_cast<int32_t>(tid)};
+    APerformanceHintSession *session =
+        APerformanceHintManager_createSession(mgr, tids, 1, 16'000'000LL);
+    ASSERT_NE(session, nullptr);
+
+    // Trigger overshoot
+    APerformanceHintSession_reportActualWorkDuration(session, 22'000'000LL);
+    int boosted_priority = GetThreadPriority(cur_thread);
+    EXPECT_EQ(boosted_priority, THREAD_PRIORITY_HIGHEST);
+
+    // Trigger undershoot
+    APerformanceHintSession_reportActualWorkDuration(session, 12'000'000LL);
+    int normal_priority = GetThreadPriority(cur_thread);
+    EXPECT_EQ(normal_priority, THREAD_PRIORITY_NORMAL);
+
+    // Close session and verify revert
+    APerformanceHintSession_close(session);
+    int reverted_priority = GetThreadPriority(cur_thread);
+    EXPECT_EQ(reverted_priority, THREAD_PRIORITY_NORMAL);
+
+    SetThreadPriority(cur_thread, orig_priority);
+}
+
+TEST_F(AdpfTest, ThermalMonitorNotifiesOnChange)
+{
+    AThermalManager *mgr = AThermalManager_acquireManager();
+    ASSERT_NE(mgr, nullptr);
+
+    struct MonitorState {
+        std::atomic<int> calls{0};
+        std::atomic<AThermalStatus> status{ATHERMAL_STATUS_NONE};
+
+        __attribute__((sysv_abi)) static void OnStatus(void *data, AThermalStatus s)
+        {
+            auto *self = static_cast<MonitorState *>(data);
+            self->status.store(s);
+            self->calls.fetch_add(1);
+        }
+    } state;
+
+    EXPECT_EQ(
+        AThermalManager_registerThermalStatusListener(mgr, &MonitorState::OnStatus, &state), 0);
+
+    ThermalManager::Instance().SetStatusOverride(ATHERMAL_STATUS_CRITICAL);
+    EXPECT_GE(state.calls.load(), 1);
+    EXPECT_EQ(state.status.load(), ATHERMAL_STATUS_CRITICAL);
+
+    EXPECT_EQ(
+        AThermalManager_unregisterThermalStatusListener(mgr, &MonitorState::OnStatus, &state), 0);
+    AThermalManager_releaseManager(mgr);
+}
+
 TEST_F(AdpfTest, NdkSymbolRegistryLookup)
 {
     auto &reg = NdkSymbolRegistry::Instance();
@@ -197,6 +338,16 @@ TEST_F(AdpfTest, NdkSymbolRegistryLookup)
     EXPECT_NE(reg.Lookup("APerformanceHintManager_getPreferredUpdateRateNanos"), 0u);
     EXPECT_NE(reg.Lookup("APerformanceHintSession_updateTargetWorkDuration"), 0u);
     EXPECT_NE(reg.Lookup("APerformanceHintSession_reportActualWorkDuration"), 0u);
+    EXPECT_NE(reg.Lookup("APerformanceHintSession_reportActualWorkDuration2"), 0u);
+    EXPECT_NE(reg.Lookup("APerformanceHintSession_sendHint"), 0u);
+    EXPECT_NE(reg.Lookup("APerformanceHintSession_setPreferPowerEfficiency"), 0u);
     EXPECT_NE(reg.Lookup("APerformanceHintSession_close"), 0u);
     EXPECT_NE(reg.Lookup("APerformanceHintSession_setThreads"), 0u);
+
+    EXPECT_NE(reg.Lookup("AWorkDuration_create"), 0u);
+    EXPECT_NE(reg.Lookup("AWorkDuration_release"), 0u);
+    EXPECT_NE(reg.Lookup("AWorkDuration_setWorkPeriodStartTimestampNanos"), 0u);
+    EXPECT_NE(reg.Lookup("AWorkDuration_setActualTotalDurationNanos"), 0u);
+    EXPECT_NE(reg.Lookup("AWorkDuration_setActualCpuDurationNanos"), 0u);
+    EXPECT_NE(reg.Lookup("AWorkDuration_setActualGpuDurationNanos"), 0u);
 }

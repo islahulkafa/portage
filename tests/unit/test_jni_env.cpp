@@ -495,3 +495,460 @@ TEST(JniEnvTest, SharedPreferencesWindowMetricsAndPackageInfo)
 
     std::filesystem::remove_all(tmp_root, ec);
 }
+
+TEST(JniEnvTest, ReflectionToAndFromReflectedMethod)
+{
+    auto &jni = portage::package::JniEnvironment::Instance();
+    jni.Initialize("com.portage.unit", "/data/data/com.portage.unit/files",
+                   "/data/data/com.portage.unit/cache");
+    auto *env = jni.GetJNIEnv();
+    ASSERT_NE(env, nullptr);
+
+    auto ctx = jni.GetContextObject();
+    auto act_cls = env->functions->FindClass(env, "android/app/Activity");
+    auto mid =
+        env->functions->GetMethodID(env, act_cls, "getPackageName", "()Ljava/lang/String;");
+    ASSERT_NE(mid, nullptr);
+
+    auto reflected = env->functions->ToReflectedMethod(env, act_cls, mid, portage::package::JNI_FALSE);
+    ASSERT_NE(reflected, nullptr);
+    EXPECT_EQ(env->functions->FromReflectedMethod(env, reflected), mid);
+
+    auto method_cls = env->functions->GetObjectClass(env, reflected);
+    auto get_name_mid =
+        env->functions->GetMethodID(env, method_cls, "getName", "()Ljava/lang/String;");
+    auto name_str = static_cast<portage::package::jstring>(
+        env->functions->CallObjectMethod(env, reflected, get_name_mid));
+    ASSERT_NE(name_str, nullptr);
+    EXPECT_STREQ(jni.GetStringChars(name_str), "getPackageName");
+
+    auto invoke_mid = env->functions->GetMethodID(
+        env, method_cls, "invoke", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;");
+    auto invoked = static_cast<portage::package::jstring>(
+        env->functions->CallObjectMethod(env, reflected, invoke_mid, ctx, nullptr));
+    ASSERT_NE(invoked, nullptr);
+    EXPECT_STREQ(jni.GetStringChars(invoked), "com.portage.unit");
+
+    auto env_cls = env->functions->FindClass(env, "android/os/Environment");
+    auto data_dir_mid =
+        env->functions->GetStaticMethodID(env, env_cls, "getDataDirectory", "()Ljava/io/File;");
+    auto static_reflected =
+        env->functions->ToReflectedMethod(env, env_cls, data_dir_mid, portage::package::JNI_TRUE);
+    ASSERT_NE(static_reflected, nullptr);
+    auto file_obj = env->functions->CallObjectMethod(env, static_reflected, invoke_mid, nullptr, nullptr);
+    ASSERT_NE(file_obj, nullptr);
+    auto file_cls = env->functions->GetObjectClass(env, file_obj);
+    auto abs_mid =
+        env->functions->GetMethodID(env, file_cls, "getAbsolutePath", "()Ljava/lang/String;");
+    auto abs_str = static_cast<portage::package::jstring>(
+        env->functions->CallObjectMethod(env, file_obj, abs_mid));
+    EXPECT_STREQ(jni.GetStringChars(abs_str), "/data");
+}
+
+TEST(JniEnvTest, ReflectionToAndFromReflectedField)
+{
+    auto &jni = portage::package::JniEnvironment::Instance();
+    jni.Initialize("com.portage.unit", "/data/data/com.portage.unit/files",
+                   "/data/data/com.portage.unit/cache");
+    auto *env = jni.GetJNIEnv();
+    ASSERT_NE(env, nullptr);
+
+    auto ctx = jni.GetContextObject();
+    auto act_cls = env->functions->GetObjectClass(env, ctx);
+    auto get_pm = env->functions->GetMethodID(env, act_cls, "getPackageManager",
+                                              "()Landroid/content/pm/PackageManager;");
+    auto pm = env->functions->CallObjectMethod(env, ctx, get_pm);
+    auto pm_cls = env->functions->GetObjectClass(env, pm);
+    auto get_pi = env->functions->GetMethodID(
+        env, pm_cls, "getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;");
+    auto pi = env->functions->CallObjectMethod(env, pm, get_pi, jni.CreateString("com.portage.orig"), 0);
+    ASSERT_NE(pi, nullptr);
+
+    auto pi_cls = env->functions->GetObjectClass(env, pi);
+    auto fid = env->functions->GetFieldID(env, pi_cls, "packageName", "Ljava/lang/String;");
+    ASSERT_NE(fid, nullptr);
+
+    auto reflected = env->functions->ToReflectedField(env, pi_cls, fid, portage::package::JNI_FALSE);
+    ASSERT_NE(reflected, nullptr);
+    EXPECT_EQ(env->functions->FromReflectedField(env, reflected), fid);
+
+    auto field_cls = env->functions->GetObjectClass(env, reflected);
+    auto get_name_mid =
+        env->functions->GetMethodID(env, field_cls, "getName", "()Ljava/lang/String;");
+    auto fname = static_cast<portage::package::jstring>(
+        env->functions->CallObjectMethod(env, reflected, get_name_mid));
+    EXPECT_STREQ(jni.GetStringChars(fname), "packageName");
+
+    auto get_mid =
+        env->functions->GetMethodID(env, field_cls, "get", "(Ljava/lang/Object;)Ljava/lang/Object;");
+    auto cur_val = static_cast<portage::package::jstring>(
+        env->functions->CallObjectMethod(env, reflected, get_mid, pi));
+    EXPECT_STREQ(jni.GetStringChars(cur_val), "com.portage.orig");
+
+    auto set_mid = env->functions->GetMethodID(env, field_cls, "set",
+                                               "(Ljava/lang/Object;Ljava/lang/Object;)V");
+    env->functions->CallVoidMethod(env, reflected, set_mid, pi,
+                                   jni.CreateString("com.portage.reflected"));
+    auto updated_val = static_cast<portage::package::jstring>(
+        env->functions->CallObjectMethod(env, reflected, get_mid, pi));
+    EXPECT_STREQ(jni.GetStringChars(updated_val), "com.portage.reflected");
+}
+
+TEST(JniEnvTest, SuperclassAndIsAssignableFrom)
+{
+    auto &jni = portage::package::JniEnvironment::Instance();
+    jni.Initialize("com.portage.unit", "/data/data/com.portage.unit/files",
+                   "/data/data/com.portage.unit/cache");
+    auto *env = jni.GetJNIEnv();
+    ASSERT_NE(env, nullptr);
+
+    auto act_cls = env->functions->FindClass(env, "android/app/Activity");
+    auto ctx_cls = env->functions->FindClass(env, "android/content/Context");
+    auto obj_cls = env->functions->FindClass(env, "java/lang/Object");
+    auto bundle_cls = env->functions->FindClass(env, "android/os/Bundle");
+
+    auto act_super = env->functions->GetSuperclass(env, act_cls);
+    ASSERT_NE(act_super, nullptr);
+    EXPECT_STREQ(reinterpret_cast<const char *>(act_super), "android/content/Context");
+
+    auto ctx_super = env->functions->GetSuperclass(env, ctx_cls);
+    ASSERT_NE(ctx_super, nullptr);
+    EXPECT_STREQ(reinterpret_cast<const char *>(ctx_super), "java/lang/Object");
+
+    EXPECT_EQ(env->functions->GetSuperclass(env, obj_cls), nullptr);
+
+    EXPECT_EQ(env->functions->IsAssignableFrom(env, act_cls, ctx_cls), portage::package::JNI_TRUE);
+    EXPECT_EQ(env->functions->IsAssignableFrom(env, act_cls, obj_cls), portage::package::JNI_TRUE);
+    EXPECT_EQ(env->functions->IsAssignableFrom(env, act_cls, act_cls), portage::package::JNI_TRUE);
+    EXPECT_EQ(env->functions->IsAssignableFrom(env, ctx_cls, act_cls), portage::package::JNI_FALSE);
+    EXPECT_EQ(env->functions->IsAssignableFrom(env, bundle_cls, ctx_cls),
+              portage::package::JNI_FALSE);
+}
+
+TEST(JniEnvTest, BuildAndVersionFields)
+{
+    auto &jni = portage::package::JniEnvironment::Instance();
+    jni.Initialize("com.portage.unit", "/data/data/com.portage.unit/files",
+                   "/data/data/com.portage.unit/cache");
+    auto *env = jni.GetJNIEnv();
+    ASSERT_NE(env, nullptr);
+
+    auto build_cls = env->functions->FindClass(env, "android/os/Build");
+    auto check_build_field = [&](const char *field, const char *expected) {
+        auto fid = env->functions->GetStaticFieldID(env, build_cls, field, "Ljava/lang/String;");
+        ASSERT_NE(fid, nullptr);
+        auto str = static_cast<portage::package::jstring>(
+            env->functions->GetStaticObjectField(env, build_cls, fid));
+        ASSERT_NE(str, nullptr);
+        EXPECT_STREQ(jni.GetStringChars(str), expected);
+    };
+
+    check_build_field("MODEL", "Portage Virtual Device");
+    check_build_field("BRAND", "generic");
+    check_build_field("MANUFACTURER", "Google");
+    check_build_field("HOST", "portage-win");
+    check_build_field("USER", "android-build");
+    check_build_field("TAGS", "release-keys");
+    check_build_field("TYPE", "user");
+
+    auto ver_cls = env->functions->FindClass(env, "android/os/Build$VERSION");
+    auto fid_inc = env->functions->GetStaticFieldID(env, ver_cls, "INCREMENTAL", "Ljava/lang/String;");
+    auto str_inc = static_cast<portage::package::jstring>(
+        env->functions->GetStaticObjectField(env, ver_cls, fid_inc));
+    ASSERT_NE(str_inc, nullptr);
+    EXPECT_STREQ(jni.GetStringChars(str_inc), "1");
+
+    auto fid_code = env->functions->GetStaticFieldID(env, ver_cls, "CODENAME", "Ljava/lang/String;");
+    auto str_code = static_cast<portage::package::jstring>(
+        env->functions->GetStaticObjectField(env, ver_cls, fid_code));
+    ASSERT_NE(str_code, nullptr);
+    EXPECT_STREQ(jni.GetStringChars(str_code), "REL");
+}
+
+TEST(JniEnvTest, EnvironmentAndProcessMethods)
+{
+    auto &jni = portage::package::JniEnvironment::Instance();
+    jni.Initialize("com.portage.unit", "/data/data/com.portage.unit/files",
+                   "/data/data/com.portage.unit/cache");
+    auto *env = jni.GetJNIEnv();
+    ASSERT_NE(env, nullptr);
+
+    auto env_cls = env->functions->FindClass(env, "android/os/Environment");
+    auto mid_data =
+        env->functions->GetStaticMethodID(env, env_cls, "getDataDirectory", "()Ljava/io/File;");
+    auto data_file = env->functions->CallStaticObjectMethod(env, env_cls, mid_data);
+    ASSERT_NE(data_file, nullptr);
+    auto file_cls = env->functions->GetObjectClass(env, data_file);
+    auto mid_abs =
+        env->functions->GetMethodID(env, file_cls, "getAbsolutePath", "()Ljava/lang/String;");
+    auto path_str = static_cast<portage::package::jstring>(
+        env->functions->CallObjectMethod(env, data_file, mid_abs));
+    EXPECT_STREQ(jni.GetStringChars(path_str), "/data");
+
+    auto mid_emul =
+        env->functions->GetStaticMethodID(env, env_cls, "isExternalStorageEmulated", "()Z");
+    EXPECT_EQ(env->functions->CallStaticBooleanMethod(env, env_cls, mid_emul),
+              portage::package::JNI_TRUE);
+
+    auto proc_cls = env->functions->FindClass(env, "android/os/Process");
+    auto mid_pid = env->functions->GetStaticMethodID(env, proc_cls, "myPid", "()I");
+    auto mid_tid = env->functions->GetStaticMethodID(env, proc_cls, "myTid", "()I");
+    auto mid_uid = env->functions->GetStaticMethodID(env, proc_cls, "myUid", "()I");
+
+    EXPECT_GT(env->functions->CallStaticIntMethod(env, proc_cls, mid_pid), 0);
+    EXPECT_GE(env->functions->CallStaticIntMethod(env, proc_cls, mid_tid), 0);
+    EXPECT_EQ(env->functions->CallStaticIntMethod(env, proc_cls, mid_uid), 10000);
+}
+
+TEST(JniEnvTest, BundleOperations)
+{
+    auto &jni = portage::package::JniEnvironment::Instance();
+    jni.Initialize("com.portage.unit", "/data/data/com.portage.unit/files",
+                   "/data/data/com.portage.unit/cache");
+    auto *env = jni.GetJNIEnv();
+    ASSERT_NE(env, nullptr);
+
+    auto bundle_cls = env->functions->FindClass(env, "android/os/Bundle");
+    auto init_mid = env->functions->GetMethodID(env, bundle_cls, "<init>", "()V");
+    auto bundle = env->functions->NewObject(env, bundle_cls, init_mid);
+    ASSERT_NE(bundle, nullptr);
+
+    auto put_str =
+        env->functions->GetMethodID(env, bundle_cls, "putString", "(Ljava/lang/String;Ljava/lang/String;)V");
+    auto put_int = env->functions->GetMethodID(env, bundle_cls, "putInt", "(Ljava/lang/String;I)V");
+    auto put_bool =
+        env->functions->GetMethodID(env, bundle_cls, "putBoolean", "(Ljava/lang/String;Z)V");
+
+    env->functions->CallVoidMethod(env, bundle, put_str, jni.CreateString("hero"),
+                                   jni.CreateString("Portage"));
+    env->functions->CallVoidMethod(env, bundle, put_int, jni.CreateString("level"), 99);
+    env->functions->CallVoidMethod(env, bundle, put_bool, jni.CreateString("enabled"),
+                                   portage::package::JNI_TRUE);
+
+    auto contains =
+        env->functions->GetMethodID(env, bundle_cls, "containsKey", "(Ljava/lang/String;)Z");
+    EXPECT_EQ(env->functions->CallBooleanMethod(env, bundle, contains, jni.CreateString("hero")),
+              portage::package::JNI_TRUE);
+    EXPECT_EQ(env->functions->CallBooleanMethod(env, bundle, contains, jni.CreateString("missing")),
+              portage::package::JNI_FALSE);
+
+    auto get_str =
+        env->functions->GetMethodID(env, bundle_cls, "getString", "(Ljava/lang/String;)Ljava/lang/String;");
+    auto get_int = env->functions->GetMethodID(env, bundle_cls, "getInt", "(Ljava/lang/String;I)I");
+    auto get_bool =
+        env->functions->GetMethodID(env, bundle_cls, "getBoolean", "(Ljava/lang/String;Z)Z");
+
+    auto hero = static_cast<portage::package::jstring>(
+        env->functions->CallObjectMethod(env, bundle, get_str, jni.CreateString("hero")));
+    ASSERT_NE(hero, nullptr);
+    EXPECT_STREQ(jni.GetStringChars(hero), "Portage");
+    EXPECT_EQ(env->functions->CallObjectMethod(env, bundle, get_str, jni.CreateString("missing")),
+              nullptr);
+
+    EXPECT_EQ(env->functions->CallIntMethod(env, bundle, get_int, jni.CreateString("level"), -1), 99);
+    EXPECT_EQ(env->functions->CallIntMethod(env, bundle, get_int, jni.CreateString("missing"), -1),
+              -1);
+
+    EXPECT_EQ(env->functions->CallBooleanMethod(env, bundle, get_bool, jni.CreateString("enabled"),
+                                                portage::package::JNI_FALSE),
+              portage::package::JNI_TRUE);
+    EXPECT_EQ(env->functions->CallBooleanMethod(env, bundle, get_bool, jni.CreateString("missing"),
+                                                portage::package::JNI_FALSE),
+              portage::package::JNI_FALSE);
+}
+
+TEST(JniEnvTest, VibratorDispatch)
+{
+    auto &jni = portage::package::JniEnvironment::Instance();
+    jni.Initialize("com.portage.unit", "/data/data/com.portage.unit/files",
+                   "/data/data/com.portage.unit/cache");
+    auto *env = jni.GetJNIEnv();
+    ASSERT_NE(env, nullptr);
+
+    auto ctx = jni.GetContextObject();
+    auto act_cls = env->functions->GetObjectClass(env, ctx);
+    auto get_svc = env->functions->GetMethodID(env, act_cls, "getSystemService",
+                                               "(Ljava/lang/String;)Ljava/lang/Object;");
+    auto vib = env->functions->CallObjectMethod(env, ctx, get_svc, jni.CreateString("vibrator"));
+    ASSERT_NE(vib, nullptr);
+
+    auto vib_cls = env->functions->GetObjectClass(env, vib);
+    auto has_vib = env->functions->GetMethodID(env, vib_cls, "hasVibrator", "()Z");
+    EXPECT_EQ(env->functions->CallBooleanMethod(env, vib, has_vib), portage::package::JNI_TRUE);
+
+    auto vibrate_mid = env->functions->GetMethodID(env, vib_cls, "vibrate", "(J)V");
+    env->functions->CallVoidMethod(env, vib, vibrate_mid, static_cast<portage::package::jlong>(100));
+}
+
+TEST(JniEnvTest, DisplayAndPoint)
+{
+    auto &jni = portage::package::JniEnvironment::Instance();
+    jni.Initialize("com.portage.unit", "/data/data/com.portage.unit/files",
+                   "/data/data/com.portage.unit/cache");
+    jni.SetDisplayMetrics(1280, 720, 2.0f, 320);
+    auto *env = jni.GetJNIEnv();
+    ASSERT_NE(env, nullptr);
+
+    auto pt_cls = env->functions->FindClass(env, "android/graphics/Point");
+    auto pt_init = env->functions->GetMethodID(env, pt_cls, "<init>", "(II)V");
+    auto pt = env->functions->NewObject(env, pt_cls, pt_init, 15, 30);
+    ASSERT_NE(pt, nullptr);
+
+    auto fid_x = env->functions->GetFieldID(env, pt_cls, "x", "I");
+    auto fid_y = env->functions->GetFieldID(env, pt_cls, "y", "I");
+    EXPECT_EQ(env->functions->GetIntField(env, pt, fid_x), 15);
+    EXPECT_EQ(env->functions->GetIntField(env, pt, fid_y), 30);
+
+    auto ctx = jni.GetContextObject();
+    auto act_cls = env->functions->GetObjectClass(env, ctx);
+    auto get_svc = env->functions->GetMethodID(env, act_cls, "getSystemService",
+                                               "(Ljava/lang/String;)Ljava/lang/Object;");
+    auto wm = env->functions->CallObjectMethod(env, ctx, get_svc, jni.CreateString("window"));
+    auto wm_cls = env->functions->GetObjectClass(env, wm);
+    auto disp = env->functions->CallObjectMethod(
+        env, wm, env->functions->GetMethodID(env, wm_cls, "getDefaultDisplay", "()Landroid/view/Display;"));
+    ASSERT_NE(disp, nullptr);
+
+    auto disp_cls = env->functions->GetObjectClass(env, disp);
+    auto get_real_size =
+        env->functions->GetMethodID(env, disp_cls, "getRealSize", "(Landroid/graphics/Point;)V");
+    env->functions->CallVoidMethod(env, disp, get_real_size, pt);
+    EXPECT_EQ(env->functions->GetIntField(env, pt, fid_x), 1280);
+    EXPECT_EQ(env->functions->GetIntField(env, pt, fid_y), 720);
+
+    auto get_hz = env->functions->GetMethodID(env, disp_cls, "getRefreshRate", "()F");
+    EXPECT_FLOAT_EQ(env->functions->CallFloatMethod(env, disp, get_hz), 60.0f);
+
+    auto get_rot = env->functions->GetMethodID(env, disp_cls, "getRotation", "()I");
+    EXPECT_EQ(env->functions->CallIntMethod(env, disp, get_rot), 0);
+
+    auto win = jni.GetWindowObject();
+    auto win_cls = env->functions->GetObjectClass(env, win);
+    auto decor = env->functions->CallObjectMethod(
+        env, win, env->functions->GetMethodID(env, win_cls, "getDecorView", "()Landroid/view/View;"));
+    ASSERT_NE(decor, nullptr);
+    auto view_cls = env->functions->GetObjectClass(env, decor);
+    env->functions->CallVoidMethod(
+        env, decor, env->functions->GetMethodID(env, view_cls, "setSystemUiVisibility", "(I)V"),
+        0x104);
+    EXPECT_EQ(env->functions->CallIntMethod(
+                  env, decor, env->functions->GetMethodID(env, view_cls, "getSystemUiVisibility", "()I")),
+              0x104);
+}
+
+TEST(JniEnvTest, PackageManagerAndPackageInfo)
+{
+    auto &jni = portage::package::JniEnvironment::Instance();
+    jni.Initialize("com.portage.unit", "/data/data/com.portage.unit/files",
+                   "/data/data/com.portage.unit/cache");
+    auto *env = jni.GetJNIEnv();
+    ASSERT_NE(env, nullptr);
+
+    auto ctx = jni.GetContextObject();
+    auto act_cls = env->functions->GetObjectClass(env, ctx);
+    auto pm = env->functions->CallObjectMethod(
+        env, ctx,
+        env->functions->GetMethodID(env, act_cls, "getPackageManager",
+                                    "()Landroid/content/pm/PackageManager;"));
+    ASSERT_NE(pm, nullptr);
+
+    auto pm_cls = env->functions->GetObjectClass(env, pm);
+    auto pi = env->functions->CallObjectMethod(
+        env, pm,
+        env->functions->GetMethodID(env, pm_cls, "getPackageInfo",
+                                    "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;"),
+        jni.CreateString("com.portage.meta"), 0);
+    ASSERT_NE(pi, nullptr);
+
+    auto pi_cls = env->functions->GetObjectClass(env, pi);
+    auto ver_name = static_cast<portage::package::jstring>(env->functions->GetObjectField(
+        env, pi, env->functions->GetFieldID(env, pi_cls, "versionName", "Ljava/lang/String;")));
+    ASSERT_NE(ver_name, nullptr);
+    EXPECT_STREQ(jni.GetStringChars(ver_name), "1.0.0");
+    EXPECT_EQ(env->functions->GetIntField(
+                  env, pi, env->functions->GetFieldID(env, pi_cls, "versionCode", "I")),
+              1);
+
+    auto app_info = env->functions->CallObjectMethod(
+        env, pm,
+        env->functions->GetMethodID(env, pm_cls, "getApplicationInfo",
+                                    "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;"),
+        jni.CreateString("com.portage.meta"), 0);
+    ASSERT_NE(app_info, nullptr);
+    auto app_cls = env->functions->GetObjectClass(env, app_info);
+    auto data_dir = static_cast<portage::package::jstring>(env->functions->GetObjectField(
+        env, app_info, env->functions->GetFieldID(env, app_cls, "dataDir", "Ljava/lang/String;")));
+    ASSERT_NE(data_dir, nullptr);
+    EXPECT_STREQ(jni.GetStringChars(data_dir), "/data/data/com.portage.unit/files");
+    auto src_dir = static_cast<portage::package::jstring>(env->functions->GetObjectField(
+        env, app_info, env->functions->GetFieldID(env, app_cls, "sourceDir", "Ljava/lang/String;")));
+    ASSERT_NE(src_dir, nullptr);
+    EXPECT_GT(env->functions->GetIntField(
+                  env, app_info, env->functions->GetFieldID(env, app_cls, "targetSdkVersion", "I")),
+              0);
+}
+
+TEST(JniEnvTest, PrimitiveArrayTypeSafety)
+{
+    auto &jni = portage::package::JniEnvironment::Instance();
+    jni.Initialize("com.portage.unit", "/data/data/com.portage.unit/files",
+                   "/data/data/com.portage.unit/cache");
+    auto *env = jni.GetJNIEnv();
+    ASSERT_NE(env, nullptr);
+
+    auto sarr = env->functions->NewShortArray(env, 5);
+    ASSERT_NE(sarr, nullptr);
+    EXPECT_EQ(env->functions->GetArrayLength(env, sarr), 5);
+    const portage::package::jshort s_in[5] = {10, -20, 300, -4000, 32000};
+    env->functions->SetShortArrayRegion(env, sarr, 0, 5, s_in);
+    portage::package::jshort s_out[5] = {};
+    env->functions->GetShortArrayRegion(env, sarr, 0, 5, s_out);
+    for (int i = 0; i < 5; ++i) {
+        EXPECT_EQ(s_out[i], s_in[i]);
+    }
+    auto *s_elems = env->functions->GetShortArrayElements(env, sarr, nullptr);
+    ASSERT_NE(s_elems, nullptr);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(s_elems) % alignof(portage::package::jshort), 0U);
+    env->functions->ReleaseShortArrayElements(env, sarr, s_elems, 0);
+
+    auto larr = env->functions->NewLongArray(env, 4);
+    ASSERT_NE(larr, nullptr);
+    EXPECT_EQ(env->functions->GetArrayLength(env, larr), 4);
+    const portage::package::jlong l_in[4] = {0x1122334455667788LL, -987654321012345LL, 0LL, 42LL};
+    env->functions->SetLongArrayRegion(env, larr, 0, 4, l_in);
+    portage::package::jlong l_out[4] = {};
+    env->functions->GetLongArrayRegion(env, larr, 0, 4, l_out);
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_EQ(l_out[i], l_in[i]);
+    }
+    auto *l_elems = env->functions->GetLongArrayElements(env, larr, nullptr);
+    ASSERT_NE(l_elems, nullptr);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(l_elems) % alignof(portage::package::jlong), 0U);
+    env->functions->ReleaseLongArrayElements(env, larr, l_elems, 0);
+
+    auto darr = env->functions->NewDoubleArray(env, 3);
+    ASSERT_NE(darr, nullptr);
+    EXPECT_EQ(env->functions->GetArrayLength(env, darr), 3);
+    const portage::package::jdouble d_in[3] = {3.14159265358979, -2.718281828, 1.5};
+    env->functions->SetDoubleArrayRegion(env, darr, 0, 3, d_in);
+    portage::package::jdouble d_out[3] = {};
+    env->functions->GetDoubleArrayRegion(env, darr, 0, 3, d_out);
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_DOUBLE_EQ(d_out[i], d_in[i]);
+    }
+    auto *d_elems = env->functions->GetDoubleArrayElements(env, darr, nullptr);
+    ASSERT_NE(d_elems, nullptr);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(d_elems) % alignof(portage::package::jdouble), 0U);
+    env->functions->ReleaseDoubleArrayElements(env, darr, d_elems, 0);
+
+    auto carr = env->functions->NewCharArray(env, 6);
+    ASSERT_NE(carr, nullptr);
+    EXPECT_EQ(env->functions->GetArrayLength(env, carr), 6);
+    const portage::package::jchar c_in[6] = {u'P', u'o', u'r', u't', u'a', u'g'};
+    env->functions->SetCharArrayRegion(env, carr, 0, 6, c_in);
+    portage::package::jchar c_out[6] = {};
+    env->functions->GetCharArrayRegion(env, carr, 0, 6, c_out);
+    for (int i = 0; i < 6; ++i) {
+        EXPECT_EQ(c_out[i], c_in[i]);
+    }
+}

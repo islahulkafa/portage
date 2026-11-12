@@ -372,11 +372,20 @@ EGLBoolean EglDispatcher::QuerySurface(EGLDisplay dpy, EGLSurface surface, EGLin
 EGLContext EglDispatcher::CreateContext(EGLDisplay dpy, EGLConfig config, EGLContext share_context,
                                         const EGLint *attrib_list) noexcept
 {
-    (void)share_context;
     std::lock_guard<std::mutex> lock(mutex_);
     if (dpy != kSyntheticDisplay) {
         last_error_ = EGL_BAD_DISPLAY;
         return EGL_NO_CONTEXT;
+    }
+
+    HGLRC share_hglrc = nullptr;
+    if (share_context != EGL_NO_CONTEXT) {
+        auto share_it = contexts_.find(share_context);
+        if (share_it == contexts_.end()) {
+            last_error_ = EGL_BAD_CONTEXT;
+            return EGL_NO_CONTEXT;
+        }
+        share_hglrc = share_it->second->hglrc;
     }
 
     int client_version = 2;
@@ -395,7 +404,7 @@ EGLContext EglDispatcher::CreateContext(EGLDisplay dpy, EGLConfig config, EGLCon
         return EGL_NO_CONTEXT;
     }
 
-    HGLRC hglrc = WglBridge::Instance().CreateContext(helper_dc, client_version);
+    HGLRC hglrc = WglBridge::Instance().CreateContext(helper_dc, client_version, share_hglrc);
     WglBridge::Instance().DestroyOffscreenDc(helper_dc, nullptr);
 
     if (!hglrc) {

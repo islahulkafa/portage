@@ -1,5 +1,6 @@
 #include "ndk/bionic_posix.hpp"
 #include "ndk/libandroid_thunks.hpp"
+#include "signal/signal_types.hpp"
 #include "syscall/linux_types.hpp"
 #include "syscall/syscall_dispatcher.hpp"
 
@@ -72,9 +73,13 @@ void RegisterBionicPosix(NdkSymbolRegistry &registry)
     registry.Register("remove", reinterpret_cast<uintptr_t>(&portage_remove));
     registry.Register("rename", reinterpret_cast<uintptr_t>(&portage_rename));
     registry.Register("readlink", reinterpret_cast<uintptr_t>(&portage_readlink));
+    registry.Register("readlinkat", reinterpret_cast<uintptr_t>(&portage_readlinkat));
     registry.Register("realpath", reinterpret_cast<uintptr_t>(&portage_realpath));
     registry.Register("symlink", reinterpret_cast<uintptr_t>(&portage_symlink));
+    registry.Register("symlinkat", reinterpret_cast<uintptr_t>(&portage_symlinkat));
     registry.Register("link", reinterpret_cast<uintptr_t>(&portage_link));
+    registry.Register("linkat", reinterpret_cast<uintptr_t>(&portage_linkat));
+    registry.Register("chmod", reinterpret_cast<uintptr_t>(&portage_chmod));
     registry.Register("fchmod", reinterpret_cast<uintptr_t>(&portage_fchmod));
     registry.Register("fchmodat", reinterpret_cast<uintptr_t>(&portage_fchmodat));
     registry.Register("isatty", reinterpret_cast<uintptr_t>(&portage_isatty));
@@ -114,6 +119,13 @@ void RegisterBionicPosix(NdkSymbolRegistry &registry)
                       reinterpret_cast<uintptr_t>(&portage_pthread_rwlock_trywrlock));
     registry.Register("pthread_rwlock_unlock",
                       reinterpret_cast<uintptr_t>(&portage_pthread_rwlock_unlock));
+
+    registry.Register("sigwaitinfo", reinterpret_cast<uintptr_t>(&portage_sigwaitinfo));
+    registry.Register("sigtimedwait", reinterpret_cast<uintptr_t>(&portage_sigtimedwait));
+    registry.Register("sigqueue", reinterpret_cast<uintptr_t>(&portage_sigqueue));
+    registry.Register("signalfd", reinterpret_cast<uintptr_t>(&portage_signalfd));
+    registry.Register("signalfd4", reinterpret_cast<uintptr_t>(&portage_signalfd4));
+    registry.Register("sigsuspend", reinterpret_cast<uintptr_t>(&portage_sigsuspend));
 }
 
 } // namespace portage::ndk
@@ -439,6 +451,19 @@ __attribute__((sysv_abi)) int64_t portage_readlink(const char *path, char *buf, 
     return -1;
 }
 
+__attribute__((sysv_abi)) int64_t portage_readlinkat(int dfd, const char *pathname, char *buf,
+                                                     size_t bufsiz)
+{
+    if (SyscallDispatcher::GetVfs() != nullptr) {
+        int64_t ret = SyscallDispatcher::Dispatch(
+            267 /* SYS_readlinkat */, static_cast<uint64_t>(dfd),
+            reinterpret_cast<uint64_t>(pathname), reinterpret_cast<uint64_t>(buf), bufsiz, 0, 0);
+        return SetErrnoFromSyscall(ret);
+    }
+    *portage_errno() = 22; // EINVAL
+    return -1;
+}
+
 __attribute__((sysv_abi)) char *portage_realpath(const char *path, char *resolved_path)
 {
     if (!path) {
@@ -460,21 +485,68 @@ __attribute__((sysv_abi)) char *portage_realpath(const char *path, char *resolve
     return resolved_path;
 }
 
-__attribute__((sysv_abi)) int portage_symlink(const char *, const char *)
+__attribute__((sysv_abi)) int portage_symlink(const char *target, const char *linkpath)
 {
-    *portage_errno() = 38; // ENOSYS
-    return -1;
+    return portage_symlinkat(target, -100 /* AT_FDCWD */, linkpath);
 }
 
-__attribute__((sysv_abi)) int portage_link(const char *, const char *)
+__attribute__((sysv_abi)) int portage_symlinkat(const char *target, int newdfd,
+                                                const char *linkpath)
 {
+    if (SyscallDispatcher::GetVfs() != nullptr) {
+        int64_t ret = SyscallDispatcher::Dispatch(
+            266 /* SYS_symlinkat */, reinterpret_cast<uint64_t>(target),
+            static_cast<uint64_t>(newdfd), reinterpret_cast<uint64_t>(linkpath), 0, 0, 0);
+        return static_cast<int>(SetErrnoFromSyscall(ret));
+    }
     *portage_errno() = 38;
     return -1;
 }
 
-__attribute__((sysv_abi)) int portage_fchmod(int, int) { return 0; }
+__attribute__((sysv_abi)) int portage_link(const char *oldpath, const char *newpath)
+{
+    return portage_linkat(-100 /* AT_FDCWD */, oldpath, -100 /* AT_FDCWD */, newpath, 0);
+}
 
-__attribute__((sysv_abi)) int portage_fchmodat(int, const char *, int, int) { return 0; }
+__attribute__((sysv_abi)) int portage_linkat(int olddfd, const char *oldpath, int newdfd,
+                                             const char *newpath, int flags)
+{
+    if (SyscallDispatcher::GetVfs() != nullptr) {
+        int64_t ret = SyscallDispatcher::Dispatch(
+            265 /* SYS_linkat */, static_cast<uint64_t>(olddfd),
+            reinterpret_cast<uint64_t>(oldpath), static_cast<uint64_t>(newdfd),
+            reinterpret_cast<uint64_t>(newpath), static_cast<uint64_t>(flags), 0);
+        return static_cast<int>(SetErrnoFromSyscall(ret));
+    }
+    *portage_errno() = 38;
+    return -1;
+}
+
+__attribute__((sysv_abi)) int portage_chmod(const char *path, int mode)
+{
+    return portage_fchmodat(-100 /* AT_FDCWD */, path, mode, 0);
+}
+
+__attribute__((sysv_abi)) int portage_fchmod(int fd, int mode)
+{
+    if (SyscallDispatcher::GetFdTable() != nullptr) {
+        int64_t ret = SyscallDispatcher::Dispatch(
+            91 /* SYS_fchmod */, static_cast<uint64_t>(fd), static_cast<uint64_t>(mode), 0, 0, 0, 0);
+        return static_cast<int>(SetErrnoFromSyscall(ret));
+    }
+    return 0;
+}
+
+__attribute__((sysv_abi)) int portage_fchmodat(int dfd, const char *path, int mode, int flags)
+{
+    if (SyscallDispatcher::GetVfs() != nullptr) {
+        int64_t ret = SyscallDispatcher::Dispatch(
+            268 /* SYS_fchmodat */, static_cast<uint64_t>(dfd), reinterpret_cast<uint64_t>(path),
+            static_cast<uint64_t>(mode), static_cast<uint64_t>(flags), 0, 0);
+        return static_cast<int>(SetErrnoFromSyscall(ret));
+    }
+    return 0;
+}
 
 __attribute__((sysv_abi)) int portage_isatty(int fd) { return (fd >= 0 && fd <= 2) ? 1 : 0; }
 
@@ -496,8 +568,15 @@ __attribute__((sysv_abi)) int portage_statvfs(const char *, void *buf)
     return 0;
 }
 
-__attribute__((sysv_abi)) int portage_utimensat(int, const char *, const GuestTimespec[2], int)
+__attribute__((sysv_abi)) int portage_utimensat(int dfd, const char *path,
+                                                  const GuestTimespec times[2], int flags)
 {
+    if (SyscallDispatcher::GetVfs() != nullptr || SyscallDispatcher::GetFdTable() != nullptr) {
+        int64_t ret = SyscallDispatcher::Dispatch(
+            280 /* SYS_utimensat */, static_cast<uint64_t>(dfd), reinterpret_cast<uint64_t>(path),
+            reinterpret_cast<uint64_t>(times), static_cast<uint64_t>(flags), 0, 0);
+        return static_cast<int>(SetErrnoFromSyscall(ret));
+    }
     return 0;
 }
 
@@ -814,6 +893,61 @@ __attribute__((sysv_abi)) int portage_pthread_rwlock_unlock(void *rwlock)
         r->smtx.unlock_shared();
     }
     return 0;
+}
+
+__attribute__((sysv_abi)) int portage_sigwaitinfo(const uint64_t *set, void *info)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(
+        128 /* SYS_rt_sigtimedwait */, reinterpret_cast<uint64_t>(set),
+        reinterpret_cast<uint64_t>(info), 0, sizeof(uint64_t), 0, 0);
+    return static_cast<int>(SetErrnoFromSyscall(ret));
+}
+
+__attribute__((sysv_abi)) int portage_sigtimedwait(const uint64_t *set, void *info,
+                                                   const GuestTimespec *timeout)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(
+        128 /* SYS_rt_sigtimedwait */, reinterpret_cast<uint64_t>(set),
+        reinterpret_cast<uint64_t>(info), reinterpret_cast<uint64_t>(timeout), sizeof(uint64_t), 0,
+        0);
+    return static_cast<int>(SetErrnoFromSyscall(ret));
+}
+
+__attribute__((sysv_abi)) int portage_sigqueue(int pid, int sig, uintptr_t value)
+{
+    portage::signal::LinuxSiginfo info{};
+    info.si_signo = sig;
+    info.si_code = portage::signal::LINUX_SI_QUEUE;
+    info._sifields.rt.si_pid = static_cast<int32_t>(GetCurrentProcessId());
+    info._sifields.rt.si_sigval.sival_ptr = reinterpret_cast<void *>(value);
+
+    int64_t ret = SyscallDispatcher::Dispatch(129 /* SYS_rt_sigqueueinfo */,
+                                              static_cast<uint64_t>(pid),
+                                              static_cast<uint64_t>(sig),
+                                              reinterpret_cast<uint64_t>(&info), 0, 0, 0);
+    return static_cast<int>(SetErrnoFromSyscall(ret));
+}
+
+__attribute__((sysv_abi)) int portage_signalfd(int fd, const uint64_t *mask, int flags)
+{
+    return portage_signalfd4(fd, mask, sizeof(uint64_t), flags);
+}
+
+__attribute__((sysv_abi)) int portage_signalfd4(int fd, const uint64_t *mask, size_t sizemask,
+                                                int flags)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(
+        289 /* SYS_signalfd4 */, static_cast<uint64_t>(fd), reinterpret_cast<uint64_t>(mask),
+        static_cast<uint64_t>(sizemask), static_cast<uint64_t>(flags), 0, 0);
+    return static_cast<int>(SetErrnoFromSyscall(ret));
+}
+
+__attribute__((sysv_abi)) int portage_sigsuspend(const uint64_t *mask)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(130 /* SYS_rt_sigsuspend */,
+                                              reinterpret_cast<uint64_t>(mask), sizeof(uint64_t),
+                                              0, 0, 0, 0);
+    return static_cast<int>(SetErrnoFromSyscall(ret));
 }
 
 } // extern "C"

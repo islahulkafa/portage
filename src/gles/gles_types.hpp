@@ -22,6 +22,8 @@ using GLintptr = ptrdiff_t;
 using GLsizeiptr = ptrdiff_t;
 using GLuint64 = uint64_t;
 using GLint64 = int64_t;
+using GLdouble = double;
+using GLclampd = double;
 using GLsync = struct __GLsync *;
 using GLeglImageOES = void *;
 
@@ -118,10 +120,42 @@ inline constexpr GLenum GL_LUMINANCE_ALPHA = 0x190A;
 // Framebuffers & Renderbuffers
 inline constexpr GLenum GL_FRAMEBUFFER = 0x8D40;
 inline constexpr GLenum GL_RENDERBUFFER = 0x8D41;
+inline constexpr GLenum GL_READ_FRAMEBUFFER = 0x8CA8;
+inline constexpr GLenum GL_DRAW_FRAMEBUFFER = 0x8CA9;
 inline constexpr GLenum GL_COLOR_ATTACHMENT0 = 0x8CE0;
+inline constexpr GLenum GL_COLOR_ATTACHMENT1 = 0x8CE1;
+inline constexpr GLenum GL_COLOR_ATTACHMENT2 = 0x8CE2;
+inline constexpr GLenum GL_COLOR_ATTACHMENT3 = 0x8CE3;
+inline constexpr GLenum GL_COLOR_ATTACHMENT4 = 0x8CE4;
+inline constexpr GLenum GL_COLOR_ATTACHMENT5 = 0x8CE5;
+inline constexpr GLenum GL_COLOR_ATTACHMENT6 = 0x8CE6;
+inline constexpr GLenum GL_COLOR_ATTACHMENT7 = 0x8CE7;
 inline constexpr GLenum GL_DEPTH_ATTACHMENT = 0x8D00;
 inline constexpr GLenum GL_STENCIL_ATTACHMENT = 0x8D20;
+inline constexpr GLenum GL_DEPTH_STENCIL_ATTACHMENT = 0x821A;
 inline constexpr GLenum GL_FRAMEBUFFER_COMPLETE = 0x8CD5;
+inline constexpr GLenum GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT = 0x8CD6;
+inline constexpr GLenum GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT = 0x8CD7;
+inline constexpr GLenum GL_FRAMEBUFFER_UNSUPPORTED = 0x8CDD;
+inline constexpr GLenum GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE = 0x8D56;
+inline constexpr GLenum GL_RENDERBUFFER_WIDTH = 0x8D42;
+inline constexpr GLenum GL_RENDERBUFFER_HEIGHT = 0x8D43;
+inline constexpr GLenum GL_RENDERBUFFER_INTERNAL_FORMAT = 0x8D44;
+inline constexpr GLenum GL_DEPTH_COMPONENT16 = 0x81A5;
+inline constexpr GLenum GL_DEPTH_COMPONENT24 = 0x81A6;
+inline constexpr GLenum GL_DEPTH_COMPONENT32F = 0x8CAC;
+inline constexpr GLenum GL_DEPTH24_STENCIL8 = 0x88F0;
+inline constexpr GLenum GL_STENCIL_INDEX8 = 0x8D48;
+inline constexpr GLenum GL_NONE = 0;
+inline constexpr GLenum GL_MAX_COLOR_ATTACHMENTS = 0x8CDF;
+inline constexpr GLenum GL_MAX_DRAW_BUFFERS = 0x8824;
+inline constexpr GLenum GL_MAX_RENDERBUFFER_SIZE = 0x84E8;
+inline constexpr GLenum GL_MAX_SAMPLES = 0x8D57;
+inline constexpr GLenum GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE = 0x8CD0;
+inline constexpr GLenum GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME = 0x8CD1;
+inline constexpr GLenum GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL = 0x8CD2;
+inline constexpr GLenum GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE = 0x8CD3;
+inline constexpr GLenum GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LAYER = 0x8CD4;
 
 // Capability enable flags
 inline constexpr GLenum GL_CULL_FACE = 0x0B44;
@@ -130,6 +164,35 @@ inline constexpr GLenum GL_DITHER = 0x0BD0;
 inline constexpr GLenum GL_STENCIL_TEST = 0x0B90;
 inline constexpr GLenum GL_DEPTH_TEST = 0x0B71;
 inline constexpr GLenum GL_SCISSOR_TEST = 0x0C11;
+inline constexpr GLenum GL_POLYGON_OFFSET_FILL = 0x8037;
+inline constexpr GLenum GL_SAMPLE_COVERAGE = 0x80A0;
+inline constexpr GLenum GL_SAMPLE_ALPHA_TO_COVERAGE = 0x809E;
+
+// Depth & Stencil Comparison Functions
+inline constexpr GLenum GL_NEVER = 0x0200;
+inline constexpr GLenum GL_LESS = 0x0201;
+inline constexpr GLenum GL_EQUAL = 0x0202;
+inline constexpr GLenum GL_LEQUAL = 0x0203;
+inline constexpr GLenum GL_GREATER = 0x0204;
+inline constexpr GLenum GL_NOTEQUAL = 0x0205;
+inline constexpr GLenum GL_GEQUAL = 0x0206;
+inline constexpr GLenum GL_ALWAYS = 0x0207;
+
+// Stencil Operations
+inline constexpr GLenum GL_KEEP = 0x1E00;
+inline constexpr GLenum GL_REPLACE = 0x1E01;
+inline constexpr GLenum GL_INCR = 0x1E02;
+inline constexpr GLenum GL_DECR = 0x1E03;
+inline constexpr GLenum GL_INVERT = 0x150A;
+inline constexpr GLenum GL_INCR_WRAP = 0x8507;
+inline constexpr GLenum GL_DECR_WRAP = 0x8508;
+
+// Face culling & winding
+inline constexpr GLenum GL_FRONT = 0x0404;
+inline constexpr GLenum GL_BACK = 0x0405;
+inline constexpr GLenum GL_FRONT_AND_BACK = 0x0408;
+inline constexpr GLenum GL_CW = 0x0900;
+inline constexpr GLenum GL_CCW = 0x0901;
 
 // Blending
 inline constexpr GLenum GL_ZERO = 0;
@@ -143,6 +206,21 @@ inline constexpr GLenum GL_ONE_MINUS_DST_ALPHA = 0x0305;
 inline constexpr GLenum GL_DST_COLOR = 0x0306;
 inline constexpr GLenum GL_ONE_MINUS_DST_COLOR = 0x0307;
 inline constexpr GLenum GL_SRC_ALPHA_SATURATE = 0x0308;
+inline constexpr GLenum GL_CONSTANT_COLOR = 0x8001;
+inline constexpr GLenum GL_ONE_MINUS_CONSTANT_COLOR = 0x8002;
+inline constexpr GLenum GL_CONSTANT_ALPHA = 0x8003;
+inline constexpr GLenum GL_ONE_MINUS_CONSTANT_ALPHA = 0x8004;
+inline constexpr GLenum GL_FUNC_ADD = 0x8006;
+inline constexpr GLenum GL_FUNC_SUBTRACT = 0x800A;
+inline constexpr GLenum GL_FUNC_REVERSE_SUBTRACT = 0x800B;
+inline constexpr GLenum GL_MIN = 0x8007;
+inline constexpr GLenum GL_MAX = 0x8008;
+
+// Hints
+inline constexpr GLenum GL_FASTEST = 0x1101;
+inline constexpr GLenum GL_NICEST = 0x1102;
+inline constexpr GLenum GL_DONT_CARE = 0x1100;
+inline constexpr GLenum GL_GENERATE_MIPMAP_HINT = 0x8192;
 
 // Errors
 inline constexpr GLenum GL_NO_ERROR = 0;
@@ -220,3 +298,71 @@ inline constexpr GLenum GL_MAX_COMPUTE_WORK_GROUP_COUNT = 0x91BE;
 inline constexpr GLbitfield GL_ALL_BARRIER_BITS = 0xFFFFFFFFu;
 inline constexpr GLbitfield GL_SHADER_STORAGE_BARRIER_BIT = 0x00002000u;
 inline constexpr GLbitfield GL_TEXTURE_FETCH_BARRIER_BIT = 0x00000008u;
+
+// Buffer Clear & Query Targets (GLES 2.0 / 3.0)
+inline constexpr GLenum GL_COLOR = 0x1800;
+inline constexpr GLenum GL_DEPTH = 0x1801;
+inline constexpr GLenum GL_STENCIL = 0x1802;
+inline constexpr GLenum GL_DEPTH_STENCIL = 0x84F9;
+inline constexpr GLenum GL_MAJOR_VERSION = 0x821B;
+inline constexpr GLenum GL_MINOR_VERSION = 0x821C;
+inline constexpr GLenum GL_MAX_TEXTURE_SIZE = 0x0D33;
+inline constexpr GLenum GL_MAX_VIEWPORT_DIMS = 0x0D3A;
+inline constexpr GLenum GL_VIEWPORT = 0x0BA2;
+inline constexpr GLenum GL_SCISSOR_BOX = 0x0C10;
+inline constexpr GLenum GL_DEPTH_WRITEMASK = 0x0B72;
+inline constexpr GLenum GL_COLOR_WRITEMASK = 0x0C23;
+inline constexpr GLenum GL_BLEND_SRC_RGB = 0x80C9;
+inline constexpr GLenum GL_BLEND_DST_RGB = 0x80C8;
+inline constexpr GLenum GL_BLEND_SRC_ALPHA = 0x80CB;
+inline constexpr GLenum GL_BLEND_DST_ALPHA = 0x80CA;
+inline constexpr GLenum GL_BLEND_EQUATION_RGB = 0x8009;
+inline constexpr GLenum GL_BLEND_EQUATION_ALPHA = 0x883D;
+inline constexpr GLenum GL_ACTIVE_TEXTURE = 0x84E0;
+inline constexpr GLenum GL_LINE_WIDTH = 0x0B21;
+inline constexpr GLenum GL_CULL_FACE_MODE = 0x0B45;
+inline constexpr GLenum GL_FRONT_FACE = 0x0B46;
+inline constexpr GLenum GL_DEPTH_FUNC = 0x0B74;
+inline constexpr GLenum GL_DEPTH_CLEAR_VALUE = 0x0B73;
+inline constexpr GLenum GL_DEPTH_RANGE = 0x0B70;
+inline constexpr GLenum GL_STENCIL_FUNC = 0x0B92;
+inline constexpr GLenum GL_STENCIL_VALUE_MASK = 0x0B93;
+inline constexpr GLenum GL_STENCIL_REF = 0x0B97;
+inline constexpr GLenum GL_STENCIL_FAIL = 0x0B94;
+inline constexpr GLenum GL_STENCIL_PASS_DEPTH_FAIL = 0x0B95;
+inline constexpr GLenum GL_STENCIL_PASS_DEPTH_PASS = 0x0B96;
+inline constexpr GLenum GL_STENCIL_WRITEMASK = 0x0B98;
+inline constexpr GLenum GL_STENCIL_CLEAR_VALUE = 0x0B91;
+inline constexpr GLenum GL_COLOR_CLEAR_VALUE = 0x0C22;
+inline constexpr GLenum GL_FRAMEBUFFER_BINDING = 0x8CA6;
+inline constexpr GLenum GL_RENDERBUFFER_BINDING = 0x8CA7;
+inline constexpr GLenum GL_VERTEX_ARRAY_BINDING = 0x85B5;
+
+// Texture Parameters & Compression (GLES 3.0)
+inline constexpr GLenum GL_TEXTURE_BASE_LEVEL = 0x813C;
+inline constexpr GLenum GL_TEXTURE_MAX_LEVEL = 0x813D;
+inline constexpr GLenum GL_TEXTURE_MIN_LOD = 0x813A;
+inline constexpr GLenum GL_TEXTURE_MAX_LOD = 0x813B;
+inline constexpr GLenum GL_TEXTURE_COMPARE_MODE = 0x884C;
+inline constexpr GLenum GL_TEXTURE_COMPARE_FUNC = 0x884D;
+inline constexpr GLenum GL_COMPARE_REF_TO_TEXTURE = 0x884E;
+inline constexpr GLenum GL_COMPRESSED_RGB8_ETC2 = 0x9274;
+inline constexpr GLenum GL_COMPRESSED_RGBA8_ETC2_EAC = 0x9278;
+inline constexpr GLenum GL_TEXTURE_MAX_ANISOTROPY_EXT = 0x84FE;
+
+// Shader & Program Types (GLES 2.0 / 3.0)
+inline constexpr GLenum GL_FLOAT_VEC2 = 0x8B50;
+inline constexpr GLenum GL_FLOAT_VEC3 = 0x8B51;
+inline constexpr GLenum GL_FLOAT_VEC4 = 0x8B52;
+inline constexpr GLenum GL_INT_VEC2 = 0x8B53;
+inline constexpr GLenum GL_INT_VEC3 = 0x8B54;
+inline constexpr GLenum GL_INT_VEC4 = 0x8B55;
+inline constexpr GLenum GL_BOOL = 0x8B56;
+inline constexpr GLenum GL_BOOL_VEC2 = 0x8B57;
+inline constexpr GLenum GL_BOOL_VEC3 = 0x8B58;
+inline constexpr GLenum GL_BOOL_VEC4 = 0x8B59;
+inline constexpr GLenum GL_FLOAT_MAT2 = 0x8B5A;
+inline constexpr GLenum GL_FLOAT_MAT3 = 0x8B5B;
+inline constexpr GLenum GL_FLOAT_MAT4 = 0x8B5C;
+inline constexpr GLenum GL_SAMPLER_2D = 0x8B5E;
+inline constexpr GLenum GL_SAMPLER_CUBE = 0x8B60;

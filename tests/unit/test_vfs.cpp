@@ -49,3 +49,60 @@ TEST(VfsTest, ResolvesRootfsPrefixedPaths)
         std::filesystem::path("C:/AndroidRootfs") / "system/bin/linker64";
     EXPECT_EQ(res.host_path, expected);
 }
+
+TEST(VfsTest, VirtualSymlinkCreationAndReadlink)
+{
+    Vfs vfs("C:/AndroidRootfs");
+    EXPECT_TRUE(vfs.CreateSymlink("/system/bin/app_process64", "/system/bin/app_process"));
+    EXPECT_FALSE(vfs.CreateSymlink("/system/bin/other", "/system/bin/app_process"));
+
+    EXPECT_TRUE(vfs.IsSymlink("/system/bin/app_process"));
+    auto target = vfs.Readlink("/system/bin/app_process");
+    ASSERT_TRUE(target.has_value());
+    EXPECT_EQ(*target, "/system/bin/app_process64");
+
+    auto no_follow = vfs.Resolve("/system/bin/app_process", false);
+    EXPECT_EQ(no_follow.status, 0);
+    EXPECT_TRUE(no_follow.is_symlink);
+    EXPECT_EQ(no_follow.symlink_target, "/system/bin/app_process64");
+
+    auto followed = vfs.Resolve("/system/bin/app_process", true);
+    EXPECT_EQ(followed.status, 0);
+    EXPECT_FALSE(followed.is_symlink);
+    EXPECT_EQ(followed.host_path,
+              std::filesystem::path("C:/AndroidRootfs") / "system/bin/app_process64");
+}
+
+TEST(VfsTest, SymlinkRecursiveResolution)
+{
+    Vfs vfs("C:/AndroidRootfs");
+    EXPECT_TRUE(vfs.CreateSymlink("/data/target.txt", "/data/link2"));
+    EXPECT_TRUE(vfs.CreateSymlink("/data/link2", "/data/link1"));
+
+    auto res = vfs.Resolve("/data/link1");
+    EXPECT_EQ(res.status, 0);
+    EXPECT_FALSE(res.is_symlink);
+    EXPECT_TRUE(res.host_path.string().ends_with("target.txt"));
+}
+
+TEST(VfsTest, SymlinkLoopDetection)
+{
+    Vfs vfs("C:/AndroidRootfs");
+    EXPECT_TRUE(vfs.CreateSymlink("/data/loop2", "/data/loop1"));
+    EXPECT_TRUE(vfs.CreateSymlink("/data/loop1", "/data/loop2"));
+
+    auto res = vfs.Resolve("/data/loop1");
+    EXPECT_EQ(res.status, -40);
+}
+
+TEST(VfsTest, RelativeSymlinkResolution)
+{
+    Vfs vfs("C:/AndroidRootfs");
+    EXPECT_TRUE(vfs.CreateSymlink("../real/file.txt", "/system/sub/rel_link"));
+
+    auto res = vfs.Resolve("/system/sub/rel_link");
+    EXPECT_EQ(res.status, 0);
+    std::filesystem::path expected =
+        std::filesystem::path("C:/AndroidRootfs") / "system/real/file.txt";
+    EXPECT_EQ(res.host_path, expected);
+}

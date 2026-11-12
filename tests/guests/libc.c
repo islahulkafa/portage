@@ -751,10 +751,42 @@ __attribute__((visibility("default"))) int symlink(const char *t, const char *l)
     (void)l;
     return 0;
 }
+__attribute__((visibility("default"))) int symlinkat(const char *t, int d, const char *l)
+{
+    (void)t;
+    (void)d;
+    (void)l;
+    return 0;
+}
 __attribute__((visibility("default"))) int link(const char *o, const char *n)
 {
     (void)o;
     (void)n;
+    return 0;
+}
+__attribute__((visibility("default"))) int linkat(int od, const char *op, int nd, const char *np,
+                                                  int f)
+{
+    (void)od;
+    (void)op;
+    (void)nd;
+    (void)np;
+    (void)f;
+    return 0;
+}
+__attribute__((visibility("default"))) long readlinkat(int d, const char *p, char *b,
+                                                       unsigned long s)
+{
+    (void)d;
+    (void)p;
+    (void)b;
+    (void)s;
+    return 0;
+}
+__attribute__((visibility("default"))) int chmod(const char *p, int m)
+{
+    (void)p;
+    (void)m;
     return 0;
 }
 __attribute__((visibility("default"))) int fchmod(int fd, int m)
@@ -1399,3 +1431,44 @@ __attribute__((visibility("default"))) wint_t ungetwc(wint_t c, void *s)
 }
 
 __attribute__((visibility("default"))) void android_set_abort_message(const char *m) { (void)m; }
+
+__attribute__((visibility("default"))) int sigwaitinfo(const void *set, void *info)
+{
+    (void)set;
+    (void)info;
+    return 0;
+}
+__attribute__((visibility("default"))) int sigtimedwait(const void *set, void *info, const void *ts)
+{
+    (void)set;
+    (void)info;
+    (void)ts;
+    return 0;
+}
+__attribute__((visibility("default"))) int sigqueue(int pid, int sig, uintptr_t val)
+{
+    (void)pid;
+    (void)sig;
+    (void)val;
+    return 0;
+}
+__attribute__((visibility("default"))) int signalfd(int fd, const void *mask, int flags)
+{
+    (void)fd;
+    (void)mask;
+    (void)flags;
+    return 0;
+}
+__attribute__((visibility("default"))) int signalfd4(int fd, const void *mask, size_t s, int flags)
+{
+    (void)fd;
+    (void)mask;
+    (void)s;
+    (void)flags;
+    return 0;
+}
+__attribute__((visibility("default"))) int sigsuspend(const void *mask)
+{
+    (void)mask;
+    return -1;
+}

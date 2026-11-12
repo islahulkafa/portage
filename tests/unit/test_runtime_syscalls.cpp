@@ -5,7 +5,12 @@
 #include "syscall/linux_types.hpp"
 #include "syscall/syscall_dispatcher.hpp"
 #include <cstring>
+#include <filesystem>
 #include <gtest/gtest.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 
 using namespace portage::syscall;
 using namespace portage::poll;
@@ -179,4 +184,83 @@ TEST_F(RuntimeSyscallsTest, Eventfd2IntegratesWithEpollAndPoll)
 
     SyscallDispatcher::Dispatch(3, efd, 0, 0, 0, 0, 0);
     SyscallDispatcher::Dispatch(3, epfd, 0, 0, 0, 0, 0);
+}
+
+TEST_F(RuntimeSyscallsTest, Pwrite64WritesToFile)
+{
+    auto tmp = std::filesystem::temp_directory_path() / "pwrite64_test.bin";
+    auto ws = tmp.wstring();
+    HANDLE h = CreateFileW(ws.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+                           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    ASSERT_NE(h, INVALID_HANDLE_VALUE);
+    int fd = fd_table_.Allocate(h, 0, portage::fs::DeviceType::Regular);
+    ASSERT_GE(fd, 0);
+
+    const char data[] = "hello";
+    int64_t ret = SyscallDispatcher::Dispatch(18, static_cast<uint64_t>(fd),
+                                             reinterpret_cast<uint64_t>(data), 5, 0, 0, 0);
+    EXPECT_EQ(ret, 5);
+    fd_table_.Close(fd);
+    std::error_code ec;
+    std::filesystem::remove(tmp, ec);
+}
+
+TEST_F(RuntimeSyscallsTest, PwritevWritesToFile)
+{
+    auto tmp = std::filesystem::temp_directory_path() / "pwritev_test.bin";
+    auto ws = tmp.wstring();
+    HANDLE h = CreateFileW(ws.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+                           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    ASSERT_NE(h, INVALID_HANDLE_VALUE);
+    int fd = fd_table_.Allocate(h, 0, portage::fs::DeviceType::Regular);
+    ASSERT_GE(fd, 0);
+
+    char part1[] = "hello ";
+    char part2[] = "world";
+    LinuxIovec iov[2]{
+        {.iov_base = part1, .iov_len = 6},
+        {.iov_base = part2, .iov_len = 5},
+    };
+    int64_t ret = SyscallDispatcher::Dispatch(296, static_cast<uint64_t>(fd),
+                                             reinterpret_cast<uint64_t>(iov), 2, 0, 0, 0);
+    EXPECT_EQ(ret, 11);
+    fd_table_.Close(fd);
+    std::error_code ec;
+    std::filesystem::remove(tmp, ec);
+}
+
+TEST_F(RuntimeSyscallsTest, ProcessVmReadvSameProcess)
+{
+    uint8_t src[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    uint8_t dst[8] = {};
+    LinuxIovec local_iov{.iov_base = dst, .iov_len = 8};
+    LinuxIovec remote_iov{.iov_base = src, .iov_len = 8};
+    int64_t ret = SyscallDispatcher::Dispatch(310, static_cast<uint64_t>(GetCurrentProcessId()),
+                                             reinterpret_cast<uint64_t>(&local_iov), 1,
+                                             reinterpret_cast<uint64_t>(&remote_iov), 1, 0);
+    EXPECT_EQ(ret, 8);
+    EXPECT_EQ(std::memcmp(src, dst, 8), 0);
+}
+
+TEST_F(RuntimeSyscallsTest, ProcessVmReadvCrossProcessReturnsEperm)
+{
+    LinuxIovec local_iov{.iov_base = nullptr, .iov_len = 0};
+    LinuxIovec remote_iov{.iov_base = nullptr, .iov_len = 0};
+    int64_t ret = SyscallDispatcher::Dispatch(310, 1,
+                                             reinterpret_cast<uint64_t>(&local_iov), 0,
+                                             reinterpret_cast<uint64_t>(&remote_iov), 0, 0);
+    EXPECT_EQ(ret, LINUX_EPERM);
+}
+
+TEST_F(RuntimeSyscallsTest, ProcessVmWritevSameProcess)
+{
+    uint8_t src[8] = {9, 8, 7, 6, 5, 4, 3, 2};
+    uint8_t dst[8] = {};
+    LinuxIovec local_iov{.iov_base = src, .iov_len = 8};
+    LinuxIovec remote_iov{.iov_base = dst, .iov_len = 8};
+    int64_t ret = SyscallDispatcher::Dispatch(311, static_cast<uint64_t>(GetCurrentProcessId()),
+                                             reinterpret_cast<uint64_t>(&local_iov), 1,
+                                             reinterpret_cast<uint64_t>(&remote_iov), 1, 0);
+    EXPECT_EQ(ret, 8);
+    EXPECT_EQ(std::memcmp(src, dst, 8), 0);
 }

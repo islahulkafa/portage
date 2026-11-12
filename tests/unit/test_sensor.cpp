@@ -1,10 +1,16 @@
+#include "fs/fd_table.hpp"
+#include "mem/shared_memory.hpp"
+#include "ndk/hardware_buffer.hpp"
 #include "ndk/libandroid_thunks.hpp"
 #include "ndk/looper.hpp"
 #include "ndk/sensor.hpp"
+#include "syscall/syscall_dispatcher.hpp"
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <cmath>
+#include <cstring>
 #include <thread>
 
 namespace portage::ndk {
@@ -43,14 +49,16 @@ TEST_F(SensorTest, ExposesSensorCatalogAndMetadata)
     EXPECT_FALSE(ASensor_isWakeUpSensor(accel));
     EXPECT_EQ(ASensor_getHandle(accel), 1);
 
-    EXPECT_FALSE(
+    EXPECT_TRUE(
         ASensor_isDirectChannelTypeSupported(accel, ASENSOR_DIRECT_CHANNEL_TYPE_SHARED_MEMORY));
-    EXPECT_EQ(ASensor_getHighestDirectReportRateLevel(accel), ASENSOR_DIRECT_RATE_STOP);
+    EXPECT_TRUE(
+        ASensor_isDirectChannelTypeSupported(accel, ASENSOR_DIRECT_CHANNEL_TYPE_HARDWARE_BUFFER));
+    EXPECT_EQ(ASensor_getHighestDirectReportRateLevel(accel), ASENSOR_DIRECT_RATE_VERY_FAST);
 
-    EXPECT_EQ(ASensorManager_createSharedMemoryDirectChannel(mgr, 0, 1024), -38);
-    EXPECT_EQ(ASensorManager_createHardwareBufferDirectChannel(mgr, nullptr, 1024), -38);
-    EXPECT_EQ(ASensorManager_destroyDirectChannel(mgr, 1), -38);
-    EXPECT_EQ(ASensorManager_configureDirectReport(mgr, accel, 1, 1), -38);
+    EXPECT_LT(ASensorManager_createSharedMemoryDirectChannel(mgr, -1, 1024), 0);
+    EXPECT_LT(ASensorManager_createHardwareBufferDirectChannel(mgr, nullptr, 1024), 0);
+    EXPECT_LT(ASensorManager_destroyDirectChannel(mgr, 9999), 0);
+    EXPECT_LT(ASensorManager_configureDirectReport(mgr, accel, 9999, 1), 0);
 
     const auto *gyro = ASensorManager_getDefaultSensor(mgr, ASENSOR_TYPE_GYROSCOPE);
     ASSERT_NE(gyro, nullptr);
@@ -268,6 +276,265 @@ TEST_F(SensorTest, RegistersAllNdkSymbols)
         uintptr_t addr = NdkSymbolRegistry::Instance().Lookup(name);
         EXPECT_NE(addr, 0u) << "Symbol missing in NdkSymbolRegistry: " << name;
     }
+}
+
+TEST_F(SensorTest, DirectChannelCapabilityQueries)
+{
+    auto *mgr = ASensorManager_getInstance();
+    ASSERT_NE(mgr, nullptr);
+
+    const int supported_types[] = {
+        ASENSOR_TYPE_ACCELEROMETER,
+        ASENSOR_TYPE_GYROSCOPE,
+        ASENSOR_TYPE_MAGNETIC_FIELD,
+        ASENSOR_TYPE_LINEAR_ACCELERATION,
+        ASENSOR_TYPE_GAME_ROTATION_VECTOR,
+    };
+
+    for (int type : supported_types) {
+        const auto *s = ASensorManager_getDefaultSensor(mgr, type);
+        ASSERT_NE(s, nullptr);
+        EXPECT_TRUE(
+            ASensor_isDirectChannelTypeSupported(s, ASENSOR_DIRECT_CHANNEL_TYPE_SHARED_MEMORY));
+        EXPECT_TRUE(
+            ASensor_isDirectChannelTypeSupported(s, ASENSOR_DIRECT_CHANNEL_TYPE_HARDWARE_BUFFER));
+        EXPECT_FALSE(ASensor_isDirectChannelTypeSupported(s, 999));
+        EXPECT_EQ(ASensor_getHighestDirectReportRateLevel(s), ASENSOR_DIRECT_RATE_VERY_FAST);
+    }
+
+    const auto *light = ASensorManager_getDefaultSensor(mgr, ASENSOR_TYPE_LIGHT);
+    ASSERT_NE(light, nullptr);
+    EXPECT_FALSE(
+        ASensor_isDirectChannelTypeSupported(light, ASENSOR_DIRECT_CHANNEL_TYPE_SHARED_MEMORY));
+    EXPECT_FALSE(
+        ASensor_isDirectChannelTypeSupported(light, ASENSOR_DIRECT_CHANNEL_TYPE_HARDWARE_BUFFER));
+    EXPECT_EQ(ASensor_getHighestDirectReportRateLevel(light), ASENSOR_DIRECT_RATE_STOP);
+
+    EXPECT_FALSE(
+        ASensor_isDirectChannelTypeSupported(nullptr, ASENSOR_DIRECT_CHANNEL_TYPE_SHARED_MEMORY));
+    EXPECT_EQ(ASensor_getHighestDirectReportRateLevel(nullptr), ASENSOR_DIRECT_RATE_STOP);
+}
+
+TEST_F(SensorTest, DirectChannelSharedMemoryLifecycle)
+{
+    fs::FileDescriptorTable fd_table;
+    syscall::SyscallDispatcher::Initialize(nullptr, nullptr, &fd_table, false);
+    auto cleanup_syscall = [&]() { syscall::SyscallDispatcher::Shutdown(); };
+
+    constexpr size_t kBufferSize = sizeof(ASensorEvent) * 16;
+    auto shm = mem::SharedMemoryManager::Instance().CreateRegion("sensor_direct_shm", kBufferSize);
+    ASSERT_NE(shm, nullptr);
+
+    void *guest_view = mem::SharedMemoryManager::Instance().MapShared(
+        *shm, nullptr, kBufferSize, 3 /* PROT_READ | PROT_WRITE */, 1 /* MAP_SHARED */, 0);
+    ASSERT_NE(guest_view, nullptr);
+
+    int shm_fd = fd_table.AllocateSharedMemory(shm, fs::DeviceType::Ashmem, 2, "/dev/ashmem");
+    ASSERT_GE(shm_fd, 0);
+
+    auto *mgr = ASensorManager_getInstance();
+    const auto *accel = ASensorManager_getDefaultSensor(mgr, ASENSOR_TYPE_ACCELEROMETER);
+    ASSERT_NE(accel, nullptr);
+
+    int channel_id = ASensorManager_createSharedMemoryDirectChannel(mgr, shm_fd, kBufferSize);
+    ASSERT_GT(channel_id, 0);
+
+    int token = ASensorManager_configureDirectReport(mgr, accel, channel_id,
+                                                     ASENSOR_DIRECT_RATE_FAST);
+    ASSERT_GT(token, 0);
+
+    auto *ring = reinterpret_cast<const ASensorEvent *>(guest_view);
+    bool got_valid_sequence = false;
+    for (int attempt = 0; attempt < 50; ++attempt) {
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (ring[0].reserved0 >= 1 && ring[1].reserved0 >= 2) {
+            got_valid_sequence = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    EXPECT_TRUE(got_valid_sequence);
+    EXPECT_EQ(ring[0].version, static_cast<int32_t>(sizeof(ASensorEvent)));
+    EXPECT_EQ(ring[0].sensor, ASensor_getHandle(accel));
+    EXPECT_EQ(ring[0].type, ASENSOR_TYPE_ACCELEROMETER);
+    EXPECT_GT(ring[0].timestamp, 0);
+    EXPECT_NEAR(ring[0].acceleration.z, ASENSOR_STANDARD_GRAVITY, 0.05f);
+    EXPECT_EQ(ring[1].reserved0, ring[0].reserved0 + 1);
+
+    EXPECT_EQ(
+        ASensorManager_configureDirectReport(mgr, accel, channel_id, ASENSOR_DIRECT_RATE_STOP), 0);
+    EXPECT_EQ(ASensorManager_destroyDirectChannel(mgr, channel_id), 0);
+
+    mem::SharedMemoryManager::Instance().UnmapShared(guest_view);
+    cleanup_syscall();
+}
+
+TEST_F(SensorTest, DirectChannelHardwareBufferLifecycleAndWrapAround)
+{
+    constexpr size_t kSlots = 4;
+    constexpr size_t kBufferSize = sizeof(ASensorEvent) * kSlots;
+
+    AHardwareBuffer_Desc desc{};
+    desc.width = static_cast<uint32_t>(kBufferSize);
+    desc.height = 1;
+    desc.layers = 1;
+    desc.format = AHARDWAREBUFFER_FORMAT_BLOB;
+    desc.usage = AHARDWAREBUFFER_USAGE_SENSOR_DIRECT_DATA | AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN;
+
+    AHardwareBuffer *ahb = nullptr;
+    ASSERT_EQ(AHardwareBuffer_allocate(&desc, &ahb), 0);
+    ASSERT_NE(ahb, nullptr);
+
+    void *locked_ptr = nullptr;
+    ASSERT_EQ(AHardwareBuffer_lock(ahb, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, nullptr,
+                                   &locked_ptr),
+              0);
+    ASSERT_NE(locked_ptr, nullptr);
+
+    auto *mgr = ASensorManager_getInstance();
+    const auto *gyro = ASensorManager_getDefaultSensor(mgr, ASENSOR_TYPE_GYROSCOPE);
+    ASSERT_NE(gyro, nullptr);
+
+    SensorManagerImpl::Instance().SetGyroscopeRate(0.25f, -0.5f, 1.0f);
+
+    int channel_id = ASensorManager_createHardwareBufferDirectChannel(mgr, ahb, kBufferSize);
+    ASSERT_GT(channel_id, 0);
+
+    int token = ASensorManager_configureDirectReport(mgr, gyro, channel_id,
+                                                     ASENSOR_DIRECT_RATE_VERY_FAST);
+    ASSERT_GT(token, 0);
+
+    auto *ring = reinterpret_cast<const ASensorEvent *>(locked_ptr);
+    bool wrapped = false;
+    for (int attempt = 0; attempt < 80; ++attempt) {
+        std::atomic_thread_fence(std::memory_order_acquire);
+        // After > 4 events, slot 0 will have been overwritten with sequence >= 5
+        if (ring[0].reserved0 >= static_cast<int32_t>(kSlots + 1)) {
+            wrapped = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+
+    EXPECT_TRUE(wrapped);
+    EXPECT_EQ(ring[0].version, static_cast<int32_t>(sizeof(ASensorEvent)));
+    EXPECT_EQ(ring[0].sensor, ASensor_getHandle(gyro));
+    EXPECT_EQ(ring[0].type, ASENSOR_TYPE_GYROSCOPE);
+    EXPECT_GT(ring[0].timestamp, 0);
+
+    EXPECT_EQ(ASensorManager_destroyDirectChannel(mgr, channel_id), 0);
+    EXPECT_EQ(AHardwareBuffer_unlock(ahb, nullptr), 0);
+    AHardwareBuffer_release(ahb);
+}
+
+TEST_F(SensorTest, DirectChannelMultipleSensorsAndRates)
+{
+    constexpr size_t kBufferSize = sizeof(ASensorEvent) * 32;
+
+    AHardwareBuffer_Desc desc{};
+    desc.width = static_cast<uint32_t>(kBufferSize);
+    desc.height = 1;
+    desc.layers = 1;
+    desc.format = AHARDWAREBUFFER_FORMAT_BLOB;
+    desc.usage = AHARDWAREBUFFER_USAGE_SENSOR_DIRECT_DATA | AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN;
+
+    AHardwareBuffer *ahb = nullptr;
+    ASSERT_EQ(AHardwareBuffer_allocate(&desc, &ahb), 0);
+
+    void *locked_ptr = nullptr;
+    ASSERT_EQ(AHardwareBuffer_lock(ahb, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, nullptr,
+                                   &locked_ptr),
+              0);
+
+    auto *mgr = ASensorManager_getInstance();
+    const auto *accel = ASensorManager_getDefaultSensor(mgr, ASENSOR_TYPE_ACCELEROMETER);
+    const auto *mag = ASensorManager_getDefaultSensor(mgr, ASENSOR_TYPE_MAGNETIC_FIELD);
+    ASSERT_NE(accel, nullptr);
+    ASSERT_NE(mag, nullptr);
+
+    int channel_id = ASensorManager_createHardwareBufferDirectChannel(mgr, ahb, kBufferSize);
+    ASSERT_GT(channel_id, 0);
+
+    int token1 =
+        ASensorManager_configureDirectReport(mgr, accel, channel_id, ASENSOR_DIRECT_RATE_FAST);
+    int token2 =
+        ASensorManager_configureDirectReport(mgr, mag, channel_id, ASENSOR_DIRECT_RATE_NORMAL);
+    EXPECT_GT(token1, 0);
+    EXPECT_GT(token2, 0);
+    EXPECT_NE(token1, token2);
+
+    auto *ring = reinterpret_cast<const ASensorEvent *>(locked_ptr);
+    bool saw_accel = false;
+    bool saw_mag = false;
+    for (int attempt = 0; attempt < 60 && !(saw_accel && saw_mag); ++attempt) {
+        std::atomic_thread_fence(std::memory_order_acquire);
+        for (size_t i = 0; i < 32; ++i) {
+            if (ring[i].reserved0 > 0) {
+                if (ring[i].type == ASENSOR_TYPE_ACCELEROMETER)
+                    saw_accel = true;
+                if (ring[i].type == ASENSOR_TYPE_MAGNETIC_FIELD)
+                    saw_mag = true;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    EXPECT_TRUE(saw_accel);
+    EXPECT_TRUE(saw_mag);
+
+    EXPECT_EQ(ASensorManager_destroyDirectChannel(mgr, channel_id), 0);
+    EXPECT_EQ(AHardwareBuffer_unlock(ahb, nullptr), 0);
+    AHardwareBuffer_release(ahb);
+}
+
+TEST_F(SensorTest, DirectChannelInvalidArgsAndErrorHandling)
+{
+    auto *mgr = ASensorManager_getInstance();
+    const auto *accel = ASensorManager_getDefaultSensor(mgr, ASENSOR_TYPE_ACCELEROMETER);
+    const auto *light = ASensorManager_getDefaultSensor(mgr, ASENSOR_TYPE_LIGHT);
+    ASSERT_NE(accel, nullptr);
+    ASSERT_NE(light, nullptr);
+
+    // Invalid size (< sizeof(ASensorEvent))
+    EXPECT_LT(ASensorManager_createSharedMemoryDirectChannel(mgr, 1, 64), 0);
+    EXPECT_LT(ASensorManager_createHardwareBufferDirectChannel(mgr, nullptr, 64), 0);
+
+    // Non-BLOB or missing SENSOR_DIRECT_DATA usage AHardwareBuffer
+    AHardwareBuffer_Desc bad_desc{};
+    bad_desc.width = 16;
+    bad_desc.height = 16;
+    bad_desc.layers = 1;
+    bad_desc.format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
+    bad_desc.usage = AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN;
+
+    AHardwareBuffer *bad_ahb = nullptr;
+    ASSERT_EQ(AHardwareBuffer_allocate(&bad_desc, &bad_ahb), 0);
+    EXPECT_LT(ASensorManager_createHardwareBufferDirectChannel(mgr, bad_ahb, 1024), 0);
+    AHardwareBuffer_release(bad_ahb);
+
+    // Valid AHardwareBuffer but unsupported sensor (light) or bad rate
+    AHardwareBuffer_Desc good_desc{};
+    good_desc.width = 4096;
+    good_desc.height = 1;
+    good_desc.layers = 1;
+    good_desc.format = AHARDWAREBUFFER_FORMAT_BLOB;
+    good_desc.usage = AHARDWAREBUFFER_USAGE_SENSOR_DIRECT_DATA;
+
+    AHardwareBuffer *good_ahb = nullptr;
+    ASSERT_EQ(AHardwareBuffer_allocate(&good_desc, &good_ahb), 0);
+    int ch = ASensorManager_createHardwareBufferDirectChannel(mgr, good_ahb, 4096);
+    ASSERT_GT(ch, 0);
+
+    EXPECT_EQ(ASensorManager_configureDirectReport(mgr, light, ch, ASENSOR_DIRECT_RATE_NORMAL),
+              -38);
+    EXPECT_LT(ASensorManager_configureDirectReport(mgr, accel, ch, 999), 0);
+    EXPECT_LT(ASensorManager_configureDirectReport(mgr, nullptr, ch, ASENSOR_DIRECT_RATE_NORMAL),
+              0);
+
+    EXPECT_EQ(ASensorManager_destroyDirectChannel(mgr, ch), 0);
+    EXPECT_LT(ASensorManager_destroyDirectChannel(mgr, ch), 0);
+    AHardwareBuffer_release(good_ahb);
 }
 
 } // namespace portage::ndk

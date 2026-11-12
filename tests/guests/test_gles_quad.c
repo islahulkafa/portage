@@ -193,6 +193,20 @@ extern void glViewport(int32_t x, int32_t y, int32_t width, int32_t height)
 extern void glDrawArrays(uint32_t mode, int32_t first, int32_t count) __attribute__((sysv_abi));
 extern void glReadPixels(int32_t x, int32_t y, int32_t width, int32_t height, uint32_t format,
                          uint32_t type, void *pixels) __attribute__((sysv_abi));
+extern void glEnable(uint32_t cap) __attribute__((sysv_abi));
+extern void glDisable(uint32_t cap) __attribute__((sysv_abi));
+extern void glScissor(int32_t x, int32_t y, int32_t width, int32_t height)
+    __attribute__((sysv_abi));
+extern void glDepthFunc(uint32_t func) __attribute__((sysv_abi));
+extern void glBlendFuncSeparate(uint32_t srcRGB, uint32_t dstRGB, uint32_t srcAlpha,
+                                uint32_t dstAlpha) __attribute__((sysv_abi));
+extern void glGetIntegerv(uint32_t pname, int32_t *data) __attribute__((sysv_abi));
+extern void glGenRenderbuffers(int32_t n, uint32_t *renderbuffers) __attribute__((sysv_abi));
+extern void glBindRenderbuffer(uint32_t target, uint32_t renderbuffer) __attribute__((sysv_abi));
+extern void glDeleteRenderbuffers(int32_t n, const uint32_t *renderbuffers)
+    __attribute__((sysv_abi));
+extern void glFlush(void) __attribute__((sysv_abi));
+extern void glFinish(void) __attribute__((sysv_abi));
 
 static const char *kVertexShaderSource = "attribute vec2 a_pos;\n"
                                          "void main() {\n"
@@ -297,6 +311,20 @@ static void __attribute__((sysv_abi)) engine_onNativeWindowCreated(struct ANativ
     glEnableVertexAttribArray((uint32_t)pos_loc);
     glVertexAttribPointer((uint32_t)pos_loc, 2, GL_FLOAT, 0, 2 * sizeof(float), (void *)0);
 
+    // Exercise GLES state and query thunks across SysV ABI boundary
+    int32_t max_tex = 0;
+    glGetIntegerv(0x0D33, &max_tex); // GL_MAX_TEXTURE_SIZE
+
+    uint32_t rbo = 0;
+    glGenRenderbuffers(1, &rbo);
+    glBindRenderbuffer(0x8D41, rbo); // GL_RENDERBUFFER
+    glDeleteRenderbuffers(1, &rbo);
+
+    glEnable(0x0C11); // GL_SCISSOR_TEST
+    glScissor(0, 0, 800, 600);
+    glDepthFunc(0x0203);             // GL_LEQUAL
+    glBlendFuncSeparate(1, 0, 1, 0); // GL_ONE, GL_ZERO
+
     // Render viewport
     int width = 800;
     int height = 600;
@@ -305,6 +333,9 @@ static void __attribute__((sysv_abi)) engine_onNativeWindowCreated(struct ANativ
     glClear(GL_COLOR_BUFFER_BIT);
 
     glDrawArrays(GL_TRIANGLES, 0, 6);
+    glFlush();
+    glFinish();
+    glDisable(0x0C11);
 
     // Read back center pixel
     uint8_t pixel[4] = {0, 0, 0, 0};
