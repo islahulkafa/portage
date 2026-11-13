@@ -178,22 +178,15 @@ std::shared_ptr<DexFile> DexFile::Parse(std::span<const uint8_t> data)
         }
     }
 
-    struct ProtoDecoded {
-        std::string shorty;
-        std::string descriptor;
-        std::string return_type;
-        std::vector<std::string> param_types;
-    };
-    std::vector<ProtoDecoded> protos;
     if (hdr.proto_ids_size > 0) {
         DexCursor cur(data, hdr.proto_ids_off);
-        protos.reserve(hdr.proto_ids_size);
+        dex->protos_.reserve(hdr.proto_ids_size);
         for (uint32_t i = 0; i < hdr.proto_ids_size; ++i) {
             DexProtoId pid{};
             if (!cur.Read(pid)) {
                 return nullptr;
             }
-            ProtoDecoded p;
+            DexProtoRef p;
             p.shorty = std::string(dex->GetString(pid.shorty_idx));
             p.return_type = std::string(dex->GetType(pid.return_type_idx));
             std::string sig = "(";
@@ -215,7 +208,7 @@ std::shared_ptr<DexFile> DexFile::Parse(std::span<const uint8_t> data)
             sig += ")";
             sig += p.return_type;
             p.descriptor = std::move(sig);
-            protos.push_back(std::move(p));
+            dex->protos_.push_back(std::move(p));
         }
     }
 
@@ -246,11 +239,11 @@ std::shared_ptr<DexFile> DexFile::Parse(std::span<const uint8_t> data)
             DexMethodRef mref;
             mref.class_descriptor = std::string(dex->GetType(mid.class_idx));
             mref.name = std::string(dex->GetString(mid.name_idx));
-            if (mid.proto_idx < protos.size()) {
-                mref.shorty = protos[mid.proto_idx].shorty;
-                mref.descriptor = protos[mid.proto_idx].descriptor;
-                mref.return_type = protos[mid.proto_idx].return_type;
-                mref.param_types = protos[mid.proto_idx].param_types;
+            if (mid.proto_idx < dex->protos_.size()) {
+                mref.shorty = dex->protos_[mid.proto_idx].shorty;
+                mref.descriptor = dex->protos_[mid.proto_idx].descriptor;
+                mref.return_type = dex->protos_[mid.proto_idx].return_type;
+                mref.param_types = dex->protos_[mid.proto_idx].param_types;
             }
             dex->method_refs_.push_back(std::move(mref));
         }
@@ -316,6 +309,267 @@ std::shared_ptr<DexFile> DexFile::Parse(std::span<const uint8_t> data)
             }
         }
     };
+
+    auto read_uint_le = [&](DexCursor &ecur, uint8_t byte_count, uint64_t &out) -> bool {
+        out = 0;
+        for (uint8_t b = 0; b < byte_count; ++b) {
+            uint8_t v = 0;
+            if (!ecur.Read(v)) {
+                return false;
+            }
+            out |= static_cast<uint64_t>(v) << (b * 8u);
+        }
+        return true;
+    };
+
+    auto read_sint_le = [&](DexCursor &ecur, uint8_t byte_count, int64_t &out) -> bool {
+        uint64_t raw = 0;
+        if (!read_uint_le(ecur, byte_count, raw)) {
+            return false;
+        }
+        uint8_t shift = static_cast<uint8_t>(64u - byte_count * 8u);
+        out = static_cast<int64_t>(raw << shift) >> shift;
+        return true;
+    };
+
+    auto read_encoded_value = [&](auto &self, DexCursor &ecur, DexEncodedValue &out) -> bool {
+        uint8_t hdr_byte = 0;
+        if (!ecur.Read(hdr_byte)) {
+            return false;
+        }
+        uint8_t val_type = hdr_byte & 0x1Fu;
+        uint8_t val_arg = (hdr_byte >> 5) & 0x07u;
+        uint8_t len = static_cast<uint8_t>(val_arg + 1u);
+
+        switch (val_type) {
+        case 0x00:
+        case 0x02:
+        case 0x04: {
+            int64_t s = 0;
+            if (!read_sint_le(ecur, len, s)) {
+                return false;
+            }
+            out.kind = DexEncodedValue::Kind::Int;
+            out.raw = static_cast<uint64_t>(static_cast<int32_t>(s));
+            return true;
+        }
+        case 0x03: {
+            uint64_t u = 0;
+            if (!read_uint_le(ecur, len, u)) {
+                return false;
+            }
+            out.kind = DexEncodedValue::Kind::Int;
+            out.raw = u & 0xFFFFu;
+            return true;
+        }
+        case 0x06: {
+            int64_t s = 0;
+            if (!read_sint_le(ecur, len, s)) {
+                return false;
+            }
+            out.kind = DexEncodedValue::Kind::Long;
+            out.raw = static_cast<uint64_t>(s);
+            return true;
+        }
+        case 0x10: {
+            uint64_t u = 0;
+            if (!read_uint_le(ecur, len, u)) {
+                return false;
+            }
+            uint32_t shifted = static_cast<uint32_t>(u) << ((4u - std::min<uint8_t>(len, 4u)) * 8u);
+            out.kind = DexEncodedValue::Kind::Float;
+            out.raw = shifted;
+            return true;
+        }
+        case 0x11: {
+            uint64_t u = 0;
+            if (!read_uint_le(ecur, len, u)) {
+                return false;
+            }
+            uint64_t shifted = u << ((8u - std::min<uint8_t>(len, 8u)) * 8u);
+            out.kind = DexEncodedValue::Kind::Double;
+            out.raw = shifted;
+            return true;
+        }
+        case 0x15: {
+            uint64_t u = 0;
+            if (!read_uint_le(ecur, len, u)) {
+                return false;
+            }
+            out.kind = DexEncodedValue::Kind::MethodType;
+            out.index = static_cast<uint32_t>(u);
+            return true;
+        }
+        case 0x16: {
+            uint64_t u = 0;
+            if (!read_uint_le(ecur, len, u)) {
+                return false;
+            }
+            out.kind = DexEncodedValue::Kind::MethodHandle;
+            out.index = static_cast<uint32_t>(u);
+            return true;
+        }
+        case 0x17: {
+            uint64_t u = 0;
+            if (!read_uint_le(ecur, len, u)) {
+                return false;
+            }
+            out.kind = DexEncodedValue::Kind::String;
+            out.index = static_cast<uint32_t>(u);
+            out.text = std::string(dex->GetString(out.index));
+            return true;
+        }
+        case 0x18: {
+            uint64_t u = 0;
+            if (!read_uint_le(ecur, len, u)) {
+                return false;
+            }
+            out.kind = DexEncodedValue::Kind::Type;
+            out.index = static_cast<uint32_t>(u);
+            out.text = std::string(dex->GetType(out.index));
+            return true;
+        }
+        case 0x19: {
+            uint64_t u = 0;
+            if (!read_uint_le(ecur, len, u)) {
+                return false;
+            }
+            out.kind = DexEncodedValue::Kind::Field;
+            out.index = static_cast<uint32_t>(u);
+            return true;
+        }
+        case 0x1A: {
+            uint64_t u = 0;
+            if (!read_uint_le(ecur, len, u)) {
+                return false;
+            }
+            out.kind = DexEncodedValue::Kind::Method;
+            out.index = static_cast<uint32_t>(u);
+            return true;
+        }
+        case 0x1B: {
+            uint64_t u = 0;
+            if (!read_uint_le(ecur, len, u)) {
+                return false;
+            }
+            out.kind = DexEncodedValue::Kind::Enum;
+            out.index = static_cast<uint32_t>(u);
+            return true;
+        }
+        case 0x1C: {
+            uint32_t sz = 0;
+            if (!ecur.ReadUleb128(sz)) {
+                return false;
+            }
+            out.kind = DexEncodedValue::Kind::Array;
+            out.elements.reserve(sz);
+            for (uint32_t k = 0; k < sz; ++k) {
+                DexEncodedValue elem;
+                if (!self(self, ecur, elem)) {
+                    return false;
+                }
+                out.elements.push_back(std::move(elem));
+            }
+            return true;
+        }
+        case 0x1D: {
+            uint32_t tidx = 0, sz = 0;
+            if (!ecur.ReadUleb128(tidx) || !ecur.ReadUleb128(sz)) {
+                return false;
+            }
+            for (uint32_t k = 0; k < sz; ++k) {
+                uint32_t nidx = 0;
+                DexEncodedValue dummy;
+                if (!ecur.ReadUleb128(nidx) || !self(self, ecur, dummy)) {
+                    return false;
+                }
+            }
+            out.kind = DexEncodedValue::Kind::Null;
+            return true;
+        }
+        case 0x1E:
+            out.kind = DexEncodedValue::Kind::Null;
+            return true;
+        case 0x1F:
+            out.kind = DexEncodedValue::Kind::Boolean;
+            out.raw = (val_arg != 0) ? 1u : 0u;
+            return true;
+        default:
+            return false;
+        }
+    };
+
+    auto read_encoded_array = [&](uint32_t off, std::vector<DexEncodedValue> &out) {
+        if (off == 0 || off >= data.size()) {
+            return;
+        }
+        DexCursor ecur(data, off);
+        uint32_t sz = 0;
+        if (!ecur.ReadUleb128(sz)) {
+            return;
+        }
+        out.reserve(sz);
+        for (uint32_t k = 0; k < sz; ++k) {
+            DexEncodedValue val;
+            if (!read_encoded_value(read_encoded_value, ecur, val)) {
+                break;
+            }
+            out.push_back(std::move(val));
+        }
+    };
+
+    if (hdr.map_off != 0 && hdr.map_off < data.size()) {
+        DexCursor mcur(data, hdr.map_off);
+        uint32_t map_size = 0;
+        if (mcur.Read(map_size)) {
+            std::vector<DexMapItem> map_items(map_size);
+            bool ok = true;
+            for (uint32_t i = 0; i < map_size; ++i) {
+                if (!mcur.Read(map_items[i])) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) {
+                for (const auto &mi : map_items) {
+                    if (mi.type == kDexTypeMethodHandleItem && mi.offset != 0) {
+                        DexCursor mhcur(data, mi.offset);
+                        dex->method_handles_.reserve(mi.size);
+                        for (uint32_t i = 0; i < mi.size; ++i) {
+                            DexMethodHandleItem raw_mh{};
+                            if (!mhcur.Read(raw_mh)) {
+                                break;
+                            }
+                            dex->method_handles_.push_back(
+                                {static_cast<DexMethodHandleType>(raw_mh.method_handle_type),
+                                 raw_mh.field_or_method_id});
+                        }
+                    } else if (mi.type == kDexTypeCallSiteIdItem && mi.offset != 0) {
+                        DexCursor cscur(data, mi.offset);
+                        dex->call_sites_.reserve(mi.size);
+                        for (uint32_t i = 0; i < mi.size; ++i) {
+                            DexCallSiteIdItem raw_cs{};
+                            if (!cscur.Read(raw_cs)) {
+                                break;
+                            }
+                            std::vector<DexEncodedValue> arr;
+                            read_encoded_array(raw_cs.call_site_off, arr);
+                            DexCallSiteDef cs{};
+                            if (arr.size() >= 3) {
+                                cs.bootstrap_method_handle_idx = arr[0].index;
+                                cs.method_name = arr[1].text;
+                                cs.method_type_proto_idx = arr[2].index;
+                                for (size_t k = 3; k < arr.size(); ++k) {
+                                    cs.extra_args.push_back(arr[k]);
+                                }
+                            }
+                            dex->call_sites_.push_back(std::move(cs));
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     if (hdr.class_defs_size > 0) {
         DexCursor cur(data, hdr.class_defs_off);
@@ -404,6 +658,10 @@ std::shared_ptr<DexFile> DexFile::Parse(std::span<const uint8_t> data)
                 }
             }
 
+            if (cdef.static_values_off != 0) {
+                read_encoded_array(cdef.static_values_off, cls.static_values);
+            }
+
             dex->class_by_descriptor_[cls.descriptor] = dex->classes_.size();
             dex->classes_.push_back(std::move(cls));
         }
@@ -473,6 +731,30 @@ const DexMethodRef *DexFile::GetMethodRef(uint32_t idx) const noexcept
         return nullptr;
     }
     return &method_refs_[idx];
+}
+
+const DexProtoRef *DexFile::GetProtoRef(uint32_t idx) const noexcept
+{
+    if (idx >= protos_.size()) {
+        return nullptr;
+    }
+    return &protos_[idx];
+}
+
+const DexMethodHandleDef *DexFile::GetMethodHandle(uint32_t idx) const noexcept
+{
+    if (idx >= method_handles_.size()) {
+        return nullptr;
+    }
+    return &method_handles_[idx];
+}
+
+const DexCallSiteDef *DexFile::GetCallSite(uint32_t idx) const noexcept
+{
+    if (idx >= call_sites_.size()) {
+        return nullptr;
+    }
+    return &call_sites_[idx];
 }
 
 } // namespace portage::package

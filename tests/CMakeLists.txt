@@ -89,6 +89,11 @@ set(UNIT_TEST_SOURCES
     unit/test_cgroups_and_cpu_topology.cpp
     unit/test_dex_vm.cpp
     unit/test_java_activity.cpp
+    unit/test_java_string.cpp
+    unit/test_java_boxing_collections.cpp
+    unit/test_java_threads.cpp
+    unit/test_java_invoke_reflect.cpp
+    unit/test_java_nio_io_regex.cpp
 )
 
 set(INTEGRATION_TEST_SOURCES
@@ -111,6 +116,8 @@ set(INTEGRATION_TEST_SOURCES
     integration/test_ndk_compat_execution.cpp
     integration/test_ndk_cpp_execution.cpp
     integration/test_java_activity_execution.cpp
+    integration/test_java_runtime_execution.cpp
+    integration/test_java_modern_d8_execution.cpp
 )
 
 add_executable(unit_tests ${UNIT_TEST_SOURCES})

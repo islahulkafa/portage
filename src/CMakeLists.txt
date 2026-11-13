@@ -58,6 +58,14 @@ add_library(portage_core STATIC
     package/dex_file.cpp
     package/dex_vm.cpp
     package/jni_env.cpp
+    package/java_runtime.cpp
+    package/java_string.cpp
+    package/java_boxing.cpp
+    package/java_util.cpp
+    package/java_concurrent.cpp
+    package/java_reflect.cpp
+    package/java_nio.cpp
+    package/java_io_regex.cpp
     package/content_provider.cpp
     package/native_activity.cpp
     package/java_activity.cpp

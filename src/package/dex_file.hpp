@@ -64,6 +64,49 @@ struct DexMethodDef {
     std::vector<DexDecodedTry> tries;
 };
 
+struct DexProtoRef {
+    std::string shorty;
+    std::string descriptor;
+    std::string return_type;
+    std::vector<std::string> param_types;
+};
+
+struct DexMethodHandleDef {
+    DexMethodHandleType type{DexMethodHandleType::InvokeStatic};
+    uint16_t field_or_method_id{0};
+};
+
+struct DexEncodedValue {
+    enum class Kind : uint8_t {
+        Null = 0,
+        Boolean,
+        Int,
+        Long,
+        Float,
+        Double,
+        String,
+        Type,
+        MethodType,
+        MethodHandle,
+        Field,
+        Method,
+        Enum,
+        Array,
+    };
+    Kind kind{Kind::Null};
+    uint64_t raw{0};
+    uint32_t index{0};
+    std::string text{};
+    std::vector<DexEncodedValue> elements{};
+};
+
+struct DexCallSiteDef {
+    uint32_t bootstrap_method_handle_idx{0};
+    std::string method_name{};
+    uint32_t method_type_proto_idx{0};
+    std::vector<DexEncodedValue> extra_args{};
+};
+
 struct DexClassDefResolved {
     std::string descriptor;
     std::string superclass_descriptor;
@@ -73,6 +116,7 @@ struct DexClassDefResolved {
     std::vector<DexFieldDef> instance_fields;
     std::vector<DexMethodDef> direct_methods;
     std::vector<DexMethodDef> virtual_methods;
+    std::vector<DexEncodedValue> static_values;
 };
 
 class DexFile {
@@ -89,8 +133,11 @@ class DexFile {
 
     [[nodiscard]] std::string_view GetString(uint32_t idx) const noexcept;
     [[nodiscard]] std::string_view GetType(uint32_t idx) const noexcept;
+    [[nodiscard]] const DexProtoRef *GetProtoRef(uint32_t idx) const noexcept;
     [[nodiscard]] const DexFieldRef *GetFieldRef(uint32_t idx) const noexcept;
     [[nodiscard]] const DexMethodRef *GetMethodRef(uint32_t idx) const noexcept;
+    [[nodiscard]] const DexMethodHandleDef *GetMethodHandle(uint32_t idx) const noexcept;
+    [[nodiscard]] const DexCallSiteDef *GetCallSite(uint32_t idx) const noexcept;
 
     [[nodiscard]] const std::vector<DexClassDefResolved> &GetClasses() const noexcept
     {
@@ -100,8 +147,11 @@ class DexFile {
   private:
     std::vector<std::string> strings_;
     std::vector<std::string> types_;
+    std::vector<DexProtoRef> protos_;
     std::vector<DexFieldRef> field_refs_;
     std::vector<DexMethodRef> method_refs_;
+    std::vector<DexMethodHandleDef> method_handles_;
+    std::vector<DexCallSiteDef> call_sites_;
     std::vector<DexClassDefResolved> classes_;
     std::unordered_map<std::string, size_t> class_by_descriptor_;
 };

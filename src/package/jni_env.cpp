@@ -5714,15 +5714,18 @@ void JniEnvironment::Initialize(std::string_view package_name, std::string_view 
 
 void JniEnvironment::Reset()
 {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     string_table_.clear();
+    string_intern_map_.clear();
     object_table_.clear();
     objects_by_handle_.clear();
+    monitors_by_handle_.clear();
     interned_classes_.clear();
     member_by_ptr_.clear();
     member_refs_.clear();
     registered_natives_.clear();
     shared_prefs_.clear();
-    pending_exception_ = nullptr;
+    reset_epoch_.fetch_add(1, std::memory_order_release);
     next_handle_ = 0x1000;
     content_resolver_obj_ = nullptr;
     application_obj_ = nullptr;
@@ -5732,8 +5735,34 @@ void JniEnvironment::Reset()
     SetupSyntheticHierarchy();
 }
 
+namespace {
+
+thread_local uint64_t g_tls_exception_epoch = 0;
+thread_local jthrowable g_tls_pending_exception = nullptr;
+
+} // namespace
+
+jthrowable JniEnvironment::GetPendingException() const noexcept
+{
+    uint64_t cur_epoch = reset_epoch_.load(std::memory_order_acquire);
+    return (g_tls_exception_epoch == cur_epoch) ? g_tls_pending_exception : nullptr;
+}
+
+void JniEnvironment::SetPendingException(jthrowable ex) noexcept
+{
+    g_tls_exception_epoch = reset_epoch_.load(std::memory_order_acquire);
+    g_tls_pending_exception = ex;
+}
+
+void JniEnvironment::ClearPendingException() noexcept
+{
+    g_tls_exception_epoch = reset_epoch_.load(std::memory_order_acquire);
+    g_tls_pending_exception = nullptr;
+}
+
 jclass JniEnvironment::InternClass(std::string_view name)
 {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::string key(name);
     auto it = interned_classes_.find(key);
     if (it != interned_classes_.end()) {
@@ -5748,6 +5777,7 @@ jclass JniEnvironment::InternClass(std::string_view name)
 void *JniEnvironment::InternMember(std::string_view class_name, std::string_view name,
                                    std::string_view sig, bool is_static)
 {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     member_refs_.push_back(
         {std::string(name), std::string(class_name), std::string(sig), is_static});
     const JniMemberRef *ref = &member_refs_.back();
@@ -5761,23 +5791,27 @@ const JniMemberRef *JniEnvironment::LookupMember(const void *id) const
     if (!id) {
         return nullptr;
     }
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = member_by_ptr_.find(id);
     return (it != member_by_ptr_.end()) ? it->second : nullptr;
 }
 
 jstring JniEnvironment::CreateString(std::string_view str)
 {
-    for (size_t i = 0; i < string_table_.size(); ++i) {
-        if (string_table_[i] == str) {
-            return reinterpret_cast<jstring>(static_cast<uintptr_t>(i + 1));
-        }
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    std::string key(str);
+    if (auto it = string_intern_map_.find(key); it != string_intern_map_.end()) {
+        return it->second;
     }
-    string_table_.emplace_back(str);
-    return reinterpret_cast<jstring>(static_cast<uintptr_t>(string_table_.size()));
+    string_table_.emplace_back(key);
+    jstring handle = reinterpret_cast<jstring>(static_cast<uintptr_t>(string_table_.size()));
+    string_intern_map_.emplace(std::move(key), handle);
+    return handle;
 }
 
 const char *JniEnvironment::GetStringChars(jstring str) const
 {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto idx = static_cast<size_t>(reinterpret_cast<uintptr_t>(str));
     if (idx == 0 || idx > string_table_.size()) {
         return nullptr;
@@ -5790,6 +5824,7 @@ jobject JniEnvironment::RegisterObject(std::shared_ptr<JniSyntheticObject> obj)
     if (!obj) {
         return nullptr;
     }
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto handle = reinterpret_cast<jobject>(next_handle_++);
     object_table_.push_back(obj);
     objects_by_handle_[handle] = obj;
@@ -5801,8 +5836,28 @@ std::shared_ptr<JniSyntheticObject> JniEnvironment::LookupObject(jobject obj) co
     if (!obj) {
         return nullptr;
     }
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = objects_by_handle_.find(obj);
     return (it != objects_by_handle_.end()) ? it->second : nullptr;
+}
+
+std::shared_ptr<JniObjectMonitor> JniEnvironment::GetMonitor(jobject obj)
+{
+    if (!obj) {
+        return nullptr;
+    }
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (auto it = objects_by_handle_.find(obj); it != objects_by_handle_.end() && it->second) {
+        if (!it->second->monitor) {
+            it->second->monitor = std::make_shared<JniObjectMonitor>();
+        }
+        return it->second->monitor;
+    }
+    auto &mon = monitors_by_handle_[obj];
+    if (!mon) {
+        mon = std::make_shared<JniObjectMonitor>();
+    }
+    return mon;
 }
 
 jobject JniEnvironment::CreateDirectByteBuffer(void *address, jlong capacity)
@@ -5971,6 +6026,7 @@ void JniEnvironment::SaveSharedPrefs(std::string_view prefs_name) const
 void JniEnvironment::RegisterNativeMethod(std::string_view className, std::string_view methodName,
                                           std::string_view sig, void *fnPtr)
 {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::string norm_cls = DexFile::DescriptorToSlashName(DexFile::NormalizeDescriptor(className));
     std::string key = norm_cls + "/" + std::string(methodName) + std::string(sig);
     registered_natives_[key] = fnPtr;
@@ -5979,6 +6035,7 @@ void JniEnvironment::RegisterNativeMethod(std::string_view className, std::strin
 void *JniEnvironment::LookupNativeMethod(std::string_view className, std::string_view methodName,
                                          std::string_view sig) const
 {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::string norm_cls = DexFile::DescriptorToSlashName(DexFile::NormalizeDescriptor(className));
     std::string key = norm_cls + "/" + std::string(methodName) + std::string(sig);
     auto it = registered_natives_.find(key);

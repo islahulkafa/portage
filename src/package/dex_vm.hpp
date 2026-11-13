@@ -3,6 +3,7 @@
 #include "package/dex_file.hpp"
 #include "package/jni_env.hpp"
 
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -10,6 +11,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -38,6 +40,7 @@ class DexVm {
     void Reset();
 
     [[nodiscard]] bool HasClass(std::string_view class_name) const;
+    [[nodiscard]] const DexClassDefResolved *FindClassDef(std::string_view class_name) const;
     [[nodiscard]] bool IsInstanceOf(jobject obj, std::string_view target_class) const;
 
     struct ResolvedMethod {
@@ -99,8 +102,8 @@ class DexVm {
                                           std::string_view super_desc) const;
 
     DexValue InvokeTarget(const DexMethodRef &ref, std::span<const uint64_t> arg_regs,
-                          bool is_static, bool is_super, std::string_view caller_class, JNIEnv *env,
-                          jobject &out_exception);
+                          bool is_static, bool is_super, bool is_direct,
+                          std::string_view caller_class, JNIEnv *env, jobject &out_exception);
     DexValue InvokeIntrinsic(const DexMethodRef &ref, std::span<const uint64_t> arg_regs,
                              bool is_static, JNIEnv *env, jobject &out_exception, bool &handled);
     DexValue InvokeNativeMethod(const DexMethodDef &method, std::span<const uint64_t> raw_args,
@@ -109,9 +112,10 @@ class DexVm {
     jobject AllocateArray(std::string_view array_desc, size_t length);
 
     mutable std::recursive_mutex mutex_;
+    std::condition_variable_any init_cv_;
     std::vector<std::shared_ptr<DexFile>> dex_files_;
     std::unordered_set<std::string> initialized_classes_;
-    std::unordered_set<std::string> initializing_classes_;
+    std::unordered_map<std::string, std::thread::id> initializing_classes_;
     std::unordered_map<std::string, uint64_t> static_fields_;
     std::unordered_set<void *> jni_onload_done_;
     jobject main_looper_obj_{nullptr};

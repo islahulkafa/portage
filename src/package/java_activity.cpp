@@ -3,6 +3,7 @@
 #include "package/asset_manager.hpp"
 #include "package/dex_file.hpp"
 #include "package/dex_vm.hpp"
+#include "package/java_runtime.hpp"
 #include "wsi/window_manager.hpp"
 
 #include <array>
@@ -255,6 +256,7 @@ bool JavaActivityRunner::LaunchAndRun(bool headless)
     InvokeActivityLifecycle("onPause", "()V");
     InvokeActivityLifecycle("onStop", "()V");
     InvokeActivityLifecycle("onDestroy", "()V");
+    JavaRuntime::Instance().JoinAllNonDaemonThreads();
     return true;
 }
 

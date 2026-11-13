@@ -14,7 +14,7 @@ Portage executes unmodified Android x86_64 Bionic ELF binaries and APK packages 
 
 - **Direct CPU Execution**: Guest 64-bit machine code runs natively in Windows user mode with fast thread-local storage via `rdfsbase` / `wrfsbase` instructions.
 - **Custom Dynamic Linker**: Loads ELF64 binaries and recursive `DT_NEEDED` graphs with GNU/SysV hashing, `R_X86_64_TLSDESC` (`gnu2`), lazy `DT_JMPREL` PLT trampolines, `android_dlopen_ext`, `dlinfo`, and `dlclose` segment unmapping.
-- **SysV to Win64 ABI Boundary & Dalvik DEX Runtime**: Bridges Android Bionic `libc`/`libdl`, NDK entry points (`ALooper`, `ANativeActivity`, `ANativeWindow_fromSurface`, `AAssetManager`, `AHardwareBuffer`, `Binder`), and a register-based Dalvik `.dex` bytecode VM (`DexVm`, `JavaActivityRunner`, `System.loadLibrary`) with bidirectional `__attribute__((sysv_abi))` `JavaVM`/`JNIEnv` dispatch.
+- **SysV to Win64 ABI Boundary & Dalvik DEX Runtime**: Bridges Android Bionic `libc`/`libdl`, NDK entry points (`ALooper`, `ANativeActivity`, `ANativeWindow_fromSurface`, `AAssetManager`, `AHardwareBuffer`, `Binder`), and a register-based Dalvik `.dex` bytecode VM (`DexVm` with D8 `invoke-custom`/`invoke-polymorphic`, `JavaRuntime` core libraries with UTF-16 `String`, `java.util` collections, `std::thread`-backed monitors/concurrency, `LambdaMetafactory`/`StringConcatFactory`, reflection, `java.nio.ByteBuffer`/`Charset`, VFS-routed `java.io`, and `java.util.regex`, `JavaActivityRunner`, `System.loadLibrary`) with bidirectional `__attribute__((sysv_abi))` `JavaVM`/`JNIEnv` dispatch.
 - **Native GPU & Media Passthrough**: Translates OpenGL ES 2.0–3.2 (over WGL) and Vulkan 1.0–1.3 ICD calls with `SyncFence` file descriptors, alongside WASAPI AAudio/OpenSL ES and Media Foundation pipelines.
 
 ---
@@ -125,7 +125,7 @@ portage/
 │   ├── arch/                # Guest CPU context, stack layout, and FS/GS state
 │   ├── elf/                 # ELF64 loader, TLSDESC, lazy PLT, and LinkMap runtime
 │   ├── gles/ & vulkan/      # Hardware-accelerated OpenGL ES and Vulkan bridges
-│   ├── ndk/ & package/      # NDK thunks, ALooper, APK/DEX parser, DexVm, JavaActivityRunner, NativeActivity
+│   ├── ndk/ & package/      # NDK thunks, ALooper, APK/DEX parser, DexVm, JavaRuntime intrinsics, JavaActivityRunner, NativeActivity
 │   ├── syscall/ & rewrite/  # Syscall rewriting, Linux syscall table, and dispatch
 │   ├── launcher/            # portage.exe CLI entry point
 │   └── ...                  # 29 modular Windows-bridged runtime subsystems

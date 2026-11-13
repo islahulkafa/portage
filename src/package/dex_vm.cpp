@@ -3,6 +3,7 @@
 #include "elf/link_map.hpp"
 #include "ndk/android_log.hpp"
 #include "ndk/libandroid_thunks.hpp"
+#include "package/java_runtime.hpp"
 
 #include <algorithm>
 #include <array>
@@ -216,18 +217,21 @@ bool DexVm::LoadDex(std::span<const uint8_t> data)
 
 void DexVm::Reset()
 {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    dex_files_.clear();
-    initialized_classes_.clear();
-    initializing_classes_.clear();
-    static_fields_.clear();
-    jni_onload_done_.clear();
-    main_looper_obj_ = nullptr;
-    main_handler_obj_ = nullptr;
-    runtime_obj_ = nullptr;
-    main_looper_quit_ = false;
-    next_looper_seq_ = 1;
-    looper_queue_.clear();
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        dex_files_.clear();
+        initialized_classes_.clear();
+        initializing_classes_.clear();
+        static_fields_.clear();
+        jni_onload_done_.clear();
+        main_looper_obj_ = nullptr;
+        main_handler_obj_ = nullptr;
+        runtime_obj_ = nullptr;
+        main_looper_quit_ = false;
+        next_looper_seq_ = 1;
+        looper_queue_.clear();
+    }
+    JavaRuntime::Instance().Reset();
 }
 
 const DexClassDefResolved *DexVm::FindClassUnlocked(std::string_view name,
@@ -250,6 +254,12 @@ bool DexVm::HasClass(std::string_view class_name) const
     return FindClassUnlocked(class_name) != nullptr;
 }
 
+const DexClassDefResolved *DexVm::FindClassDef(std::string_view class_name) const
+{
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    return FindClassUnlocked(class_name);
+}
+
 bool DexVm::IsSubclassUnlocked(std::string_view sub_desc, std::string_view super_desc) const
 {
     std::string cur = DexFile::NormalizeDescriptor(sub_desc);
@@ -257,8 +267,9 @@ bool DexVm::IsSubclassUnlocked(std::string_view sub_desc, std::string_view super
     if (target == "Ljava/lang/Object;" || target == "Ljava/io/Serializable;") {
         return true;
     }
+    auto &rt = JavaRuntime::Instance();
     for (int depth = 0; depth < 32 && !cur.empty(); ++depth) {
-        if (cur == target) {
+        if (cur == target || rt.IsAssignableFrom(cur, target)) {
             return true;
         }
         const auto *cls = FindClassUnlocked(cur);
@@ -266,7 +277,7 @@ bool DexVm::IsSubclassUnlocked(std::string_view sub_desc, std::string_view super
             break;
         }
         for (const auto &iface : cls->interfaces) {
-            if (iface == target) {
+            if (iface == target || rt.IsAssignableFrom(iface, target)) {
                 return true;
             }
         }
@@ -283,12 +294,18 @@ bool DexVm::IsInstanceOf(jobject obj, std::string_view target_class) const
     std::string norm_target = DexFile::NormalizeDescriptor(target_class);
     auto &jni = JniEnvironment::Instance();
     if (jni.GetStringChars(obj) != nullptr) {
-        return norm_target == "Ljava/lang/String;" || norm_target == "Ljava/lang/CharSequence;" ||
-               norm_target == "Ljava/lang/Object;";
+        return JavaRuntime::Instance().IsAssignableFrom("Ljava/lang/String;", norm_target);
     }
     auto syn = jni.LookupObject(obj);
     if (!syn) {
         return false;
+    }
+    if (syn->class_name == "java/lang/invoke/LambdaProxy") {
+        std::string target_slash = DexFile::DescriptorToSlashName(norm_target);
+        if (target_slash == "java/lang/Object" ||
+            JavaRuntime::Instance().IsLambdaProxyInstanceOf(obj, target_slash)) {
+            return true;
+        }
     }
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     return IsSubclassUnlocked(syn->class_name, norm_target);
@@ -353,27 +370,72 @@ void DexVm::EnsureClassInitialized(std::string_view class_descriptor, JNIEnv *en
     std::string desc = DexFile::NormalizeDescriptor(class_descriptor);
     const DexFile *owner = nullptr;
     const DexMethodDef *clinit = nullptr;
+    std::string super_desc;
+    const auto self_tid = std::this_thread::get_id();
     {
-        std::lock_guard<std::recursive_mutex> lock(mutex_);
-        if (initialized_classes_.count(desc) || initializing_classes_.count(desc)) {
+        std::unique_lock<std::recursive_mutex> lock(mutex_);
+        if (initialized_classes_.count(desc)) {
+            return;
+        }
+        while (true) {
+            auto it = initializing_classes_.find(desc);
+            if (it == initializing_classes_.end()) {
+                break;
+            }
+            if (it->second == self_tid) {
+                return;
+            }
+            init_cv_.wait(lock);
+        }
+        if (initialized_classes_.count(desc)) {
             return;
         }
         const auto *cls = FindClassUnlocked(desc, &owner);
         if (!cls || !owner) {
             return;
         }
-        initializing_classes_.insert(desc);
-        if (!cls->superclass_descriptor.empty()) {
-            EnsureClassInitialized(cls->superclass_descriptor, env);
-        }
+        initializing_classes_[desc] = self_tid;
+        super_desc = cls->superclass_descriptor;
         clinit = owner->FindMethod(desc, "<clinit>", "()V");
+        auto &jni = JniEnvironment::Instance();
+        size_t sv_count = std::min(cls->static_fields.size(), cls->static_values.size());
+        for (size_t i = 0; i < sv_count; ++i) {
+            const auto &sf = cls->static_fields[i];
+            const auto &sv = cls->static_values[i];
+            uint64_t val = 0;
+            switch (sv.kind) {
+            case DexEncodedValue::Kind::Boolean:
+            case DexEncodedValue::Kind::Int:
+            case DexEncodedValue::Kind::Long:
+            case DexEncodedValue::Kind::Float:
+            case DexEncodedValue::Kind::Double:
+                val = sv.raw;
+                break;
+            case DexEncodedValue::Kind::String:
+                val = reinterpret_cast<uintptr_t>(jni.CreateString(sv.text));
+                break;
+            case DexEncodedValue::Kind::Type:
+                val = reinterpret_cast<uintptr_t>(JavaRuntime::Instance().GetClassObject(
+                    DexFile::DescriptorToSlashName(sv.text)));
+                break;
+            default:
+                break;
+            }
+            static_fields_[MakeStaticFieldKey(desc, sf.name)] = val;
+        }
+    }
+    if (!super_desc.empty()) {
+        EnsureClassInitialized(super_desc, env);
     }
     if (clinit && owner) {
         ExecuteMethod(owner, clinit, {}, env);
     }
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    initializing_classes_.erase(desc);
-    initialized_classes_.insert(desc);
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        initializing_classes_.erase(desc);
+        initialized_classes_.insert(desc);
+    }
+    init_cv_.notify_all();
 }
 
 std::string DexVm::MangleJniName(std::string_view class_slash, std::string_view method_name,
@@ -412,9 +474,18 @@ uint64_t DexVm::GetStaticField(std::string_view class_name, std::string_view fie
 {
     std::string desc = DexFile::NormalizeDescriptor(class_name);
     EnsureClassInitialized(desc);
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    auto it = static_fields_.find(MakeStaticFieldKey(desc, field_name));
-    return (it != static_fields_.end()) ? it->second : 0;
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        auto it = static_fields_.find(MakeStaticFieldKey(desc, field_name));
+        if (it != static_fields_.end()) {
+            return it->second;
+        }
+    }
+    uint64_t host_val = 0;
+    if (JavaRuntime::Instance().TryGetStaticField(desc, field_name, host_val)) {
+        return host_val;
+    }
+    return 0;
 }
 
 void DexVm::SetStaticField(std::string_view class_name, std::string_view field_name, uint64_t val)
@@ -432,6 +503,7 @@ bool DexVm::GetInstanceField(jobject obj, std::string_view field_name, std::stri
     if (!syn) {
         return false;
     }
+    std::lock_guard<std::recursive_mutex> field_lock(syn->field_mutex);
     std::string key(field_name);
     if (type_desc == "J" || type_desc == "D") {
         if (type_desc == "D") {
@@ -481,6 +553,7 @@ bool DexVm::SetInstanceField(jobject obj, std::string_view field_name, std::stri
     if (!syn) {
         return false;
     }
+    std::lock_guard<std::recursive_mutex> field_lock(syn->field_mutex);
     std::string key(field_name);
     if (type_desc == "J") {
         syn->long_fields[key] = static_cast<int64_t>(val);
@@ -732,6 +805,12 @@ DexValue DexVm::InvokeIntrinsic(const DexMethodRef &ref, std::span<const uint64_
     auto &jni = JniEnvironment::Instance();
     std::string cls = DexFile::DescriptorToSlashName(ref.class_descriptor);
 
+    DexValue host_res = JavaRuntime::Instance().Invoke(*this, cls, ref, arg_regs, is_static, env,
+                                                       out_exception, handled);
+    if (handled) {
+        return host_res;
+    }
+
     if (cls == "java/lang/Object") {
         if (ref.name == "<init>") {
             handled = true;
@@ -739,107 +818,35 @@ DexValue DexVm::InvokeIntrinsic(const DexMethodRef &ref, std::span<const uint64_
         }
         if (ref.name == "hashCode" && !is_static && !arg_regs.empty()) {
             handled = true;
-            return {static_cast<uint64_t>(static_cast<uint32_t>(arg_regs[0])), 'I'};
+            int32_t h = JavaRuntime::ComputeObjectHashCode(
+                *this, reinterpret_cast<jobject>(arg_regs[0]), env, out_exception);
+            return {static_cast<uint64_t>(static_cast<uint32_t>(h)), 'I'};
         }
         if (ref.name == "equals" && !is_static && arg_regs.size() >= 2) {
             handled = true;
-            return {static_cast<uint64_t>(arg_regs[0] == arg_regs[1] ? 1 : 0), 'Z'};
-        }
-    }
-
-    if (cls == "java/lang/StringBuilder") {
-        if (ref.name == "<init>" && !is_static && !arg_regs.empty()) {
-            auto syn = jni.LookupObject(reinterpret_cast<jobject>(arg_regs[0]));
-            if (syn) {
-                std::string init_str;
-                if (arg_regs.size() >= 2 && ref.param_types.size() == 1 &&
-                    ref.param_types[0] == "Ljava/lang/String;") {
-                    const char *s = jni.GetStringChars(reinterpret_cast<jstring>(arg_regs[1]));
-                    if (s) {
-                        init_str = s;
-                    }
-                }
-                syn->string_fields["value"] = std::move(init_str);
-            }
-            handled = true;
-            return {0, 'V'};
-        }
-        if (ref.name == "append" && !is_static && arg_regs.size() >= 2) {
-            auto syn = jni.LookupObject(reinterpret_cast<jobject>(arg_regs[0]));
-            if (syn && !ref.param_types.empty()) {
-                std::string &buf = syn->string_fields["value"];
-                const std::string &pt = ref.param_types[0];
-                if (pt == "Ljava/lang/String;") {
-                    const char *s = jni.GetStringChars(reinterpret_cast<jstring>(arg_regs[1]));
-                    buf += s ? s : "null";
-                } else if (pt == "I") {
-                    buf += std::to_string(static_cast<int32_t>(arg_regs[1]));
-                } else if (pt == "J" && arg_regs.size() >= 3) {
-                    int64_t v = static_cast<int64_t>((arg_regs[1] & 0xFFFFFFFFULL) |
-                                                     ((arg_regs[2] & 0xFFFFFFFFULL) << 32));
-                    buf += std::to_string(v);
-                } else if (pt == "Z") {
-                    buf += (arg_regs[1] != 0) ? "true" : "false";
-                } else if (pt == "C") {
-                    buf.push_back(static_cast<char>(arg_regs[1] & 0x7Fu));
-                }
-            }
-            handled = true;
-            return {arg_regs[0], 'L'};
-        }
-        if (ref.name == "toString" && !is_static && !arg_regs.empty()) {
-            auto syn = jni.LookupObject(reinterpret_cast<jobject>(arg_regs[0]));
-            jstring out = jni.CreateString(syn ? syn->string_fields["value"] : "");
-            handled = true;
-            return {reinterpret_cast<uintptr_t>(out), 'L'};
-        }
-        if (ref.name == "length" && !is_static && !arg_regs.empty()) {
-            auto syn = jni.LookupObject(reinterpret_cast<jobject>(arg_regs[0]));
-            uint32_t len = syn ? static_cast<uint32_t>(syn->string_fields["value"].size()) : 0;
-            handled = true;
-            return {len, 'I'};
-        }
-    }
-
-    if (cls == "java/lang/String") {
-        if (ref.name == "length" && !is_static && !arg_regs.empty()) {
-            const char *s = jni.GetStringChars(reinterpret_cast<jstring>(arg_regs[0]));
-            handled = true;
-            return {s ? static_cast<uint64_t>(std::strlen(s)) : 0, 'I'};
-        }
-        if (ref.name == "equals" && !is_static && arg_regs.size() >= 2) {
-            const char *a = jni.GetStringChars(reinterpret_cast<jstring>(arg_regs[0]));
-            const char *b = jni.GetStringChars(reinterpret_cast<jstring>(arg_regs[1]));
-            bool eq = (a && b && std::strcmp(a, b) == 0);
-            handled = true;
+            bool eq = JavaRuntime::ComputeObjectEquals(
+                *this, reinterpret_cast<jobject>(arg_regs[0]),
+                reinterpret_cast<jobject>(arg_regs[1]), env, out_exception);
             return {static_cast<uint64_t>(eq ? 1 : 0), 'Z'};
         }
-        if (ref.name == "charAt" && !is_static && arg_regs.size() >= 2) {
-            const char *s = jni.GetStringChars(reinterpret_cast<jstring>(arg_regs[0]));
-            size_t idx = static_cast<size_t>(static_cast<int32_t>(arg_regs[1]));
-            uint64_t ch = (s && idx < std::strlen(s)) ? static_cast<uint8_t>(s[idx]) : 0;
+        if (ref.name == "toString" && !is_static && !arg_regs.empty()) {
             handled = true;
-            return {ch, 'C'};
+            std::string str = JavaRuntime::ObjectToString(
+                *this, reinterpret_cast<jobject>(arg_regs[0]), env, out_exception);
+            jstring s = jni.CreateString(str);
+            return {reinterpret_cast<uintptr_t>(s), 'L'};
         }
-        if (ref.name == "concat" && !is_static && arg_regs.size() >= 2) {
-            const char *a = jni.GetStringChars(reinterpret_cast<jstring>(arg_regs[0]));
-            const char *b = jni.GetStringChars(reinterpret_cast<jstring>(arg_regs[1]));
-            std::string combined = std::string(a ? a : "") + (b ? b : "");
-            handled = true;
-            return {reinterpret_cast<uintptr_t>(jni.CreateString(combined)), 'L'};
-        }
-        if (ref.name == "valueOf" && is_static && !arg_regs.empty() && !ref.param_types.empty()) {
-            std::string str;
-            if (ref.param_types[0] == "I") {
-                str = std::to_string(static_cast<int32_t>(arg_regs[0]));
-            } else if (ref.param_types[0] == "Z") {
-                str = arg_regs[0] ? "true" : "false";
-            } else if (ref.param_types[0] == "Ljava/lang/Object;") {
-                const char *s = jni.GetStringChars(reinterpret_cast<jstring>(arg_regs[0]));
-                str = s ? s : "object";
+        if (ref.name == "getClass" && !is_static && !arg_regs.empty()) {
+            jobject obj = reinterpret_cast<jobject>(arg_regs[0]);
+            std::string cls_name = "java/lang/Object";
+            if (jni.GetStringChars(obj) != nullptr) {
+                cls_name = "java/lang/String";
+            } else if (auto syn = jni.LookupObject(obj); syn && !syn->class_name.empty()) {
+                cls_name = syn->class_name;
             }
             handled = true;
-            return {reinterpret_cast<uintptr_t>(jni.CreateString(str)), 'L'};
+            return {reinterpret_cast<uintptr_t>(JavaRuntime::Instance().GetClassObject(cls_name)),
+                    'L'};
         }
     }
 
@@ -1731,15 +1738,9 @@ DexValue DexVm::InvokeNativeMethod(const DexMethodDef &method, std::span<const u
 }
 
 DexValue DexVm::InvokeTarget(const DexMethodRef &ref, std::span<const uint64_t> arg_regs,
-                             bool is_static, bool is_super, std::string_view caller_class,
-                             JNIEnv *env, jobject &out_exception)
+                             bool is_static, bool is_super, bool is_direct,
+                             std::string_view caller_class, JNIEnv *env, jobject &out_exception)
 {
-    bool handled = false;
-    DexValue intrinsic_val = InvokeIntrinsic(ref, arg_regs, is_static, env, out_exception, handled);
-    if (handled) {
-        return intrinsic_val;
-    }
-
     std::string target_class = ref.class_descriptor;
     if (is_super) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -1748,18 +1749,83 @@ DexValue DexVm::InvokeTarget(const DexMethodRef &ref, std::span<const uint64_t> 
                 target_class = cur_cls->superclass_descriptor;
             }
         }
-    } else if (!is_static && !arg_regs.empty()) {
-        auto syn = JniEnvironment::Instance().LookupObject(reinterpret_cast<jobject>(arg_regs[0]));
-        if (syn && !syn->class_name.empty()) {
-            std::string inst_desc = DexFile::NormalizeDescriptor(syn->class_name);
-            if (HasClass(inst_desc)) {
-                target_class = std::move(inst_desc);
+    } else if (!is_static && !is_direct && !arg_regs.empty()) {
+        jobject recv = reinterpret_cast<jobject>(arg_regs[0]);
+        auto &jni = JniEnvironment::Instance();
+        if (jni.GetStringChars(recv) != nullptr) {
+            target_class = "Ljava/lang/String;";
+        } else {
+            auto syn = jni.LookupObject(recv);
+            if (syn && !syn->class_name.empty()) {
+                std::string inst_desc = DexFile::NormalizeDescriptor(syn->class_name);
+                if (HasClass(inst_desc) || JavaRuntime::Instance().HasHostClass(syn->class_name)) {
+                    target_class = std::move(inst_desc);
+                }
+            }
+        }
+    }
+
+    if (!is_static && !is_direct && !arg_regs.empty()) {
+        jobject recv = reinterpret_cast<jobject>(arg_regs[0]);
+        auto syn = JniEnvironment::Instance().LookupObject(recv);
+        if (syn && syn->class_name == "java/lang/invoke/LambdaProxy") {
+            bool lambda_handled = false;
+            DexValue lres = JavaRuntime::Instance().TryInvokeLambdaProxy(
+                *this, recv, ref, arg_regs, env, out_exception, lambda_handled);
+            if (lambda_handled) {
+                return lres;
             }
         }
     }
 
     if (is_static) {
         EnsureClassInitialized(target_class, env);
+    }
+
+    if (!is_direct) {
+        std::string cur = target_class;
+        for (int depth = 0; depth < 32 && !cur.empty(); ++depth) {
+            const DexFile *found_dex = nullptr;
+            const DexMethodDef *found_method = nullptr;
+            std::string super_desc;
+            {
+                std::lock_guard<std::recursive_mutex> lock(mutex_);
+                if (const auto *cls = FindClassUnlocked(cur, &found_dex)) {
+                    if (found_dex) {
+                        found_method = found_dex->FindMethod(cur, ref.name, ref.descriptor);
+                    }
+                    super_desc = cls->superclass_descriptor;
+                }
+            }
+            if (found_method && found_dex) {
+                DexValue result = ExecuteMethod(found_dex, found_method, arg_regs, env);
+                if (jthrowable pending = JniEnvironment::Instance().GetPendingException()) {
+                    out_exception = pending;
+                    JniEnvironment::Instance().ClearPendingException();
+                }
+                return result;
+            }
+            DexMethodRef step_ref = ref;
+            step_ref.class_descriptor = cur;
+            bool step_handled = false;
+            DexValue sv =
+                InvokeIntrinsic(step_ref, arg_regs, is_static, env, out_exception, step_handled);
+            if (step_handled) {
+                return sv;
+            }
+            cur = std::move(super_desc);
+        }
+    }
+
+    DexMethodRef direct_ref = ref;
+    if (is_super) {
+        direct_ref.class_descriptor = target_class;
+    }
+    bool handled = false;
+    DexValue intrinsic_val =
+        InvokeIntrinsic(direct_ref, arg_regs, is_static, env, out_exception, handled);
+    if (handled) {
+        return intrinsic_val;
     }
 
     auto resolved = ResolveMethod(target_class, ref.name, ref.descriptor, true);
@@ -1850,6 +1916,35 @@ DexValue DexVm::ExecuteMethod(const DexFile *dex, const DexMethodDef *method,
     };
 
     char ret_kind = method->return_type.empty() ? 'V' : method->return_type.front();
+
+    struct ScopedMethodMonitor {
+        jobject obj{nullptr};
+        explicit ScopedMethodMonitor(jobject target) : obj(target)
+        {
+            if (obj) {
+                JavaRuntime::Instance().MonitorEnter(obj);
+            }
+        }
+        ~ScopedMethodMonitor()
+        {
+            if (obj) {
+                JavaRuntime::Instance().MonitorExit(obj);
+            }
+        }
+    };
+
+    jobject sync_target = nullptr;
+    if ((method->access_flags & (ACC_SYNCHRONIZED | ACC_DECLARED_SYNCHRONIZED)) != 0) {
+        if ((method->access_flags & ACC_STATIC) != 0) {
+            std::string slash = DexFile::DescriptorToSlashName(method->class_descriptor);
+            sync_target =
+                reinterpret_cast<jobject>(JniEnvironment::Instance().InternClass(slash.c_str()));
+        } else if (method->registers_size >= method->ins_size && !raw_args.empty()) {
+            sync_target =
+                reinterpret_cast<jobject>(regs[method->registers_size - method->ins_size]);
+        }
+    }
+    ScopedMethodMonitor method_monitor(sync_target);
 
     while (pc < code_len) {
         uint16_t insn = insns[pc];
@@ -2019,16 +2114,57 @@ DexValue DexVm::ExecuteMethod(const DexFile *dex, const DexMethodDef *method,
             uint8_t aa = (insn >> 8) & 0xFFu;
             uint16_t idx = insns[pc + 1];
             std::string cls_slash = DexFile::DescriptorToSlashName(dex->GetType(idx));
-            jstring s = JniEnvironment::Instance().CreateString(cls_slash);
-            regs[aa] = reinterpret_cast<uintptr_t>(s);
+            jobject cls_obj = JavaRuntime::Instance().GetClassObject(cls_slash);
+            regs[aa] = reinterpret_cast<uintptr_t>(cls_obj);
+            pc += 2;
+            break;
+        }
+        case OP_CONST_METHOD_HANDLE: {
+            uint8_t aa = (insn >> 8) & 0xFFu;
+            uint16_t idx = insns[pc + 1];
+            jobject mh_obj = nullptr;
+            if (const auto *mh = dex->GetMethodHandle(idx)) {
+                mh_obj = JavaRuntime::Instance().CreateMethodHandleObject(dex, *mh);
+            }
+            regs[aa] = reinterpret_cast<uintptr_t>(mh_obj);
+            pc += 2;
+            break;
+        }
+        case OP_CONST_METHOD_TYPE: {
+            uint8_t aa = (insn >> 8) & 0xFFu;
+            uint16_t idx = insns[pc + 1];
+            jobject mt_obj = nullptr;
+            if (const auto *proto = dex->GetProtoRef(idx)) {
+                mt_obj = JavaRuntime::Instance().CreateMethodTypeObject(*proto);
+            }
+            regs[aa] = reinterpret_cast<uintptr_t>(mt_obj);
             pc += 2;
             break;
         }
 
-        case OP_MONITOR_ENTER:
-        case OP_MONITOR_EXIT:
+        case OP_MONITOR_ENTER: {
+            uint8_t aa = (insn >> 8) & 0xFFu;
+            jobject obj = reinterpret_cast<jobject>(regs[aa]);
+            if (!obj) {
+                if (!dispatch_exception(
+                        JavaRuntime::Instance().CreateException("java/lang/NullPointerException",
+                                                                "Attempt to lock null object"),
+                        pc)) {
+                    return {0, ret_kind};
+                }
+                break;
+            }
+            JavaRuntime::Instance().MonitorEnter(obj);
             pc += 1;
             break;
+        }
+        case OP_MONITOR_EXIT: {
+            uint8_t aa = (insn >> 8) & 0xFFu;
+            jobject obj = reinterpret_cast<jobject>(regs[aa]);
+            JavaRuntime::Instance().MonitorExit(obj);
+            pc += 1;
+            break;
+        }
 
         case OP_CHECK_CAST: {
             uint8_t aa = (insn >> 8) & 0xFFu;
@@ -2545,6 +2681,7 @@ DexValue DexVm::ExecuteMethod(const DexFile *dex, const DexMethodDef *method,
             bool is_range = op >= OP_INVOKE_VIRTUAL_RANGE;
             bool is_static = (op == OP_INVOKE_STATIC || op == OP_INVOKE_STATIC_RANGE);
             bool is_super = (op == OP_INVOKE_SUPER || op == OP_INVOKE_SUPER_RANGE);
+            bool is_direct = (op == OP_INVOKE_DIRECT || op == OP_INVOKE_DIRECT_RANGE);
             uint16_t midx = insns[pc + 1];
             std::vector<uint32_t> arg_indices;
             if (!is_range) {
@@ -2564,7 +2701,7 @@ DexValue DexVm::ExecuteMethod(const DexFile *dex, const DexMethodDef *method,
             if (const auto *mref = dex->GetMethodRef(midx)) {
                 auto arg_regs = CollectRegisterArgs(*mref, regs, is_static, arg_indices);
                 jobject ex = nullptr;
-                DexValue res = InvokeTarget(*mref, arg_regs, is_static, is_super,
+                DexValue res = InvokeTarget(*mref, arg_regs, is_static, is_super, is_direct,
                                             method->class_descriptor, env, ex);
                 last_result = res.raw;
                 if (ex) {
@@ -2575,6 +2712,102 @@ DexValue DexVm::ExecuteMethod(const DexFile *dex, const DexMethodDef *method,
                 }
             }
             pc += 3;
+            break;
+        }
+
+        case OP_INVOKE_CUSTOM:
+        case OP_INVOKE_CUSTOM_RANGE: {
+            bool is_range = (op == OP_INVOKE_CUSTOM_RANGE);
+            uint16_t cs_idx = insns[pc + 1];
+            std::vector<uint32_t> arg_indices;
+            if (!is_range) {
+                uint8_t count = (insn >> 12) & 0xFu;
+                uint16_t word2 = insns[pc + 2];
+                for (uint8_t i = 0; i < count; ++i) {
+                    uint8_t r = (i < 4) ? ((word2 >> (i * 4)) & 0xFu) : ((insn >> 8) & 0xFu);
+                    arg_indices.push_back(r);
+                }
+            } else {
+                uint8_t count = (insn >> 8) & 0xFFu;
+                uint16_t start = insns[pc + 2];
+                for (uint8_t i = 0; i < count; ++i) {
+                    arg_indices.push_back(start + i);
+                }
+            }
+            std::vector<uint64_t> arg_regs;
+            if (const auto *cs = dex->GetCallSite(cs_idx)) {
+                if (const auto *proto = dex->GetProtoRef(cs->method_type_proto_idx)) {
+                    DexMethodRef synth_ref{};
+                    synth_ref.param_types = proto->param_types;
+                    synth_ref.return_type = proto->return_type;
+                    arg_regs = CollectRegisterArgs(synth_ref, regs, true, arg_indices);
+                }
+            }
+            if (arg_regs.empty() && !arg_indices.empty()) {
+                for (uint32_t r : arg_indices) {
+                    arg_regs.push_back(r < regs.size() ? regs[r] : 0);
+                }
+            }
+            jobject ex = nullptr;
+            DexValue res =
+                JavaRuntime::Instance().InvokeCustomCallSite(*this, dex, cs_idx, arg_regs, env, ex);
+            last_result = res.raw;
+            if (ex) {
+                if (!dispatch_exception(ex, pc)) {
+                    return {0, ret_kind};
+                }
+                break;
+            }
+            pc += 3;
+            break;
+        }
+
+        case OP_INVOKE_POLYMORPHIC:
+        case OP_INVOKE_POLYMORPHIC_RANGE: {
+            bool is_range = (op == OP_INVOKE_POLYMORPHIC_RANGE);
+            uint16_t midx = insns[pc + 1];
+            uint16_t proto_idx = insns[pc + 3];
+            std::vector<uint32_t> arg_indices;
+            if (!is_range) {
+                uint8_t count = (insn >> 12) & 0xFu;
+                uint16_t word2 = insns[pc + 2];
+                for (uint8_t i = 0; i < count; ++i) {
+                    uint8_t r = (i < 4) ? ((word2 >> (i * 4)) & 0xFu) : ((insn >> 8) & 0xFu);
+                    arg_indices.push_back(r);
+                }
+            } else {
+                uint8_t count = (insn >> 8) & 0xFFu;
+                uint16_t start = insns[pc + 2];
+                for (uint8_t i = 0; i < count; ++i) {
+                    arg_indices.push_back(start + i);
+                }
+            }
+            const auto *proto = dex->GetProtoRef(proto_idx);
+            const auto *mref = dex->GetMethodRef(midx);
+            std::vector<uint64_t> arg_regs;
+            if (proto) {
+                DexMethodRef synth_ref{};
+                synth_ref.param_types = proto->param_types;
+                synth_ref.return_type = proto->return_type;
+                arg_regs = CollectRegisterArgs(synth_ref, regs, false, arg_indices);
+            } else if (mref) {
+                arg_regs = CollectRegisterArgs(*mref, regs, false, arg_indices);
+            }
+            jobject ex = nullptr;
+            DexValue res{0, 'V'};
+            if (!arg_regs.empty() && proto) {
+                res = JavaRuntime::Instance().InvokePolymorphic(
+                    *this, reinterpret_cast<jobject>(arg_regs[0]), *proto,
+                    std::span<const uint64_t>(arg_regs).subspan(1), env, ex);
+            }
+            last_result = res.raw;
+            if (ex) {
+                if (!dispatch_exception(ex, pc)) {
+                    return {0, ret_kind};
+                }
+                break;
+            }
+            pc += 4;
             break;
         }
 

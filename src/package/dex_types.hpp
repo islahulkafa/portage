@@ -105,7 +105,40 @@ struct DexTryItem {
     uint16_t insn_count;
     uint16_t handler_off;
 };
+
+struct DexMapItem {
+    uint16_t type;
+    uint16_t unused;
+    uint32_t size;
+    uint32_t offset;
+};
+
+struct DexMethodHandleItem {
+    uint16_t method_handle_type;
+    uint16_t unused1;
+    uint16_t field_or_method_id;
+    uint16_t unused2;
+};
+
+struct DexCallSiteIdItem {
+    uint32_t call_site_off;
+};
 #pragma pack(pop)
+
+constexpr uint16_t kDexTypeCallSiteIdItem = 0x0007u;
+constexpr uint16_t kDexTypeMethodHandleItem = 0x0008u;
+
+enum class DexMethodHandleType : uint16_t {
+    StaticPut = 0x00,
+    StaticGet = 0x01,
+    InstancePut = 0x02,
+    InstanceGet = 0x03,
+    InvokeStatic = 0x04,
+    InvokeInstance = 0x05,
+    InvokeConstructor = 0x06,
+    InvokeDirect = 0x07,
+    InvokeInterface = 0x08,
+};
 
 enum DexOpcode : uint8_t {
     OP_NOP = 0x00,
@@ -326,6 +359,12 @@ enum DexOpcode : uint8_t {
     OP_SHL_INT_LIT8 = 0xE0,
     OP_SHR_INT_LIT8 = 0xE1,
     OP_USHR_INT_LIT8 = 0xE2,
+    OP_INVOKE_POLYMORPHIC = 0xFA,
+    OP_INVOKE_POLYMORPHIC_RANGE = 0xFB,
+    OP_INVOKE_CUSTOM = 0xFC,
+    OP_INVOKE_CUSTOM_RANGE = 0xFD,
+    OP_CONST_METHOD_HANDLE = 0xFE,
+    OP_CONST_METHOD_TYPE = 0xFF,
 };
 
 } // namespace portage::package

@@ -25,7 +25,7 @@ Execute all five gates sequentially after modifying runtime, linker, or guest co
    .\build\debug\tests\integration_tests.exe --gtest_filter=BionicRuntimeTest.*
    ```
 
-4. **Run all registered CTest cases** (`555` total: `518` unit tests and `37` integration tests):
+4. **Run all registered CTest cases** (`584` total: `544` unit tests and `40` integration tests):
 
    ```powershell
    ctest --test-dir build/debug --output-on-failure

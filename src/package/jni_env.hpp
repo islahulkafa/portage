@@ -2,11 +2,15 @@
 
 #include <cstdarg>
 #include <cstddef>
+#include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -404,6 +408,16 @@ enum class JniObjectType {
     IBinder,
 };
 
+struct JniObjectMonitor {
+    std::mutex mu;
+    std::condition_variable lock_cv;
+    std::condition_variable wait_cv;
+    std::thread::id owner{};
+    uint32_t recursion{0};
+    uint64_t notify_all_seq{0};
+    uint32_t notify_permits{0};
+};
+
 struct JniSyntheticObject {
     JniObjectType type{JniObjectType::Generic};
     std::string class_name;
@@ -415,6 +429,9 @@ struct JniSyntheticObject {
     std::unordered_map<std::string, uint8_t> bool_fields;
     std::unordered_map<std::string, jobject> object_fields;
     std::unordered_map<std::string, std::vector<uint8_t>> binary_fields;
+    mutable std::recursive_mutex field_mutex;
+    std::shared_ptr<void> runtime_payload;
+    std::shared_ptr<JniObjectMonitor> monitor;
 
     void *buffer_address{nullptr};
     jlong buffer_capacity{0};
@@ -491,6 +508,7 @@ class JniEnvironment {
 
     jobject RegisterObject(std::shared_ptr<JniSyntheticObject> obj);
     std::shared_ptr<JniSyntheticObject> LookupObject(jobject obj) const;
+    std::shared_ptr<JniObjectMonitor> GetMonitor(jobject obj);
 
     jobject CreateDirectByteBuffer(void *address, jlong capacity);
     jobject CreateParcel(void *native_parcel);
@@ -531,9 +549,13 @@ class JniEnvironment {
     [[nodiscard]] float GetDisplayDensity() const noexcept { return display_density_; }
     [[nodiscard]] int32_t GetDisplayDensityDpi() const noexcept { return display_density_dpi_; }
 
-    [[nodiscard]] jthrowable GetPendingException() const noexcept { return pending_exception_; }
-    void SetPendingException(jthrowable ex) noexcept { pending_exception_ = ex; }
-    void ClearPendingException() noexcept { pending_exception_ = nullptr; }
+    [[nodiscard]] jthrowable GetPendingException() const noexcept;
+    void SetPendingException(jthrowable ex) noexcept;
+    void ClearPendingException() noexcept;
+    [[nodiscard]] uint64_t GetResetEpoch() const noexcept
+    {
+        return reset_epoch_.load(std::memory_order_acquire);
+    }
 
     void SetActiveNativeWindow(void *win) noexcept { active_native_window_ = win; }
     [[nodiscard]] void *GetActiveNativeWindow() const noexcept { return active_native_window_; }
@@ -566,9 +588,12 @@ class JniEnvironment {
     float display_density_{2.0f};
     int32_t display_density_dpi_{320};
 
-    std::vector<std::string> string_table_{};
+    mutable std::recursive_mutex mutex_{};
+    std::deque<std::string> string_table_{};
+    std::unordered_map<std::string, jstring> string_intern_map_{};
     std::vector<std::shared_ptr<JniSyntheticObject>> object_table_{};
     std::unordered_map<jobject, std::shared_ptr<JniSyntheticObject>> objects_by_handle_{};
+    std::unordered_map<jobject, std::shared_ptr<JniObjectMonitor>> monitors_by_handle_{};
     std::unordered_map<std::string, std::unique_ptr<std::string>> interned_classes_{};
     std::deque<JniMemberRef> member_refs_{};
     std::unordered_map<const void *, const JniMemberRef *> member_by_ptr_{};
@@ -589,7 +614,7 @@ class JniEnvironment {
     jobject active_activity_obj_{nullptr};
     jobject intent_obj_{nullptr};
     void *active_native_window_{nullptr};
-    jthrowable pending_exception_{nullptr};
+    std::atomic<uint64_t> reset_epoch_{1};
 };
 
 } // namespace portage::package

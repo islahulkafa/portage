@@ -67,6 +67,7 @@ Because Windows x64 reserves `%gs` for the Win32 Thread Environment Block (TEB),
 - [`ThreadManager`](../src/thread/thread_manager.hpp) tracks active guest threads, thread names (`/proc/self/task/<tid>/comm` and `pthread_setname_np`), TCB pointers (`arch_prctl` `ARCH_SET_FS`), and guest stack bounds.
 - [`GuestContext`](../src/arch/guest_context.hpp) isolates guest execution frames cleanly across host-to-guest entries and `clone` worker threads.
 - [`SignalManager`](../src/signal/signal_manager.hpp) installs a Windows Vectored Exception Handler (VEH) to translate hardware access violations into guest `SIGSEGV` delivery with alternate signal stacks (`sigaltstack`).
+- [`DexVm`](../src/package/dex_vm.hpp) and [`JavaRuntime`](../src/package/java_runtime.hpp) execute Dalvik v035–v039 bytecode (including D8 `invoke-custom`/`invoke-polymorphic` and `static_values_off`) across host `std::thread` workers mapped 1:1 from `java.lang.Thread`, with reentrant per-object monitors (`synchronized`, `wait`/`notify`), UTF-16 `String`, `java.util` collections, `ExecutorService` thread pools, `LambdaMetafactory`/`StringConcatFactory`, `Class`/reflection/`Enum`, `java.nio.ByteBuffer`/`Charset`, VFS-routed `java.io`, and `java.util.regex`.
 
 ## Syscalls, VFS, and GPU synchronization
 
