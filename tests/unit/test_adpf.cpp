@@ -53,8 +53,7 @@ TEST_F(AdpfTest, ThermalStatusListenerDispatch)
         std::atomic<int> calls{0};
         std::atomic<AThermalStatus> last_status{ATHERMAL_STATUS_NONE};
 
-        __attribute__((sysv_abi)) static void OnThermalStatus(void *data,
-                                                              AThermalStatus status)
+        __attribute__((sysv_abi)) static void OnThermalStatus(void *data, AThermalStatus status)
         {
             auto *s = static_cast<CallbackState *>(data);
             s->last_status.store(status);
@@ -311,15 +310,15 @@ TEST_F(AdpfTest, ThermalMonitorNotifiesOnChange)
         }
     } state;
 
-    EXPECT_EQ(
-        AThermalManager_registerThermalStatusListener(mgr, &MonitorState::OnStatus, &state), 0);
+    EXPECT_EQ(AThermalManager_registerThermalStatusListener(mgr, &MonitorState::OnStatus, &state),
+              0);
 
     ThermalManager::Instance().SetStatusOverride(ATHERMAL_STATUS_CRITICAL);
     EXPECT_GE(state.calls.load(), 1);
     EXPECT_EQ(state.status.load(), ATHERMAL_STATUS_CRITICAL);
 
-    EXPECT_EQ(
-        AThermalManager_unregisterThermalStatusListener(mgr, &MonitorState::OnStatus, &state), 0);
+    EXPECT_EQ(AThermalManager_unregisterThermalStatusListener(mgr, &MonitorState::OnStatus, &state),
+              0);
     AThermalManager_releaseManager(mgr);
 }
 

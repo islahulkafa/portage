@@ -10,7 +10,7 @@ Portage is a native user-mode Android compatibility layer for Windows 11 written
 - **Dynamic Linker & ABI Bridging**: The custom ELF dynamic linker (`LinkMap`, `ElfLoader`) loads guest shared libraries, resolves recursive `DT_NEEDED` dependencies, executes `DT_INIT`/`DT_INIT_ARRAY`/`DT_FINI`/`DT_FINI_ARRAY` with `__cxa_atexit` tracking, supports GNU2 TLSDESC (`R_X86_64_TLSDESC`), lazy `DT_JMPREL` PLT trampolines, `android_dlopen_ext`, `dlinfo`, `dlclose` segment unmapping, and routes guest calls across the ABI boundary (SysV AMD64 ABI to Microsoft x64 ABI) via SysV-annotated thunks (`NdkSymbolRegistry`).
 - **Graphics Pipeline (WSI & WGL)**: Provides hardware-accelerated OpenGL ES 2.0 / 3.0 / 3.2 (EGL 1.5, sync fences, `AHardwareBuffer` textures) and Vulkan 1.0–1.3 ICD passthrough directly to host GPUs (including external `SyncFence` FD and `AHardwareBuffer` memory bridging), presenting frames to Win32 `HWND` surfaces or offscreen DIB sections.
 - **Audio & Media Pipelines**: Emulates Android NDK AAudio (API 26+) and OpenSL ES over low-latency Windows WASAPI streaming audio; bridges MediaCodec, MediaExtractor, and Camera2 via Windows Media Foundation.
-- **Android Package & Resource Runtime**: Parses APK ZIP archives, extracts sandboxed assets, decodes binary XML (`AndroidManifest.xml`), parses binary resource tables (`resources.arsc`), resolves string/integer/boolean resources, and hosts synthetic Android Java runtime environments (`JavaVM`, `JNIEnv`).
+- **Android Package & Resource Runtime**: Parses APK ZIP archives, extracts sandboxed assets, decodes binary XML (`AndroidManifest.xml`), parses binary resource tables (`resources.arsc`), resolves string/integer/boolean resources, parses Dalvik DEX v035–v039 (`DexFile`) with multi-DEX loading, runs Java `Application`/`Activity` lifecycles (`JavaActivityRunner`) on a register-based Dalvik bytecode interpreter (`DexVm`), and bridges `System.loadLibrary` / `JNI_OnLoad`, `SurfaceView` (`ANativeWindow_fromSurface`), and bidirectional `JavaVM`/`JNIEnv` dispatch.
 - **Host Desktop & System Integration**: Bridges Android system services (Power/WakeLocks via `SetThreadExecutionState`, Battery status, Clipboard via OLE, Location via Windows `LocationAPI`, Notifications/Toasts via `Shell_NotifyIconW`, and Keystore via Windows CNG `NCrypt`/`BCrypt`).
 
 ---
@@ -26,18 +26,18 @@ All source code resides in `src/`, with subsystems structured as follows:
 | `src/binder/` | Android IPC Binder driver emulation and ioctl handlers |
 | `src/camera/` | Camera2 NDK (`ACameraManager` availability callbacks, `ACameraDevice`, SysV capture/sequence callbacks, `AImageReader` with WIC JPEG encoding, direct `ANativeWindow` preview blitting, and live WMF `IMFSourceReader` capture with synthetic color-bar fallback) |
 | `src/clipboard/` | Clipboard manager (`ClipboardManager`), MIME clip data, and Win32 OLE clipboard integration |
-| `src/elf/` | ELF64 parsing, segment loading, `R_X86_64_TLSDESC`, lazy PLT trampolines, `android_dlopen_ext`, `dlinfo`, `dlclose` unmapping, virtual system library fallback (`libz`, `libm`, `libc++_shared`, NDK libs), unresolved symbol tracking/trap stubs, and `LinkMap` management |
-| `src/fs/` | Virtual File System (VFS), `/proc`, `/sys`, `/dev`, file descriptor tables, `SyncFence`, and pipes |
+| `src/elf/` | ELF64 parsing, segment loading, `R_X86_64_TLSDESC`, `R_X86_64_IRELATIVE` IFUNC, symbol versioning (`DT_VERNEED`/`DT_VERSYM`), lazy PLT trampolines, `android_dlopen_ext`, `dlinfo`, `dlclose` unmapping, virtual system library fallback (`libz`, `libm`, `libc++_shared`, NDK libs), unresolved symbol tracking/trap stubs, and `LinkMap` management |
+| `src/fs/` | Virtual File System (VFS), `/proc` (`self/{smaps,smaps_rollup,status}`), `/sys` (cgroups v2, CPU topology), `/dev`, `inotify`, symlinks/hardlinks, file descriptor tables, `SyncFence`, and pipes |
 | `src/gles/` | OpenGL ES 2.0–3.2 passthrough, EGL 1.5 dispatcher, and WGL bridge |
 | `src/input/` | Evdev input translation, Win32 mouse/keyboard to Android touch/key mapping |
-| `src/launcher/` | CLI runner (`portage.exe`), argument parsing, `--check-apk` symbol audit, APK installation, and execution |
+| `src/launcher/` | CLI runner (`portage.exe`), argument parsing, `--check-apk` symbol audit, APK installation, and `ANativeActivity`, pure-DEX, and hybrid Java-native (`System.loadLibrary` + `JNI_OnLoad`) execution |
 | `src/location/` | Android location provider (`LocationManager`), GPS/network emulation, and Windows Location API |
 | `src/media/` | MediaCodec (`IMFTransform` H.264/HEVC/AAC encode/decode, async notify callbacks, input/output `ANativeWindow` NV12/RGBA surfaces), byte-range MediaExtractor (`PortageMfByteStream`), and MediaMuxer (`IMFSinkWriter` MP4/3GP) over a dedicated Windows Media Foundation COM MTA host worker |
 | `src/mem/` | Virtual memory manager, address space mappings (`mmap`/`mprotect`), and page tracking |
-| `src/ndk/` | Android NDK runtime libraries (`libandroid`, `ALooper`, `AInputQueue`, `AConfiguration`, `liblog`, `AChoreographer`, WIC-backed `AImageDecoder`, LP64 `GuestZStream` `libz`, `libm`, Bionic stdio/POSIX/locale/UTF-32 wchar runtime, fortify/`pthread_create`, and C++ fallback stubs) |
-| `src/net/` | Socket manager, BSD/Linux socket emulation, and loopback networking |
+| `src/ndk/` | Android NDK runtime libraries (`libandroid`, `ALooper`, `AInputQueue`, `AConfiguration`, `liblog`, `AChoreographer`, `ANativeWindow_fromSurface`, WIC-backed `AImageDecoder`, LP64 `GuestZStream` `libz`, `libm`, Bionic stdio/POSIX/locale/UTF-32 wchar runtime, `sched_*affinity`, `getifaddrs`/`if_nametoindex`, fortify/`pthread_create`, and C++ fallback stubs) |
+| `src/net/` | Socket manager, BSD/Linux socket emulation, loopback networking, and Netlink route sockets (`AF_NETLINK`, `NETLINK_ROUTE`, `RTM_GETLINK`/`RTM_GETADDR`/`RTM_GETROUTE`) |
 | `src/notification/` | Notification & Toast subsystem (`NotificationManager`, `NotificationChannel`), and Win32 `Shell_NotifyIconW` |
-| `src/package/` | APK ZIP archive extractor, binary XML parser, `resources.arsc` table, `AAssetManager`, `JNIEnv` (WIC `BitmapFactory`, `SharedPreferences`, `DisplayMetrics`, `PackageManager`, `Build`), and `ANativeActivity` |
+| `src/package/` | APK ZIP archive extractor, binary XML parser, `ManifestParser` (`MAIN`/`LAUNCHER`, `Application`), `resources.arsc` table, `AAssetManager`, `ContentProvider`/SAF, `DexFile` (v035–v039 multi-DEX), `DexVm` (register-based Dalvik interpreter, `Looper`/`Handler`/`SurfaceView`/`Canvas`, bidirectional SysV-ABI `ACC_NATIVE`/`RegisterNatives`), `JavaActivityRunner`, `JNIEnv` (WIC `BitmapFactory`, `SharedPreferences`, `DisplayMetrics`, `PackageManager`, `Build`), and `ANativeActivity` |
 | `src/poll/` | Linux `epoll`, `eventfd`, `timerfd`, and waitable `SyncFence` event polling |
 | `src/power/` | Power management (`PowerManager`, `WakeLock`), Win32 `SetThreadExecutionState`, and battery status |
 | `src/process/` | Guest process lifecycle, process tree, and PID tracking |
@@ -52,7 +52,7 @@ All source code resides in `src/`, with subsystems structured as follows:
 | `src/wsi/` | Window System Integration, Win32 window creation, message pump, and event loop |
 
 Test and tool layout:
-- `tests/guests/`: Unmodified guest source code and stub libraries compiled into ELF/shared library test fixtures (e.g. `test_game_engine.c`, `test_bionic_extensions_guest.c`, `libc.c`, `libdl.c`, `libvulkan.c`, `libGLESv2.c`, `libandroid.c`, `libnotificationndk.c`, `libpowerndk.c`, `libmediandk.c`).
+- `tests/guests/`: Unmodified guest source code and stub libraries compiled into ELF/shared library test fixtures (e.g. `test_game_engine.c`, `test_java_hybrid_guest.c`, `test_bionic_extensions_guest.c`, `libc.c`, `libdl.c`, `libvulkan.c`, `libGLESv2.c`, `libandroid.c`, `libnotificationndk.c`, `libpowerndk.c`, `libmediandk.c`).
 - `tests/unit/`: GoogleTest unit test suites testing isolated subsystems.
 - `tests/integration/`: End-to-end integration test suites executing guest code through the emulator runtime.
 - `tools/`: Build and development utilities, including `assemble_samples.cpp` for generating test APKs.

@@ -23,7 +23,7 @@ extern "C" __attribute__((sysv_abi)) ALooper *ALooper_prepare(int opts);
 ## Thunk registration and ABI invariants
 
 - **Central Registry & Dual-Tier Resolution**: Register all native SysV NDK and Bionic thunks in `NdkSymbolRegistry` inside [libandroid_thunks.cpp](../src/ndk/libandroid_thunks.cpp). Symbols are partitioned into primary thunks and secondary C++ fallback stubs (`RegisterCppFallback()`).
-- **Symbol Resolution Precedence**: [`LinkMap::ResolveGlobalSymbol`](../src/elf/link_map.cpp#L205), [`LinkMap::ResolveSymbolForModule`](../src/elf/link_map.cpp#L385), and [`LinkMap::ResolveLazySymbol`](../src/elf/link_map.cpp#L1388) enforce a 3-tier lookup hierarchy:
+- **Symbol Resolution Precedence**: `LinkMap::ResolveGlobalSymbol`, `LinkMap::ResolveSymbolForModule`, and `LinkMap::ResolveLazySymbol` in [link_map.cpp](../src/elf/link_map.cpp) enforce a 3-tier lookup hierarchy:
   1. Primary host SysV thunks in `NdkSymbolRegistry` (preventing no-op guest stub libraries like `libc.so` or `libandroid.so` from shadowing host implementations).
   2. Loaded physical ELF modules (e.g. real `libc++_shared.so` bundled in APKs).
   3. Secondary C++ fallback stubs in `NdkSymbolRegistry` (e.g. `_Znwm`, `_ZdlPv` when no STL `.so` is bundled).
@@ -83,21 +83,21 @@ All core runtime components reside under `src/`:
 | `src/binder/` | Android IPC Binder driver emulation and `ioctl` parcel handlers |
 | `src/camera/` | Camera2 NDK (`ACameraManager` availability callbacks, SysV capture/sequence callbacks, `WmfCameraReader` live WMF capture with synthetic fallback, WIC JPEG `AImageReader`, and direct `ANativeWindow` preview) |
 | `src/clipboard/` | Clipboard manager, MIME clip data, and Win32 OLE clipboard integration |
-| `src/elf/` | ELF64 parser, `R_X86_64_TLSDESC`, lazy PLT trampolines, `android_dlopen_ext`, `dlinfo`, `dlclose`, virtual system library fallback, unresolved symbol trap stubs, and `LinkMap` |
-| `src/fs/` | Virtual File System (VFS), `/proc`, `/sys`, `/dev`, file descriptor tables, `SyncFence`, and pipes |
+| `src/elf/` | ELF64 parser, `R_X86_64_TLSDESC`, `R_X86_64_IRELATIVE` IFUNC, symbol versioning (`DT_VERNEED`/`DT_VERSYM`), lazy PLT trampolines, `android_dlopen_ext`, `dlinfo`, `dlclose`, virtual system library fallback, unresolved symbol trap stubs, and `LinkMap` |
+| `src/fs/` | Virtual File System (VFS), `/proc` (`self/{smaps,smaps_rollup,status}`), `/sys` (cgroups v2, CPU topology), `/dev`, `inotify`, symlinks/hardlinks, file descriptor tables, `SyncFence`, and pipes |
 | `src/gles/` | OpenGL ES 2.0–3.2 passthrough, EGL 1.5 dispatcher, and WGL bridge |
 | `src/input/` | Evdev input translation, gamepad/haptics state, and Win32 touch/key mapping |
-| `src/launcher/` | CLI runner (`portage.exe`), argument parsing, `--check-apk` audit, APK bootstrap, and event loop |
+| `src/launcher/` | CLI runner (`portage.exe`), argument parsing, `--check-apk` audit, APK bootstrap (`ANativeActivity`, pure-DEX, and hybrid Java-native), and event loop |
 | `src/location/` | `LocationManager`, simulated coordinates, and Windows Location API |
 | `src/media/` | `AMediaCodec` (`IMFTransform` encode/decode, async notify worker, NV12/RGBA surface bridging), byte-range `AMediaExtractor`, and `AMediaMuxer` (`IMFSinkWriter` MP4/3GP) over Windows Media Foundation COM MTA dispatch |
 | `src/mem/` | Virtual memory manager, address space mappings (`mmap`/`mprotect`/`mremap`), and shared memory |
-| `src/ndk/` | NDK thunks (`libandroid`, `ALooper`, `AInputQueue`, `AConfiguration`, `liblog`, `AChoreographer`, `AHardwareBuffer`, WIC `AImageDecoder`, LP64 `libz`, `libm`, Bionic stdio/POSIX/locale/UTF-32 wchar runtime, fortify/`pthread_create`, and C++ fallback stubs) |
-| `src/net/` | BSD/Linux socket translation and loopback networking |
+| `src/ndk/` | NDK thunks (`libandroid`, `ALooper`, `AInputQueue`, `AConfiguration`, `liblog`, `AChoreographer`, `ANativeWindow_fromSurface`, `AHardwareBuffer`, WIC `AImageDecoder`, LP64 `libz`, `libm`, Bionic stdio/POSIX/locale/UTF-32 wchar runtime, `sched_*affinity`, `getifaddrs`/`if_nametoindex`, fortify/`pthread_create`, and C++ fallback stubs) |
+| `src/net/` | BSD/Linux socket translation, loopback networking, and Netlink route sockets (`AF_NETLINK`, `NETLINK_ROUTE`, `RTM_GETLINK`/`RTM_GETADDR`/`RTM_GETROUTE`) |
 | `src/notification/` | Notification channels (`NotificationManager`) and Win32 `Shell_NotifyIconW` |
-| `src/package/` | APK ZIP extractor, binary XML, `resources.arsc`, `AAssetManager`, `JNIEnv` (WIC `BitmapFactory`, `SharedPreferences`, `DisplayMetrics`, `PackageManager`, `Build`), and `ANativeActivity` |
+| `src/package/` | APK ZIP extractor, binary XML, `ManifestParser` (`MAIN`/`LAUNCHER`, `Application`), `resources.arsc`, `AAssetManager`, `ContentProvider`/SAF, `DexFile` (v035–v039 multi-DEX), `DexVm` (register-based Dalvik interpreter, `Looper`/`Handler`/`SurfaceView`/`Canvas`, bidirectional SysV-ABI `ACC_NATIVE`/`RegisterNatives`), `JavaActivityRunner`, `JNIEnv` (WIC `BitmapFactory`, `SharedPreferences`, `DisplayMetrics`, `PackageManager`, `Build`), and `ANativeActivity` |
 | `src/poll/` | Linux `epoll`, `eventfd`, `timerfd`, and waitable `SyncFence` polling |
 | `src/power/` | `PowerManager`, `WakeLock` (`SetThreadExecutionState`), and battery simulation |
-| `src/process/` | Guest process lifecycle, process tree, and PID/credential state |
+| `src/process/` | Guest process lifecycle, process tree, Linux namespaces (`NamespaceManager`), and PID/credential state |
 | `src/property/` | Android system properties (`/dev/__properties__`), trie backing, and property services |
 | `src/rewrite/` | `syscall` instruction rewriting and `x86_64` instruction decoding |
 | `src/security/` | Android Keystore / KeyStore2 backed by Windows CNG (`NCrypt` / `BCrypt`) |

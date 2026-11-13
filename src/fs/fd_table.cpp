@@ -4,7 +4,9 @@
 #include "fs/fd_table.hpp"
 #include "audio/audio_manager.hpp"
 #include "binder/binder_driver.hpp"
+#include "fs/inotify_state.hpp"
 #include "gles/wgl_bridge.hpp"
+#include "net/netlink_socket.hpp"
 #include "poll/epoll_manager.hpp"
 #include "signal/signal_manager.hpp"
 #include <windows.h>
@@ -376,6 +378,28 @@ int FileDescriptorTable::AllocateSocket(UINT_PTR s, int flags)
     return assigned_fd;
 }
 
+int FileDescriptorTable::AllocateNetlinkSocket(
+    std::shared_ptr<portage::net::NetlinkSocketState> netlink, int flags)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    int assigned_fd = m_next_fd++;
+    while (m_descriptors.contains(assigned_fd)) {
+        assigned_fd = m_next_fd++;
+    }
+
+    auto desc = std::make_shared<FileDescriptor>();
+    desc->fd = assigned_fd;
+    desc->handle = INVALID_HANDLE_VALUE;
+    desc->flags = flags;
+    desc->dev = DeviceType::Netlink;
+    desc->offset = 0;
+    desc->is_pipe_or_console = true;
+    desc->netlink_socket = std::move(netlink);
+
+    m_descriptors[assigned_fd] = std::move(desc);
+    return assigned_fd;
+}
+
 int FileDescriptorTable::AllocateEpoll(int epoll_id, int flags)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -474,6 +498,7 @@ int FileDescriptorTable::AllocateInotify(int flags)
     desc->dev = DeviceType::Inotify;
     desc->offset = 0;
     desc->is_pipe_or_console = false;
+    desc->inotify = std::make_shared<InotifyState>(flags);
 
     m_descriptors[assigned_fd] = std::move(desc);
     return assigned_fd;
@@ -836,6 +861,11 @@ int FileDescriptorTable::Duplicate(int oldfd, int target_fd, int flags)
     new_desc->eventfd = old_desc->eventfd;
     new_desc->timerfd = old_desc->timerfd;
     new_desc->sync_fence = old_desc->sync_fence;
+    new_desc->signalfd = old_desc->signalfd;
+    new_desc->inotify = old_desc->inotify;
+    new_desc->namespace_id = old_desc->namespace_id;
+    new_desc->namespace_type = old_desc->namespace_type;
+    new_desc->netlink_socket = old_desc->netlink_socket;
 
     m_descriptors[assigned_fd] = std::move(new_desc);
     return assigned_fd;

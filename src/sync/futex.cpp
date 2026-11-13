@@ -400,10 +400,9 @@ int64_t FutexManager::UnlockPiImpl(uint32_t *uaddr)
     }
 
     auto &vec = buckets_[b_idx].waiters;
-    auto it = std::find_if(vec.begin(), vec.end(),
-                           [uaddr](const std::shared_ptr<FutexWaiter> &w) {
-                               return w->uaddr == uaddr && w->is_pi;
-                           });
+    auto it = std::find_if(vec.begin(), vec.end(), [uaddr](const std::shared_ptr<FutexWaiter> &w) {
+        return w->uaddr == uaddr && w->is_pi;
+    });
 
     if (it != vec.end()) {
         auto next_waiter = *it;

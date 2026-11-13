@@ -304,7 +304,8 @@ TEST_F(SyscallCoverageTest, SetpriorityReturnsZero)
 TEST_F(SyscallCoverageTest, SchedSetparamReturnZeroAndNullFaults)
 {
     LinuxSchedParam param{.sched_priority = 50};
-    EXPECT_EQ(SyscallDispatcher::Dispatch(143, 0, reinterpret_cast<uint64_t>(&param), 0, 0, 0, 0), 0);
+    EXPECT_EQ(SyscallDispatcher::Dispatch(143, 0, reinterpret_cast<uint64_t>(&param), 0, 0, 0, 0),
+              0);
     EXPECT_EQ(SyscallDispatcher::Dispatch(143, 0, 0, 0, 0, 0, 0), LINUX_EFAULT);
 }
 
@@ -329,7 +330,8 @@ TEST_F(SyscallCoverageTest, PrctlChildSubreaper)
     EXPECT_EQ(SyscallDispatcher::Dispatch(157, LINUX_PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0, 0), 0);
     int val = -1;
     EXPECT_EQ(SyscallDispatcher::Dispatch(157, LINUX_PR_GET_CHILD_SUBREAPER,
-                                          reinterpret_cast<uint64_t>(&val), 0, 0, 0, 0), 0);
+                                          reinterpret_cast<uint64_t>(&val), 0, 0, 0, 0),
+              0);
     EXPECT_EQ(val, 0);
 }
 
@@ -338,6 +340,7 @@ TEST_F(SyscallCoverageTest, PrctlPdeathsig)
     EXPECT_EQ(SyscallDispatcher::Dispatch(157, LINUX_PR_SET_PDEATHSIG, 15, 0, 0, 0, 0), 0);
     int sig = -1;
     EXPECT_EQ(SyscallDispatcher::Dispatch(157, LINUX_PR_GET_PDEATHSIG,
-                                          reinterpret_cast<uint64_t>(&sig), 0, 0, 0, 0), 0);
+                                          reinterpret_cast<uint64_t>(&sig), 0, 0, 0, 0),
+              0);
     EXPECT_EQ(sig, 0);
 }

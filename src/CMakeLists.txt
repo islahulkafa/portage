@@ -11,12 +11,15 @@ add_library(portage_core STATIC
     syscall/syscall_dispatcher.cpp
     fs/vfs.cpp
     fs/fd_table.cpp
+    fs/inotify_state.cpp
     sync/futex.cpp
     signal/signal_manager.cpp
     thread/thread_manager.cpp
     fs/proc_fs.cpp
     process/process_manager.cpp
+    process/namespace_manager.cpp
     net/socket_manager.cpp
+    net/netlink_socket.cpp
     poll/epoll_manager.cpp
     binder/binder_driver.cpp
     binder/binder_status.cpp
@@ -52,8 +55,12 @@ add_library(portage_core STATIC
     package/resource_table.cpp
     package/package_manager.cpp
     package/asset_manager.cpp
+    package/dex_file.cpp
+    package/dex_vm.cpp
     package/jni_env.cpp
+    package/content_provider.cpp
     package/native_activity.cpp
+    package/java_activity.cpp
     ndk/looper.cpp
     ndk/input_queue.cpp
     ndk/configuration.cpp
@@ -96,6 +103,8 @@ target_link_libraries(portage_core
     PUBLIC
         synchronization
         ws2_32
+        iphlpapi
+        psapi
         ole32
         locationapi
         user32

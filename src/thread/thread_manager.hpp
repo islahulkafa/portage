@@ -12,6 +12,12 @@
 #include <unordered_map>
 #include <vector>
 
+namespace portage::process {
+class PidNamespace;
+class MountNamespace;
+class UtsNamespace;
+} // namespace portage::process
+
 namespace portage::thread {
 
 struct alignas(64) BionicTcb {
@@ -57,6 +63,13 @@ struct GuestThread {
     std::string name{"portage"};
     bool is_exited{false};
     int exit_code{0};
+    int tgid{0};
+    int ppid{1};
+    std::shared_ptr<process::PidNamespace> pid_ns{nullptr};
+    std::shared_ptr<process::PidNamespace> next_child_pid_ns{nullptr};
+    std::shared_ptr<process::MountNamespace> mnt_ns{nullptr};
+    std::shared_ptr<process::UtsNamespace> uts_ns{nullptr};
+    uint64_t affinity_mask{0};
 };
 
 class ThreadManager {

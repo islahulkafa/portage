@@ -493,8 +493,7 @@ ANativeActivity_onCreate(struct ANativeActivity *activity, void *savedState, siz
     // Sensor direct channel over AHardwareBuffer across SysV ABI
     struct ASensorManager *smgr = ASensorManager_getInstance();
     const struct ASensor *accel = ASensorManager_getDefaultSensor(smgr, 1 /* ACCELEROMETER */);
-    if (!smgr || !accel ||
-        !ASensor_isDirectChannelTypeSupported(accel, 2 /* HARDWARE_BUFFER */) ||
+    if (!smgr || !accel || !ASensor_isDirectChannelTypeSupported(accel, 2 /* HARDWARE_BUFFER */) ||
         ASensor_getHighestDirectReportRateLevel(accel) < 1) {
         Fail("Sensor direct channel capability check failed");
     }
@@ -502,7 +501,7 @@ ANativeActivity_onCreate(struct ANativeActivity *activity, void *savedState, siz
     hb_desc.width = 4160;
     hb_desc.height = 1;
     hb_desc.layers = 1;
-    hb_desc.format = 0x21; // AHARDWAREBUFFER_FORMAT_BLOB
+    hb_desc.format = 0x21;               // AHARDWAREBUFFER_FORMAT_BLOB
     hb_desc.usage = (1ULL << 23) | 3ULL; // SENSOR_DIRECT_DATA | CPU_READ_OFTEN
     struct AHardwareBuffer *hb = (struct AHardwareBuffer *)0;
     if (AHardwareBuffer_allocate(&hb_desc, &hb) != 0 || !hb) {

@@ -1,7 +1,7 @@
 # Architecture overview
 
-Portage runs unmodified Android `x86_64` Bionic binaries and native-activity APKs directly in a native Windows 11 user-mode process.
-This document explains direct CPU execution, dynamic linking, syscall translation, and Win32 subsystem bridging.
+Portage runs unmodified Android `x86_64` Bionic binaries, native-activity APKs, and Dalvik `.dex` / hybrid Java-native APKs directly in a native Windows 11 user-mode process.
+This document explains direct CPU execution, Dalvik bytecode interpretation, dynamic linking, syscall translation, and Win32 subsystem bridging.
 
 ## Runtime execution model
 
@@ -11,21 +11,22 @@ Unlike full-system Android emulators that boot a Linux kernel inside a hyperviso
 flowchart LR
     subgraph Ingress ["APK & ELF Bootstrap"]
         direction TB
-        APK["APK / Manifest / Resources"] --> PM["PackageManager & JNIEnv"]
+        APK["APK / DEX / Manifest / Resources"] --> PM["PackageManager, DexVm & JavaActivityRunner"]
         ELF["ELF64 File or Memory"] --> Loader["ElfLoader & LinkMap"]
     end
 
-    subgraph Execution ["Native Guest Execution"]
+    subgraph Execution ["Native & Dalvik Guest Execution"]
         direction TB
         Loader --> Guest["Host x86_64 CPU (-mfsgsbase)"]
-        Guest --> PLT["Lazy PLT / TLSDESC Thunks"]
+        PM --> Guest
+        Guest --> PLT["Lazy PLT / TLSDESC / IFUNC Thunks"]
         Guest --> Rewrite["Syscall Rewriter & Dispatcher"]
     end
 
     subgraph Bridges ["Windows 11 Bridges"]
         direction TB
-        Rewrite --> POSIX["VFS, epoll, Sockets & Futex"]
-        PLT --> NDK["SysV NDK Thunks (NdkSymbolRegistry)"]
+        Rewrite --> POSIX["VFS, inotify, epoll, Netlink, Sockets & Futex"]
+        PLT --> NDK["SysV NDK Thunks & Bidirectional JNIEnv"]
         NDK --> GPU["WGL (GLES 3.2) & Vulkan 1.3 ICD"]
         NDK --> Audio["WASAPI Audio & Media Foundation"]
     end
@@ -33,7 +34,7 @@ flowchart LR
 
 ## Dynamic linking, TLSDESC, and lazy PLT
 
-[`ElfLoader`](../src/elf/elf_loader.hpp) parses ELF64 program headers (`PT_LOAD`, `PT_DYNAMIC`, `PT_TLS`, `PT_GNU_RELRO`), maps memory segments with page-aligned Win32 permissions, applies `DT_GNU_HASH` / `DT_HASH` symbol lookups, and registers modules in [`LinkMap`](../src/elf/link_map.hpp).
+[`ElfLoader`](../src/elf/elf_loader.hpp) parses ELF64 program headers (`PT_LOAD`, `PT_DYNAMIC`, `PT_TLS`, `PT_GNU_RELRO`), maps memory segments with page-aligned Win32 permissions, applies `DT_GNU_HASH` / `DT_HASH` symbol lookups with ELF symbol versioning (`DT_VERNEED` / `DT_VERSYM`) and `R_X86_64_IRELATIVE` IFUNC resolution, and registers modules in [`LinkMap`](../src/elf/link_map.hpp).
 
 ```mermaid
 sequenceDiagram
@@ -71,7 +72,7 @@ Because Windows x64 reserves `%gs` for the Win32 Thread Environment Block (TEB),
 
 Linux `x86_64` `syscall` instructions are rewritten by [`SyscallRewriter`](../src/rewrite/syscall_rewriter.hpp) or routed through [`SyscallDispatcher`](../src/syscall/syscall_dispatcher.hpp):
 
-- **Filesystem & Process Inspection**: [`Vfs`](../src/fs/vfs.hpp) maps guest paths onto configurable host rootfs directories and mount points, synthesizing `/proc` (`maps`, `stat`, `comm`, `auxv`, `fd`, `task`), `/sys`, `/dev`, and `/dev/__properties__`.
+- **Filesystem, Networking & Process Inspection**: [`Vfs`](../src/fs/vfs.hpp) maps guest paths onto configurable host rootfs directories and mount points, synthesizing `/proc` (`maps`, `self/{smaps,smaps_rollup,status}`, `stat`, `comm`, `auxv`, `fd`, `task`), `/sys` (cgroups v2, CPU topology), `/dev`, `/dev/__properties__`, `inotify` watches, and Netlink route sockets (`AF_NETLINK`, `NETLINK_ROUTE`).
 - **Unified `SyncFence` Polling**: Both Vulkan external sync FDs (`VK_KHR_external_fence_fd`, `VK_KHR_external_semaphore_fd`) and EGL native fence syncs (`EGL_ANDROID_native_fence_sync`) wrap `SyncFenceState` in [`FileDescriptorTable`](../src/fs/fd_table.hpp), allowing guest `epoll`, `poll`, and `select` loops to wait directly on GPU completion events.
 - **Graphics Presentation**: [`WglBridge`](../src/gles/wgl_bridge.hpp) and [`VulkanBridge`](../src/vulkan/vulkan_bridge.hpp) pass OpenGL ES 2.0–3.2 and Vulkan 1.0–1.3 calls directly to host ICDs, translating `AHardwareBuffer` imports (`VkImportAndroidHardwareBufferInfoANDROID` and `glEGLImageTargetTexture2DOES`) and presenting frames to Win32 `HWND` surfaces managed by [`WindowManager`](../src/wsi/window_manager.hpp).
 

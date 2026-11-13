@@ -1,6 +1,9 @@
 #include "fs/vfs.hpp"
 #include "fs/proc_fs.hpp"
+#include "package/content_provider.hpp"
 #include "package/package_manager.hpp"
+#include "process/namespace_manager.hpp"
+#include "thread/thread_manager.hpp"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -12,6 +15,19 @@
 #include <vector>
 
 namespace portage::fs {
+
+namespace {
+
+std::shared_ptr<process::MountNamespace> ActivePrivateMountNamespace() noexcept
+{
+    auto thread = thread::ThreadManager::Instance().GetCurrentGuestThread();
+    if (thread && thread->mnt_ns && !thread->mnt_ns->IsRoot()) {
+        return thread->mnt_ns;
+    }
+    return nullptr;
+}
+
+} // namespace
 
 Vfs::Vfs(std::filesystem::path rootfs) : m_rootfs(std::move(rootfs)) {}
 
@@ -103,6 +119,9 @@ int Vfs::ChDir(std::string_view path)
 
 bool Vfs::AddMount(std::string_view guest_path, const std::filesystem::path &host_path)
 {
+    if (auto ns = ActivePrivateMountNamespace()) {
+        return ns->AddMount(guest_path, host_path);
+    }
     if (guest_path.empty() || host_path.empty()) {
         return false;
     }
@@ -120,6 +139,9 @@ bool Vfs::AddMount(std::string_view guest_path, const std::filesystem::path &hos
 
 bool Vfs::RemoveMount(std::string_view guest_path)
 {
+    if (auto ns = ActivePrivateMountNamespace()) {
+        return ns->RemoveMount(guest_path);
+    }
     if (guest_path.empty()) {
         return false;
     }
@@ -136,6 +158,9 @@ bool Vfs::RemoveMount(std::string_view guest_path)
 
 std::optional<std::filesystem::path> Vfs::GetMountTarget(std::string_view guest_path) const
 {
+    if (auto ns = ActivePrivateMountNamespace()) {
+        return ns->GetMountTarget(guest_path);
+    }
     std::string norm = NormalizePath(guest_path);
     std::lock_guard<std::mutex> lock(m_mount_mutex);
     for (const auto &m : m_mounts) {
@@ -144,6 +169,15 @@ std::optional<std::filesystem::path> Vfs::GetMountTarget(std::string_view guest_
         }
     }
     return std::nullopt;
+}
+
+std::vector<Vfs::MountPoint> Vfs::GetMounts() const
+{
+    if (auto ns = ActivePrivateMountNamespace()) {
+        return ns->GetMounts();
+    }
+    std::lock_guard<std::mutex> lock(m_mount_mutex);
+    return m_mounts;
 }
 
 void Vfs::ClearMounts()
@@ -155,7 +189,7 @@ void Vfs::ClearMounts()
 std::string Vfs::CombineAtPath(int dirfd, std::string_view guest_path,
                                std::string_view dirfd_path) const
 {
-    if (guest_path.starts_with('/')) {
+    if (guest_path.starts_with('/') || guest_path.starts_with("content://")) {
         return std::string(guest_path);
     }
     std::string base = (dirfd == -100 || dirfd_path.empty()) ? m_cwd : std::string(dirfd_path);
@@ -194,9 +228,10 @@ bool Vfs::CreateSymlink(std::string_view target, std::string_view linkpath, int 
         std::string target_combined =
             target.starts_with('/')
                 ? std::string(target)
-                : NormalizePath(
-                      (normalized.rfind('/') == 0 ? "/" : normalized.substr(0, normalized.rfind('/'))) +
-                      "/" + std::string(target));
+                : NormalizePath((normalized.rfind('/') == 0
+                                     ? "/"
+                                     : normalized.substr(0, normalized.rfind('/'))) +
+                                "/" + std::string(target));
         ResolvedPath target_resolved = Resolve(target_combined);
 
         DWORD symlink_flags = SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
@@ -319,6 +354,18 @@ ResolvedPath Vfs::Resolve(std::string_view guest_path, bool follow_symlinks) con
 {
     if (guest_path.empty()) {
         return {DeviceType::None, {}};
+    }
+
+    if (guest_path.starts_with("content://")) {
+        auto host_opt = package::ContentProviderManager::Instance().ResolveUri(guest_path);
+        if (host_opt.has_value()) {
+            std::error_code ec;
+            if (std::filesystem::is_directory(*host_opt, ec)) {
+                return {DeviceType::Directory, *host_opt, 0};
+            }
+            return {DeviceType::Regular, *host_opt, 0};
+        }
+        return {DeviceType::None, {}, -2};
     }
 
     std::string normalized = NormalizePath(guest_path);
@@ -507,8 +554,8 @@ ResolvedPath Vfs::ResolveNoSymlink(std::string_view guest_path) const
     }
 
     {
-        std::lock_guard<std::mutex> lock(m_mount_mutex);
-        for (const auto &m : m_mounts) {
+        auto active_mounts = GetMounts();
+        for (const auto &m : active_mounts) {
             if (normalized == m.guest_path) {
                 if (std::filesystem::exists(m.host_path)) {
                     if (std::filesystem::is_directory(m.host_path)) {
@@ -554,13 +601,41 @@ ResolvedPath Vfs::ResolveNoSymlink(std::string_view guest_path) const
         if (canon == "/proc/self/exe") {
             return {DeviceType::Regular, m_executable_path};
         }
+        auto is_cgroup_dir = [](const std::string &p) {
+            if (p == "/sys/fs" || p == "/sys/fs/cgroup") {
+                return true;
+            }
+            if (!p.starts_with("/sys/fs/cgroup/")) {
+                return false;
+            }
+            static constexpr const char *slices[] = {
+                "/sys/fs/cgroup/top-app",
+                "/sys/fs/cgroup/foreground",
+                "/sys/fs/cgroup/background",
+                "/sys/fs/cgroup/system",
+                "/sys/fs/cgroup/nnapi-hal",
+                "/sys/fs/cgroup/camera-daemon",
+                "/sys/fs/cgroup/uid_0",
+                "/sys/fs/cgroup/uid_1000",
+                "/sys/fs/cgroup/uid_1000/top-app",
+            };
+            for (const char *s : slices) {
+                if (p == s) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
         if (canon == "/proc" || canon == "/proc/self" || canon == "/proc/self/fd" ||
-            canon == "/proc/self/task" || canon == "/proc/sys" || canon == "/proc/sys/kernel" ||
-            canon == "/proc/sys/kernel/random" || canon == "/sys" || canon == "/sys/devices" ||
-            canon == "/sys/devices/system" || canon == "/sys/devices/system/cpu" ||
+            canon == "/proc/self/ns" || canon == "/proc/self/task" || canon == "/proc/sys" ||
+            canon == "/proc/sys/kernel" || canon == "/proc/sys/kernel/random" || canon == "/sys" ||
+            canon == "/sys/devices" || canon == "/sys/devices/system" ||
+            canon == "/sys/devices/system/cpu" || is_cgroup_dir(canon) ||
             (canon.starts_with("/proc/self/task/") && canon.find('/', 16) == std::string::npos) ||
             (canon.starts_with("/sys/devices/system/cpu/cpu") &&
-             canon.find('/', 24) == std::string::npos)) {
+             (canon.find('/', 24) == std::string::npos || canon.ends_with("/topology") ||
+              canon.ends_with("/cpufreq")))) {
             return {DeviceType::Directory, canon};
         }
         return {DeviceType::SyntheticProc, canon};

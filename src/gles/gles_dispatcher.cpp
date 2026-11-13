@@ -25,8 +25,7 @@ static std::string SanitizeGlesShaderSource(std::string_view src)
         if (eol == std::string::npos)
             eol = out.size();
         std::string line = out.substr(ver_pos, eol - ver_pos);
-        if (line.find("300 es") != std::string::npos ||
-            line.find("310 es") != std::string::npos ||
+        if (line.find("300 es") != std::string::npos || line.find("310 es") != std::string::npos ||
             line.find("320 es") != std::string::npos) {
             if (!tbl.has_es3_compat) {
                 out.replace(ver_pos, eol - ver_pos, "#version 330 compatibility");
@@ -52,8 +51,7 @@ static std::string SanitizeGlesShaderSource(std::string_view src)
     while ((pos = out.find("precision", pos)) != std::string::npos) {
         bool before_ok =
             (pos == 0 || isspace(static_cast<unsigned char>(out[pos - 1])) || out[pos - 1] == ';');
-        bool after_ok =
-            (pos + 9 < out.size() && isspace(static_cast<unsigned char>(out[pos + 9])));
+        bool after_ok = (pos + 9 < out.size() && isspace(static_cast<unsigned char>(out[pos + 9])));
         if (before_ok && after_ok) {
             size_t semi = out.find(';', pos);
             if (semi != std::string::npos) {
@@ -1464,8 +1462,8 @@ __attribute__((sysv_abi)) void glRenderbufferStorage(GLenum target, GLenum inter
 }
 
 __attribute__((sysv_abi)) void glRenderbufferStorageMultisample(GLenum target, GLsizei samples,
-                                                              GLenum internalformat, GLsizei width,
-                                                              GLsizei height)
+                                                                GLenum internalformat,
+                                                                GLsizei width, GLsizei height)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glRenderbufferStorageMultisample)
@@ -1473,8 +1471,8 @@ __attribute__((sysv_abi)) void glRenderbufferStorageMultisample(GLenum target, G
 }
 
 __attribute__((sysv_abi)) void glFramebufferRenderbuffer(GLenum target, GLenum attachment,
-                                                        GLenum renderbuffertarget,
-                                                        GLuint renderbuffer)
+                                                         GLenum renderbuffertarget,
+                                                         GLuint renderbuffer)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glFramebufferRenderbuffer)
@@ -1584,8 +1582,7 @@ __attribute__((sysv_abi)) void glTexParameterf(GLenum target, GLenum pname, GLfl
         tbl.glTexParameterf(target, pname, param);
 }
 
-__attribute__((sysv_abi)) void glTexParameterfv(GLenum target, GLenum pname,
-                                                const GLfloat *params)
+__attribute__((sysv_abi)) void glTexParameterfv(GLenum target, GLenum pname, const GLfloat *params)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glTexParameterfv)
@@ -1781,8 +1778,8 @@ __attribute__((sysv_abi)) void glBindAttribLocation(GLuint program, GLuint index
 }
 
 __attribute__((sysv_abi)) void glGetActiveUniform(GLuint program, GLuint index, GLsizei bufSize,
-                                                 GLsizei *length, GLint *size, GLenum *type,
-                                                 GLchar *name)
+                                                  GLsizei *length, GLint *size, GLenum *type,
+                                                  GLchar *name)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glGetActiveUniform)
@@ -1790,8 +1787,8 @@ __attribute__((sysv_abi)) void glGetActiveUniform(GLuint program, GLuint index, 
 }
 
 __attribute__((sysv_abi)) void glGetActiveAttrib(GLuint program, GLuint index, GLsizei bufSize,
-                                                GLsizei *length, GLint *size, GLenum *type,
-                                                GLchar *name)
+                                                 GLsizei *length, GLint *size, GLenum *type,
+                                                 GLchar *name)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glGetActiveAttrib)
@@ -1870,15 +1867,14 @@ __attribute__((sysv_abi)) GLboolean glIsSampler(GLuint sampler)
 
 // Clear Buffers (GLES 3.0)
 __attribute__((sysv_abi)) void glClearBufferfv(GLenum buffer, GLint drawbuffer,
-                                              const GLfloat *value)
+                                               const GLfloat *value)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glClearBufferfv)
         tbl.glClearBufferfv(buffer, drawbuffer, value);
 }
 
-__attribute__((sysv_abi)) void glClearBufferiv(GLenum buffer, GLint drawbuffer,
-                                              const GLint *value)
+__attribute__((sysv_abi)) void glClearBufferiv(GLenum buffer, GLint drawbuffer, const GLint *value)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glClearBufferiv)
@@ -1886,7 +1882,7 @@ __attribute__((sysv_abi)) void glClearBufferiv(GLenum buffer, GLint drawbuffer,
 }
 
 __attribute__((sysv_abi)) void glClearBufferuiv(GLenum buffer, GLint drawbuffer,
-                                               const GLuint *value)
+                                                const GLuint *value)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glClearBufferuiv)
@@ -1894,7 +1890,7 @@ __attribute__((sysv_abi)) void glClearBufferuiv(GLenum buffer, GLint drawbuffer,
 }
 
 __attribute__((sysv_abi)) void glClearBufferfi(GLenum buffer, GLint drawbuffer, GLfloat depth,
-                                              GLint stencil)
+                                               GLint stencil)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glClearBufferfi)
@@ -2036,9 +2032,8 @@ __attribute__((sysv_abi)) void glGetTexParameterfv(GLenum target, GLenum pname, 
         tbl.glGetTexParameterfv(target, pname, params);
 }
 
-__attribute__((sysv_abi)) void glGetFramebufferAttachmentParameteriv(GLenum target,
-                                                                     GLenum attachment,
-                                                                     GLenum pname, GLint *params)
+__attribute__((sysv_abi)) void
+glGetFramebufferAttachmentParameteriv(GLenum target, GLenum attachment, GLenum pname, GLint *params)
 {
     const auto &tbl = portage::gles::WglBridge::Instance().GetDispatchTable();
     if (tbl.glGetFramebufferAttachmentParameteriv)

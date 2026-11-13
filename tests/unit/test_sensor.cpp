@@ -284,10 +284,8 @@ TEST_F(SensorTest, DirectChannelCapabilityQueries)
     ASSERT_NE(mgr, nullptr);
 
     const int supported_types[] = {
-        ASENSOR_TYPE_ACCELEROMETER,
-        ASENSOR_TYPE_GYROSCOPE,
-        ASENSOR_TYPE_MAGNETIC_FIELD,
-        ASENSOR_TYPE_LINEAR_ACCELERATION,
+        ASENSOR_TYPE_ACCELEROMETER,        ASENSOR_TYPE_GYROSCOPE,
+        ASENSOR_TYPE_MAGNETIC_FIELD,       ASENSOR_TYPE_LINEAR_ACCELERATION,
         ASENSOR_TYPE_GAME_ROTATION_VECTOR,
     };
 
@@ -339,8 +337,8 @@ TEST_F(SensorTest, DirectChannelSharedMemoryLifecycle)
     int channel_id = ASensorManager_createSharedMemoryDirectChannel(mgr, shm_fd, kBufferSize);
     ASSERT_GT(channel_id, 0);
 
-    int token = ASensorManager_configureDirectReport(mgr, accel, channel_id,
-                                                     ASENSOR_DIRECT_RATE_FAST);
+    int token =
+        ASensorManager_configureDirectReport(mgr, accel, channel_id, ASENSOR_DIRECT_RATE_FAST);
     ASSERT_GT(token, 0);
 
     auto *ring = reinterpret_cast<const ASensorEvent *>(guest_view);
@@ -387,9 +385,9 @@ TEST_F(SensorTest, DirectChannelHardwareBufferLifecycleAndWrapAround)
     ASSERT_NE(ahb, nullptr);
 
     void *locked_ptr = nullptr;
-    ASSERT_EQ(AHardwareBuffer_lock(ahb, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, nullptr,
-                                   &locked_ptr),
-              0);
+    ASSERT_EQ(
+        AHardwareBuffer_lock(ahb, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, nullptr, &locked_ptr),
+        0);
     ASSERT_NE(locked_ptr, nullptr);
 
     auto *mgr = ASensorManager_getInstance();
@@ -401,8 +399,8 @@ TEST_F(SensorTest, DirectChannelHardwareBufferLifecycleAndWrapAround)
     int channel_id = ASensorManager_createHardwareBufferDirectChannel(mgr, ahb, kBufferSize);
     ASSERT_GT(channel_id, 0);
 
-    int token = ASensorManager_configureDirectReport(mgr, gyro, channel_id,
-                                                     ASENSOR_DIRECT_RATE_VERY_FAST);
+    int token =
+        ASensorManager_configureDirectReport(mgr, gyro, channel_id, ASENSOR_DIRECT_RATE_VERY_FAST);
     ASSERT_GT(token, 0);
 
     auto *ring = reinterpret_cast<const ASensorEvent *>(locked_ptr);
@@ -443,9 +441,9 @@ TEST_F(SensorTest, DirectChannelMultipleSensorsAndRates)
     ASSERT_EQ(AHardwareBuffer_allocate(&desc, &ahb), 0);
 
     void *locked_ptr = nullptr;
-    ASSERT_EQ(AHardwareBuffer_lock(ahb, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, nullptr,
-                                   &locked_ptr),
-              0);
+    ASSERT_EQ(
+        AHardwareBuffer_lock(ahb, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, nullptr, &locked_ptr),
+        0);
 
     auto *mgr = ASensorManager_getInstance();
     const auto *accel = ASensorManager_getDefaultSensor(mgr, ASENSOR_TYPE_ACCELEROMETER);

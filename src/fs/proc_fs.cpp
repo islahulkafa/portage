@@ -2,6 +2,7 @@
 #include "elf/link_map.hpp"
 #include "fs/fd_table.hpp"
 #include "mem/address_space.hpp"
+#include "process/namespace_manager.hpp"
 #include "thread/thread_manager.hpp"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -9,11 +10,13 @@
 #endif
 #include <intrin.h>
 #include <windows.h>
+#include <psapi.h>
 
 #include <algorithm>
 #include <cctype>
 #include <iomanip>
 #include <sstream>
+#include <unordered_map>
 
 namespace portage::fs {
 
@@ -197,18 +200,176 @@ std::string ProcFs::GenerateMaps(mem::AddressSpace *as)
     return ss.str();
 }
 
+std::string ProcFs::GenerateSmaps(mem::AddressSpace *as, bool rollup_only)
+{
+    std::ostringstream ss;
+    MEMORY_BASIC_INFORMATION mbi{};
+    uintptr_t addr = 0x10000;
+
+    size_t total_rss_kb = 0;
+    size_t total_pss_kb = 0;
+    size_t total_priv_clean_kb = 0;
+    size_t total_priv_dirty_kb = 0;
+    size_t total_anon_kb = 0;
+
+    while (addr < 0x7FFFFFFE0000ULL) {
+        if (VirtualQuery(reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi)) == 0) {
+            break;
+        }
+
+        if (mbi.State == MEM_COMMIT) {
+            uintptr_t start = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+            uintptr_t end = start + mbi.RegionSize;
+            size_t size_kb = mbi.RegionSize / 1024;
+            if (size_kb == 0) {
+                size_kb = 4;
+            }
+
+            char r =
+                (mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ |
+                                PAGE_EXECUTE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY))
+                    ? 'r'
+                    : '-';
+            char w = (mbi.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE | PAGE_WRITECOPY |
+                                     PAGE_EXECUTE_WRITECOPY))
+                         ? 'w'
+                         : '-';
+            char x = (mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE |
+                                     PAGE_EXECUTE_WRITECOPY))
+                         ? 'x'
+                         : '-';
+            char p = (mbi.Type == MEM_MAPPED) ? 's' : 'p';
+
+            bool is_private_anon = (mbi.Type == MEM_PRIVATE);
+            size_t priv_dirty = (w == 'w' && is_private_anon) ? size_kb : 0;
+            size_t priv_clean = (priv_dirty == 0) ? size_kb : 0;
+            size_t anon_kb = is_private_anon ? size_kb : 0;
+
+            total_rss_kb += size_kb;
+            total_pss_kb += size_kb;
+            total_priv_clean_kb += priv_clean;
+            total_priv_dirty_kb += priv_dirty;
+            total_anon_kb += anon_kb;
+
+            if (!rollup_only) {
+                std::string map_name;
+                if (as && as->GetBrkStart() != 0 && start >= as->GetBrkStart() &&
+                    start < as->GetBrkCurrent()) {
+                    map_name = "[heap]";
+                }
+                if (map_name.empty()) {
+                    elf::Dl_info dli{};
+                    if (elf::LinkMap::Instance().DlAddr(reinterpret_cast<const void *>(start),
+                                                        &dli) != 0 &&
+                        dli.dli_fname) {
+                        map_name = dli.dli_fname;
+                    }
+                }
+
+                ss << std::hex << std::setw(8) << std::setfill('0') << start << "-" << std::setw(8)
+                   << std::setfill('0') << end << " " << r << w << x << p << " 00000000 00:00 0";
+                if (!map_name.empty()) {
+                    ss << "                          " << map_name;
+                }
+                ss << std::dec << "\n"
+                   << "Size:           " << std::setw(8) << std::setfill(' ') << size_kb << " kB\n"
+                   << "KernelPageSize:        4 kB\n"
+                   << "MMUPageSize:           4 kB\n"
+                   << "Rss:            " << std::setw(8) << size_kb << " kB\n"
+                   << "Pss:            " << std::setw(8) << size_kb << " kB\n"
+                   << "Shared_Clean:          0 kB\n"
+                   << "Shared_Dirty:          0 kB\n"
+                   << "Private_Clean:  " << std::setw(8) << priv_clean << " kB\n"
+                   << "Private_Dirty:  " << std::setw(8) << priv_dirty << " kB\n"
+                   << "Referenced:     " << std::setw(8) << size_kb << " kB\n"
+                   << "Anonymous:      " << std::setw(8) << anon_kb << " kB\n"
+                   << "LazyFree:              0 kB\n"
+                   << "AnonHugePages:         0 kB\n"
+                   << "ShmemPmdMapped:        0 kB\n"
+                   << "FilePmdMapped:         0 kB\n"
+                   << "Shared_Hugetlb:        0 kB\n"
+                   << "Private_Hugetlb:       0 kB\n"
+                   << "Swap:                  0 kB\n"
+                   << "SwapPss:               0 kB\n"
+                   << "Locked:                0 kB\n"
+                   << "THPeligible:           0\n"
+                   << "VmFlags: " << (r == 'r' ? "rd " : "") << (w == 'w' ? "wr " : "")
+                   << (x == 'x' ? "ex " : "") << "mr mw me" << (p == 's' ? " sh" : " ac") << "\n";
+            }
+        }
+
+        uintptr_t next = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+        if (next <= addr) {
+            break;
+        }
+        addr = next;
+    }
+
+    if (rollup_only) {
+        ss << "00000000-00000000 ---p 00000000 00:00 0                          [rollup]\n"
+           << "Rss:            " << std::setw(8) << std::setfill(' ') << total_rss_kb << " kB\n"
+           << "Pss:            " << std::setw(8) << total_pss_kb << " kB\n"
+           << "Shared_Clean:          0 kB\n"
+           << "Shared_Dirty:          0 kB\n"
+           << "Private_Clean:  " << std::setw(8) << total_priv_clean_kb << " kB\n"
+           << "Private_Dirty:  " << std::setw(8) << total_priv_dirty_kb << " kB\n"
+           << "Referenced:     " << std::setw(8) << total_rss_kb << " kB\n"
+           << "Anonymous:      " << std::setw(8) << total_anon_kb << " kB\n"
+           << "Swap:                  0 kB\n"
+           << "SwapPss:               0 kB\n"
+           << "Locked:                0 kB\n";
+    }
+
+    return ss.str();
+}
+
 std::string ProcFs::GenerateStatus()
 {
     DWORD pid = GetCurrentProcessId();
+    PROCESS_MEMORY_COUNTERS_EX pmc{};
+    pmc.cb = sizeof(pmc);
+    GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&pmc),
+                         sizeof(pmc));
+
+    size_t vm_rss_kb = pmc.WorkingSetSize > 0 ? (pmc.WorkingSetSize / 1024) : 65536;
+    size_t vm_hwm_kb = pmc.PeakWorkingSetSize > 0 ? (pmc.PeakWorkingSetSize / 1024) : vm_rss_kb;
+    size_t vm_size_kb =
+        pmc.PrivateUsage > pmc.WorkingSetSize ? (pmc.PrivateUsage / 1024) : (vm_rss_kb * 2);
+    size_t vm_peak_kb = pmc.PeakPagefileUsage > pmc.PeakWorkingSetSize
+                            ? (pmc.PeakPagefileUsage / 1024)
+                            : vm_size_kb;
+    size_t rss_anon_kb =
+        pmc.PrivateUsage > 0 ? std::min(vm_rss_kb, pmc.PrivateUsage / 1024) : (vm_rss_kb * 3 / 4);
+    size_t rss_file_kb = vm_rss_kb > rss_anon_kb ? (vm_rss_kb - rss_anon_kb) : 0;
+    size_t threads = std::max<size_t>(1, thread::ThreadManager::Instance().GetActiveTids().size());
+
     std::ostringstream ss;
     ss << "Name:\tportage\n"
+       << "Umask:\t0022\n"
        << "State:\tR (running)\n"
        << "Tgid:\t" << pid << "\n"
+       << "Ngid:\t0\n"
        << "Pid:\t" << pid << "\n"
        << "PPid:\t1\n"
-       << "Threads:\t1\n"
-       << "VmSize:\t  262144 kB\n"
-       << "VmRSS:\t   65536 kB\n";
+       << "TracerPid:\t0\n"
+       << "Uid:\t1000\t1000\t1000\t1000\n"
+       << "Gid:\t1000\t1000\t1000\t1000\n"
+       << "Threads:\t" << threads << "\n"
+       << "VmPeak:\t" << std::setw(8) << vm_peak_kb << " kB\n"
+       << "VmSize:\t" << std::setw(8) << vm_size_kb << " kB\n"
+       << "VmLck:\t       0 kB\n"
+       << "VmPin:\t       0 kB\n"
+       << "VmHWM:\t" << std::setw(8) << vm_hwm_kb << " kB\n"
+       << "VmRSS:\t" << std::setw(8) << vm_rss_kb << " kB\n"
+       << "RssAnon:\t" << std::setw(8) << rss_anon_kb << " kB\n"
+       << "RssFile:\t" << std::setw(8) << rss_file_kb << " kB\n"
+       << "RssShmem:\t       0 kB\n"
+       << "VmData:\t" << std::setw(8) << rss_anon_kb << " kB\n"
+       << "VmStk:\t    8192 kB\n"
+       << "VmExe:\t    4096 kB\n"
+       << "VmLib:\t   16384 kB\n"
+       << "VmPTE:\t     256 kB\n"
+       << "VmSwap:\t       0 kB\n";
     return ss.str();
 }
 
@@ -322,6 +483,271 @@ std::string ProcFs::GenerateCmdline(const std::vector<std::string> &cmdline)
     return res;
 }
 
+std::string ProcFs::GenerateCgroups()
+{
+    return "#subsys_name\thierarchy\tnum_cgroups\tenabled\n"
+           "cpuset\t0\t1\t1\n"
+           "cpu\t0\t1\t1\n"
+           "cpuacct\t0\t1\t1\n"
+           "memory\t0\t1\t1\n"
+           "devices\t0\t1\t1\n"
+           "freezer\t0\t1\t1\n"
+           "net_cls\t0\t1\t1\n"
+           "pids\t0\t1\t1\n";
+}
+
+std::string ProcFs::GenerateSelfCgroup() { return "0::/uid_1000/top-app\n"; }
+
+std::string ProcFs::GenerateCgroupFile(std::string_view path)
+{
+    size_t last_slash = path.rfind('/');
+    std::string_view leaf =
+        (last_slash != std::string_view::npos) ? path.substr(last_slash + 1) : path;
+
+    if (leaf == "cgroup.controllers" || leaf == "cgroup.subtree_control") {
+        return "cpu memory cpuset pids io\n";
+    }
+    if (leaf == "cgroup.procs") {
+        return std::to_string(GetCurrentProcessId()) + "\n";
+    }
+    if (leaf == "cgroup.threads") {
+        auto tids = thread::ThreadManager::Instance().GetActiveTids();
+        if (tids.empty()) {
+            return std::to_string(GetCurrentProcessId()) + "\n";
+        }
+        std::ostringstream ss;
+        for (int tid : tids) {
+            ss << tid << "\n";
+        }
+        return ss.str();
+    }
+    if (leaf == "cgroup.max.descendants" || leaf == "cgroup.max.depth" || leaf == "pids.max") {
+        return "max\n";
+    }
+    if (leaf == "pids.current") {
+        auto tids = thread::ThreadManager::Instance().GetActiveTids();
+        return std::to_string(std::max<size_t>(1, tids.size())) + "\n";
+    }
+    if (leaf == "cgroup.stat") {
+        return "nr_descendants 8\nnr_dying_descendants 0\n";
+    }
+    if (leaf == "memory.current" || leaf == "memory.max" || leaf == "memory.high" ||
+        leaf == "memory.stat") {
+        PROCESS_MEMORY_COUNTERS_EX pmc{};
+        pmc.cb = sizeof(pmc);
+        GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&pmc),
+                             sizeof(pmc));
+        uint64_t current_bytes =
+            pmc.WorkingSetSize > 0 ? pmc.WorkingSetSize : (64ULL * 1024 * 1024);
+
+        MEMORYSTATUSEX mem_status{};
+        mem_status.dwLength = sizeof(mem_status);
+        GlobalMemoryStatusEx(&mem_status);
+        uint64_t total_phys =
+            mem_status.ullTotalPhys > 0 ? mem_status.ullTotalPhys : (8ULL * 1024 * 1024 * 1024);
+
+        if (leaf == "memory.current") {
+            return std::to_string(current_bytes) + "\n";
+        }
+        if (leaf == "memory.max") {
+            return std::to_string(total_phys) + "\n";
+        }
+        if (leaf == "memory.high") {
+            return std::to_string((total_phys * 9) / 10) + "\n";
+        }
+
+        uint64_t anon = pmc.PrivateUsage > 0 ? pmc.PrivateUsage : (current_bytes * 3 / 4);
+        uint64_t file_bytes = current_bytes > anon ? (current_bytes - anon) : 0;
+        std::ostringstream ss;
+        ss << "anon " << anon << "\n"
+           << "file " << file_bytes << "\n"
+           << "kernel_stack 16384\n"
+           << "pagetables 65536\n"
+           << "shmem 0\n"
+           << "inactive_anon " << (anon / 2) << "\n"
+           << "active_anon " << (anon - anon / 2) << "\n";
+        return ss.str();
+    }
+    if (leaf == "memory.min" || leaf == "memory.low") {
+        return "0\n";
+    }
+    if (leaf == "memory.pressure" || leaf == "cpu.pressure" || leaf == "io.pressure") {
+        return "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"
+               "full avg10=0.00 avg60=0.00 avg300=0.00 total=0\n";
+    }
+    if (leaf == "memory.events") {
+        return "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\n";
+    }
+    if (leaf == "cpu.weight") {
+        return "100\n";
+    }
+    if (leaf == "cpu.max") {
+        return "max 100000\n";
+    }
+    if (leaf == "cpu.stat") {
+        FILETIME creation{}, exit{}, kernel{}, user{};
+        uint64_t user_usec = 100000;
+        uint64_t sys_usec = 50000;
+        if (GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user)) {
+            ULARGE_INTEGER k{}, u{};
+            k.LowPart = kernel.dwLowDateTime;
+            k.HighPart = kernel.dwHighDateTime;
+            u.LowPart = user.dwLowDateTime;
+            u.HighPart = user.dwHighDateTime;
+            sys_usec = k.QuadPart / 10;
+            user_usec = u.QuadPart / 10;
+        }
+        std::ostringstream ss;
+        ss << "usage_usec " << (user_usec + sys_usec) << "\n"
+           << "user_usec " << user_usec << "\n"
+           << "system_usec " << sys_usec << "\n"
+           << "nr_periods 0\n"
+           << "nr_throttled 0\n"
+           << "throttled_usec 0\n";
+        return ss.str();
+    }
+    if (leaf == "cpuset.cpus" || leaf == "cpuset.cpus.effective") {
+        return GenerateCpuList();
+    }
+    if (leaf == "cpuset.mems" || leaf == "cpuset.mems.effective") {
+        return "0\n";
+    }
+    return "";
+}
+
+namespace {
+
+struct CpuTopologyData {
+    DWORD logical_count{1};
+    DWORD freq_khz{2400000};
+    std::unordered_map<DWORD, DWORD> cpu_to_core;
+    std::unordered_map<DWORD, std::string> cpu_to_siblings;
+};
+
+CpuTopologyData QueryCpuTopology()
+{
+    CpuTopologyData data{};
+    SYSTEM_INFO si{};
+    GetSystemInfo(&si);
+    data.logical_count = si.dwNumberOfProcessors ? si.dwNumberOfProcessors : 1;
+
+    DWORD mhz = 0;
+    DWORD mhz_size = sizeof(mhz);
+    if (RegGetValueA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+                     "~MHz", RRF_RT_REG_DWORD, nullptr, &mhz, &mhz_size) == ERROR_SUCCESS &&
+        mhz > 0) {
+        data.freq_khz = mhz * 1000;
+    }
+
+    DWORD buf_len = 0;
+    GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &buf_len);
+    if (buf_len > 0) {
+        std::vector<uint8_t> buffer(buf_len);
+        auto *info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data());
+        if (GetLogicalProcessorInformationEx(RelationProcessorCore, info, &buf_len)) {
+            DWORD offset = 0;
+            DWORD core_id = 0;
+            while (offset < buf_len) {
+                auto *curr = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(
+                    buffer.data() + offset);
+                if (curr->Relationship == RelationProcessorCore && curr->Processor.GroupCount > 0) {
+                    KAFFINITY mask = curr->Processor.GroupMask[0].Mask;
+                    std::vector<DWORD> siblings;
+                    for (DWORD bit = 0; bit < 64; ++bit) {
+                        if (mask & (1ULL << bit)) {
+                            siblings.push_back(bit);
+                        }
+                    }
+                    std::string sib_str;
+                    for (size_t i = 0; i < siblings.size(); ++i) {
+                        if (i > 0) {
+                            sib_str.push_back(',');
+                        }
+                        sib_str += std::to_string(siblings[i]);
+                    }
+                    for (DWORD cpu_idx : siblings) {
+                        data.cpu_to_core[cpu_idx] = core_id;
+                        data.cpu_to_siblings[cpu_idx] = sib_str;
+                    }
+                    core_id++;
+                }
+                if (curr->Size == 0) {
+                    break;
+                }
+                offset += curr->Size;
+            }
+        }
+    }
+
+    for (DWORD i = 0; i < data.logical_count; ++i) {
+        if (!data.cpu_to_core.contains(i)) {
+            data.cpu_to_core[i] = i;
+        }
+        if (!data.cpu_to_siblings.contains(i)) {
+            data.cpu_to_siblings[i] = std::to_string(i);
+        }
+    }
+
+    return data;
+}
+
+} // namespace
+
+std::string ProcFs::GenerateCpuTopologyFile(std::string_view path)
+{
+    auto topo = QueryCpuTopology();
+    if (path == "/sys/devices/system/cpu/kernel_max") {
+        return std::to_string(topo.logical_count > 0 ? topo.logical_count - 1 : 0) + "\n";
+    }
+
+    constexpr std::string_view prefix = "/sys/devices/system/cpu/cpu";
+    if (!path.starts_with(prefix)) {
+        return "";
+    }
+    std::string_view rest = path.substr(prefix.size());
+    size_t slash = rest.find('/');
+    if (slash == std::string_view::npos) {
+        return "";
+    }
+    DWORD cpu_idx = 0;
+    try {
+        cpu_idx = static_cast<DWORD>(std::stoul(std::string(rest.substr(0, slash))));
+    } catch (...) {
+        return "";
+    }
+    std::string_view sub = rest.substr(slash + 1);
+
+    if (sub == "online") {
+        return "1\n";
+    }
+    if (sub == "topology/core_id") {
+        return std::to_string(topo.cpu_to_core.contains(cpu_idx) ? topo.cpu_to_core[cpu_idx]
+                                                                 : cpu_idx) +
+               "\n";
+    }
+    if (sub == "topology/physical_package_id") {
+        return "0\n";
+    }
+    if (sub == "topology/thread_siblings_list") {
+        return (topo.cpu_to_siblings.contains(cpu_idx) ? topo.cpu_to_siblings[cpu_idx]
+                                                       : std::to_string(cpu_idx)) +
+               "\n";
+    }
+    if (sub == "topology/core_siblings_list") {
+        return GenerateCpuList();
+    }
+    if (sub == "cpufreq/cpuinfo_max_freq" || sub == "cpufreq/scaling_cur_freq") {
+        return std::to_string(topo.freq_khz) + "\n";
+    }
+    if (sub == "cpufreq/cpuinfo_min_freq") {
+        return std::to_string(topo.freq_khz / 3) + "\n";
+    }
+    if (sub == "cpufreq/scaling_governor") {
+        return "performance\n";
+    }
+    return "";
+}
+
 std::string ProcFs::Generate(std::string_view proc_path, mem::AddressSpace *as,
                              const std::vector<std::string> &cmdline)
 {
@@ -333,11 +759,23 @@ std::string ProcFs::Generate(std::string_view proc_path, mem::AddressSpace *as,
     if (path == "/proc/meminfo") {
         return GenerateMemInfo();
     }
+    if (path == "/proc/cgroups") {
+        return GenerateCgroups();
+    }
     if (path == "/proc/version") {
         return GenerateVersion();
     }
     if (path == "/proc/self/maps") {
         return GenerateMaps(as);
+    }
+    if (path == "/proc/self/smaps") {
+        return GenerateSmaps(as, false);
+    }
+    if (path == "/proc/self/smaps_rollup") {
+        return GenerateSmaps(as, true);
+    }
+    if (path == "/proc/self/cgroup") {
+        return GenerateSelfCgroup();
     }
     if (path == "/proc/self/status") {
         return GenerateStatus();
@@ -357,6 +795,27 @@ std::string ProcFs::Generate(std::string_view proc_path, mem::AddressSpace *as,
     if (path == "/proc/self/cmdline") {
         return GenerateCmdline(cmdline);
     }
+    if (path == "/proc/self/ns/pid") {
+        auto t = thread::ThreadManager::Instance().GetCurrentGuestThread();
+        uint64_t id = (t && t->pid_ns)
+                          ? t->pid_ns->GetId()
+                          : process::NamespaceManager::Instance().GetRootPidNamespace()->GetId();
+        return "pid:[" + std::to_string(id) + "]";
+    }
+    if (path == "/proc/self/ns/mnt") {
+        auto t = thread::ThreadManager::Instance().GetCurrentGuestThread();
+        uint64_t id = (t && t->mnt_ns)
+                          ? t->mnt_ns->GetId()
+                          : process::NamespaceManager::Instance().GetRootMountNamespace()->GetId();
+        return "mnt:[" + std::to_string(id) + "]";
+    }
+    if (path == "/proc/self/ns/uts") {
+        auto t = thread::ThreadManager::Instance().GetCurrentGuestThread();
+        uint64_t id = (t && t->uts_ns)
+                          ? t->uts_ns->GetId()
+                          : process::NamespaceManager::Instance().GetRootUtsNamespace()->GetId();
+        return "uts:[" + std::to_string(id) + "]";
+    }
     if (path == "/proc/stat") {
         return GenerateProcStat();
     }
@@ -375,6 +834,13 @@ std::string ProcFs::Generate(std::string_view proc_path, mem::AddressSpace *as,
     }
     if (path.starts_with("/sys/devices/system/cpu/cpu") && path.ends_with("/online")) {
         return "1\n";
+    }
+    if (path == "/sys/devices/system/cpu/kernel_max" ||
+        path.starts_with("/sys/devices/system/cpu/cpu")) {
+        return GenerateCpuTopologyFile(path);
+    }
+    if (path.starts_with("/sys/fs/cgroup/")) {
+        return GenerateCgroupFile(path);
     }
     if (path.starts_with("/proc/self/task/")) {
         size_t last_slash = path.rfind('/');
@@ -415,6 +881,7 @@ std::vector<DirEntry> ProcFs::ListDir(std::string_view proc_path, FileDescriptor
         entries.push_back({14, LINUX_DT_REG, "uptime"});
         entries.push_back({15, LINUX_DT_DIR, "self"});
         entries.push_back({16, LINUX_DT_DIR, "sys"});
+        entries.push_back({17, LINUX_DT_REG, "cgroups"});
     } else if (path == "/proc/self") {
         entries.push_back({20, LINUX_DT_LNK, "exe"});
         entries.push_back({21, LINUX_DT_REG, "maps"});
@@ -426,6 +893,14 @@ std::vector<DirEntry> ProcFs::ListDir(std::string_view proc_path, FileDescriptor
         entries.push_back({27, LINUX_DT_REG, "cmdline"});
         entries.push_back({28, LINUX_DT_DIR, "fd"});
         entries.push_back({29, LINUX_DT_DIR, "task"});
+        entries.push_back({30, LINUX_DT_DIR, "ns"});
+        entries.push_back({31, LINUX_DT_REG, "smaps"});
+        entries.push_back({32, LINUX_DT_REG, "smaps_rollup"});
+        entries.push_back({33, LINUX_DT_REG, "cgroup"});
+    } else if (path == "/proc/self/ns") {
+        entries.push_back({31, LINUX_DT_LNK, "pid"});
+        entries.push_back({32, LINUX_DT_LNK, "mnt"});
+        entries.push_back({33, LINUX_DT_LNK, "uts"});
     } else if (path == "/proc/self/fd") {
         if (fd_table) {
             for (int fd : fd_table->GetOpenFds()) {
@@ -456,6 +931,49 @@ std::vector<DirEntry> ProcFs::ListDir(std::string_view proc_path, FileDescriptor
         entries.push_back({60, LINUX_DT_REG, "boot_id"});
     } else if (path == "/sys") {
         entries.push_back({70, LINUX_DT_DIR, "devices"});
+        entries.push_back({71, LINUX_DT_DIR, "fs"});
+    } else if (path == "/sys/fs") {
+        entries.push_back({72, LINUX_DT_DIR, "cgroup"});
+    } else if (path == "/sys/fs/cgroup") {
+        entries.push_back({110, LINUX_DT_REG, "cgroup.controllers"});
+        entries.push_back({111, LINUX_DT_REG, "cgroup.procs"});
+        entries.push_back({112, LINUX_DT_REG, "cgroup.threads"});
+        entries.push_back({113, LINUX_DT_REG, "cgroup.stat"});
+        entries.push_back({114, LINUX_DT_REG, "cpu.max"});
+        entries.push_back({115, LINUX_DT_REG, "cpu.stat"});
+        entries.push_back({116, LINUX_DT_REG, "cpu.pressure"});
+        entries.push_back({117, LINUX_DT_REG, "memory.current"});
+        entries.push_back({118, LINUX_DT_REG, "memory.max"});
+        entries.push_back({119, LINUX_DT_REG, "memory.high"});
+        entries.push_back({120, LINUX_DT_REG, "memory.stat"});
+        entries.push_back({121, LINUX_DT_REG, "memory.pressure"});
+        entries.push_back({122, LINUX_DT_REG, "cpuset.cpus"});
+        entries.push_back({123, LINUX_DT_REG, "cpuset.cpus.effective"});
+        entries.push_back({124, LINUX_DT_REG, "pids.current"});
+        entries.push_back({125, LINUX_DT_REG, "pids.max"});
+        entries.push_back({126, LINUX_DT_REG, "io.stat"});
+        entries.push_back({127, LINUX_DT_REG, "io.pressure"});
+        entries.push_back({128, LINUX_DT_DIR, "top-app"});
+        entries.push_back({129, LINUX_DT_DIR, "foreground"});
+        entries.push_back({130, LINUX_DT_DIR, "background"});
+        entries.push_back({131, LINUX_DT_DIR, "system"});
+        entries.push_back({132, LINUX_DT_DIR, "nnapi-hal"});
+        entries.push_back({133, LINUX_DT_DIR, "camera-daemon"});
+        entries.push_back({134, LINUX_DT_DIR, "uid_0"});
+        entries.push_back({135, LINUX_DT_DIR, "uid_1000"});
+    } else if (path.starts_with("/sys/fs/cgroup/")) {
+        entries.push_back({140, LINUX_DT_REG, "cgroup.procs"});
+        entries.push_back({141, LINUX_DT_REG, "cgroup.threads"});
+        entries.push_back({142, LINUX_DT_REG, "cgroup.controllers"});
+        entries.push_back({143, LINUX_DT_REG, "cpu.max"});
+        entries.push_back({144, LINUX_DT_REG, "cpu.stat"});
+        entries.push_back({145, LINUX_DT_REG, "memory.current"});
+        entries.push_back({146, LINUX_DT_REG, "memory.max"});
+        entries.push_back({147, LINUX_DT_REG, "cpuset.cpus"});
+        entries.push_back({148, LINUX_DT_REG, "cpuset.cpus.effective"});
+        if (path == "/sys/fs/cgroup/uid_1000") {
+            entries.push_back({149, LINUX_DT_DIR, "top-app"});
+        }
     } else if (path == "/sys/devices") {
         entries.push_back({80, LINUX_DT_DIR, "system"});
     } else if (path == "/sys/devices/system") {
@@ -464,6 +982,7 @@ std::vector<DirEntry> ProcFs::ListDir(std::string_view proc_path, FileDescriptor
         entries.push_back({91, LINUX_DT_REG, "online"});
         entries.push_back({92, LINUX_DT_REG, "possible"});
         entries.push_back({93, LINUX_DT_REG, "present"});
+        entries.push_back({94, LINUX_DT_REG, "kernel_max"});
         SYSTEM_INFO si{};
         GetSystemInfo(&si);
         DWORD count = si.dwNumberOfProcessors ? si.dwNumberOfProcessors : 1;
@@ -472,7 +991,21 @@ std::vector<DirEntry> ProcFs::ListDir(std::string_view proc_path, FileDescriptor
                 {static_cast<uint64_t>(500 + i), LINUX_DT_DIR, "cpu" + std::to_string(i)});
         }
     } else if (path.starts_with("/sys/devices/system/cpu/cpu")) {
-        entries.push_back({100, LINUX_DT_REG, "online"});
+        if (path.ends_with("/topology")) {
+            entries.push_back({103, LINUX_DT_REG, "core_id"});
+            entries.push_back({104, LINUX_DT_REG, "physical_package_id"});
+            entries.push_back({105, LINUX_DT_REG, "thread_siblings_list"});
+            entries.push_back({106, LINUX_DT_REG, "core_siblings_list"});
+        } else if (path.ends_with("/cpufreq")) {
+            entries.push_back({107, LINUX_DT_REG, "cpuinfo_max_freq"});
+            entries.push_back({108, LINUX_DT_REG, "cpuinfo_min_freq"});
+            entries.push_back({109, LINUX_DT_REG, "scaling_cur_freq"});
+            entries.push_back({110, LINUX_DT_REG, "scaling_governor"});
+        } else {
+            entries.push_back({100, LINUX_DT_REG, "online"});
+            entries.push_back({101, LINUX_DT_DIR, "topology"});
+            entries.push_back({102, LINUX_DT_DIR, "cpufreq"});
+        }
     }
     return entries;
 }

@@ -1,6 +1,7 @@
 #include "binder_parcel.hpp"
 #include "binder_ndk.hpp"
 #include "fs/fd_table.hpp"
+#include "package/jni_env.hpp"
 #include "syscall/syscall_dispatcher.hpp"
 
 #include <algorithm>
@@ -422,6 +423,28 @@ __attribute__((sysv_abi)) binder_status_t AParcel_readStrongBinder(const AParcel
         *binder = reinterpret_cast<AIBinder *>(val);
     }
     return s;
+}
+
+__attribute__((sysv_abi)) AParcel *AParcel_fromJavaParcel(portage::package::JNIEnv *env,
+                                                          void *javaParcel)
+{
+    if (!env || !javaParcel) {
+        return nullptr;
+    }
+    auto syn = portage::package::JniEnvironment::Instance().LookupObject(javaParcel);
+    if (!syn || !syn->native_ptr) {
+        return nullptr;
+    }
+    return static_cast<AParcel *>(syn->native_ptr);
+}
+
+__attribute__((sysv_abi)) void *AParcel_toJavaParcel(const AParcel *parcel,
+                                                     portage::package::JNIEnv *env)
+{
+    if (!env || !parcel) {
+        return nullptr;
+    }
+    return portage::package::JniEnvironment::Instance().CreateParcel(const_cast<AParcel *>(parcel));
 }
 
 } // extern "C"

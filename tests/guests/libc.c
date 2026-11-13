@@ -1472,3 +1472,85 @@ __attribute__((visibility("default"))) int sigsuspend(const void *mask)
     (void)mask;
     return -1;
 }
+__attribute__((visibility("default"))) int inotify_init(void) { return -1; }
+__attribute__((visibility("default"))) int inotify_init1(int flags)
+{
+    (void)flags;
+    return -1;
+}
+__attribute__((visibility("default"))) int inotify_add_watch(int fd, const char *pathname,
+                                                             unsigned int mask)
+{
+    (void)fd;
+    (void)pathname;
+    (void)mask;
+    return -1;
+}
+__attribute__((visibility("default"))) int inotify_rm_watch(int fd, int wd)
+{
+    (void)fd;
+    (void)wd;
+    return -1;
+}
+__attribute__((visibility("default"))) int unshare(int flags)
+{
+    (void)flags;
+    return -1;
+}
+__attribute__((visibility("default"))) int setns(int fd, int nstype)
+{
+    (void)fd;
+    (void)nstype;
+    return -1;
+}
+
+struct ifaddrs;
+struct if_nameindex;
+
+__attribute__((visibility("default"))) int getifaddrs(struct ifaddrs **ifap)
+{
+    (void)ifap;
+    return -1;
+}
+
+__attribute__((visibility("default"))) void freeifaddrs(struct ifaddrs *ifa) { (void)ifa; }
+
+__attribute__((visibility("default"))) unsigned int if_nametoindex(const char *ifname)
+{
+    (void)ifname;
+    return 0;
+}
+
+__attribute__((visibility("default"))) char *if_indextoname(unsigned int ifindex, char *ifname)
+{
+    (void)ifindex;
+    (void)ifname;
+    return (char *)0;
+}
+
+__attribute__((visibility("default"))) struct if_nameindex *if_nameindex(void)
+{
+    return (struct if_nameindex *)0;
+}
+
+__attribute__((visibility("default"))) void if_freenameindex(struct if_nameindex *ptr)
+{
+    (void)ptr;
+}
+
+__attribute__((visibility("default"))) int sched_setaffinity(int pid, size_t cpusetsize,
+                                                             const void *mask)
+{
+    (void)pid;
+    (void)cpusetsize;
+    (void)mask;
+    return -1;
+}
+
+__attribute__((visibility("default"))) int sched_getaffinity(int pid, size_t cpusetsize, void *mask)
+{
+    (void)pid;
+    (void)cpusetsize;
+    (void)mask;
+    return -1;
+}

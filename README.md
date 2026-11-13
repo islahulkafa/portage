@@ -14,7 +14,7 @@ Portage executes unmodified Android x86_64 Bionic ELF binaries and APK packages 
 
 - **Direct CPU Execution**: Guest 64-bit machine code runs natively in Windows user mode with fast thread-local storage via `rdfsbase` / `wrfsbase` instructions.
 - **Custom Dynamic Linker**: Loads ELF64 binaries and recursive `DT_NEEDED` graphs with GNU/SysV hashing, `R_X86_64_TLSDESC` (`gnu2`), lazy `DT_JMPREL` PLT trampolines, `android_dlopen_ext`, `dlinfo`, and `dlclose` segment unmapping.
-- **SysV to Win64 ABI Boundary**: Bridges Android Bionic `libc`/`libdl`, NDK entry points (`ALooper`, `ANativeActivity`, `AAssetManager`, `AHardwareBuffer`, `Binder`), and synthetic `JavaVM`/`JNIEnv` interfaces via explicit `__attribute__((sysv_abi))` thunks.
+- **SysV to Win64 ABI Boundary & Dalvik DEX Runtime**: Bridges Android Bionic `libc`/`libdl`, NDK entry points (`ALooper`, `ANativeActivity`, `ANativeWindow_fromSurface`, `AAssetManager`, `AHardwareBuffer`, `Binder`), and a register-based Dalvik `.dex` bytecode VM (`DexVm`, `JavaActivityRunner`, `System.loadLibrary`) with bidirectional `__attribute__((sysv_abi))` `JavaVM`/`JNIEnv` dispatch.
 - **Native GPU & Media Passthrough**: Translates OpenGL ES 2.0–3.2 (over WGL) and Vulkan 1.0–1.3 ICD calls with `SyncFence` file descriptors, alongside WASAPI AAudio/OpenSL ES and Media Foundation pipelines.
 
 ---
@@ -77,7 +77,7 @@ Expected output:
 <details>
 <summary><strong>Run CTest verification or set up an NDK rootfs</strong></summary>
 
-Run the full unit and integration suite (`367` tests):
+Run the full unit and integration suite (`555` tests — `518` unit, `37` integration):
 
 ```powershell
 ctest --test-dir build/debug --output-on-failure
@@ -95,14 +95,14 @@ For standalone binary execution, populate `rootfs/` with NDK libraries using [se
 flowchart LR
     subgraph Input ["Package & Binary Input"]
         direction TB
-        APK["APK Archive / Manifest / Resources"] --> Linker["ELF64 Linker & LinkMap"]
+        APK["APK / DEX / Manifest / Resources"] --> Linker["ELF64 Linker & LinkMap"]
         ELF["Standalone Bionic ELF64"] --> Linker
     end
 
     subgraph Runtime ["Direct Execution Core"]
         direction TB
         Linker --> CPU["Native x86_64 Execution (-mfsgsbase TLS)"]
-        CPU --> Thunks["SysV ABI Thunk & JNIEnv Bridge"]
+        CPU --> Thunks["SysV ABI Thunk, DexVm & JNIEnv Bridge"]
         CPU --> Rewrite["Syscall Interception & Dispatch"]
     end
 
@@ -125,7 +125,7 @@ portage/
 │   ├── arch/                # Guest CPU context, stack layout, and FS/GS state
 │   ├── elf/                 # ELF64 loader, TLSDESC, lazy PLT, and LinkMap runtime
 │   ├── gles/ & vulkan/      # Hardware-accelerated OpenGL ES and Vulkan bridges
-│   ├── ndk/ & package/      # NDK thunks, ALooper, APK parser, JNIEnv, NativeActivity
+│   ├── ndk/ & package/      # NDK thunks, ALooper, APK/DEX parser, DexVm, JavaActivityRunner, NativeActivity
 │   ├── syscall/ & rewrite/  # Syscall rewriting, Linux syscall table, and dispatch
 │   ├── launcher/            # portage.exe CLI entry point
 │   └── ...                  # 29 modular Windows-bridged runtime subsystems

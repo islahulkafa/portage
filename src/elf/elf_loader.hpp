@@ -11,6 +11,7 @@
 #include <span>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -75,6 +76,13 @@ struct LoadedElf {
     std::vector<uintptr_t> fini_functions{};
     std::vector<std::shared_ptr<tlsdesc_dynamic_arg>> tlsdesc_args{};
     std::vector<std::string> unresolved_symbols{};
+    struct VersionDefinition {
+        std::string version_name;
+        bool is_hidden{false};
+    };
+    std::unordered_map<std::string, std::vector<VersionDefinition>> versioned_symbols;
+    std::unordered_set<std::string> ifunc_symbols;
+    std::vector<std::string> verneed_requirements;
 
     [[nodiscard]] uintptr_t FindSymbol(std::string_view name) const;
 };

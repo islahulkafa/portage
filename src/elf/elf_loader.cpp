@@ -391,6 +391,14 @@ ElfLoader::LoadFromMemory(std::span<const uint8_t> buffer, const portage::fs::Vf
                                     if (ELF64_ST_TYPE(sym.st_info) == STT_TLS &&
                                         sym.st_shndx != 0) {
                                         loaded_elf.tls_symbols[name] = sym.st_value;
+                                    } else if (ELF64_ST_TYPE(sym.st_info) == STT_GNU_IFUNC) {
+                                        uintptr_t sym_addr =
+                                            is_pie ? (load_bias + sym.st_value) : sym.st_value;
+                                        loaded_elf.symbols[name] = sym_addr;
+                                        loaded_elf.ifunc_symbols.insert(name);
+                                        if (sym.st_size > 0) {
+                                            loaded_elf.symbol_sizes[name] = sym.st_size;
+                                        }
                                     } else if (sym.st_value != 0) {
                                         uintptr_t sym_addr =
                                             is_pie ? (load_bias + sym.st_value) : sym.st_value;
@@ -421,6 +429,12 @@ ElfLoader::LoadFromMemory(std::span<const uint8_t> buffer, const portage::fs::Vf
             size_t jmprel_sz = 0;
             uintptr_t symtab_addr = 0;
             uintptr_t strtab_addr = 0;
+            size_t strtab_sz = 0;
+            uintptr_t versym_addr = 0;
+            uintptr_t verdef_addr = 0;
+            size_t verdef_cnt = 0;
+            uintptr_t verneed_addr = 0;
+            size_t verneed_cnt = 0;
             uintptr_t hash_addr = 0;
             uintptr_t gnu_hash_addr = 0;
             uintptr_t init_addr = 0;
@@ -469,6 +483,24 @@ ElfLoader::LoadFromMemory(std::span<const uint8_t> buffer, const portage::fs::Vf
                     break;
                 case DT_STRTAB:
                     strtab_addr = dyn[d].d_un.d_ptr;
+                    break;
+                case DT_STRSZ:
+                    strtab_sz = dyn[d].d_un.d_val;
+                    break;
+                case DT_VERSYM:
+                    versym_addr = dyn[d].d_un.d_ptr;
+                    break;
+                case DT_VERDEF:
+                    verdef_addr = dyn[d].d_un.d_ptr;
+                    break;
+                case DT_VERDEFNUM:
+                    verdef_cnt = dyn[d].d_un.d_val;
+                    break;
+                case DT_VERNEED:
+                    verneed_addr = dyn[d].d_un.d_ptr;
+                    break;
+                case DT_VERNEEDNUM:
+                    verneed_cnt = dyn[d].d_un.d_val;
                     break;
                 case DT_HASH:
                     hash_addr = dyn[d].d_un.d_ptr;
@@ -523,6 +555,9 @@ ElfLoader::LoadFromMemory(std::span<const uint8_t> buffer, const portage::fs::Vf
             fini_addr = resolve_ptr(fini_addr);
             init_array_addr = resolve_ptr(init_array_addr);
             fini_array_addr = resolve_ptr(fini_array_addr);
+            versym_addr = resolve_ptr(versym_addr);
+            verdef_addr = resolve_ptr(verdef_addr);
+            verneed_addr = resolve_ptr(verneed_addr);
 
             const auto *symtab = reinterpret_cast<const Elf64_Sym *>(symtab_addr);
             const char *strtab = reinterpret_cast<const char *>(strtab_addr);
@@ -549,6 +584,14 @@ ElfLoader::LoadFromMemory(std::span<const uint8_t> buffer, const portage::fs::Vf
                                     if (ELF64_ST_TYPE(sym.st_info) == STT_TLS &&
                                         sym.st_shndx != 0) {
                                         loaded_elf.tls_symbols[name] = sym.st_value;
+                                    } else if (ELF64_ST_TYPE(sym.st_info) == STT_GNU_IFUNC) {
+                                        uintptr_t sym_addr =
+                                            is_pie ? (load_bias + sym.st_value) : sym.st_value;
+                                        loaded_elf.symbols[name] = sym_addr;
+                                        loaded_elf.ifunc_symbols.insert(name);
+                                        if (sym.st_size > 0) {
+                                            loaded_elf.symbol_sizes[name] = sym.st_size;
+                                        }
                                     } else if (sym.st_value != 0) {
                                         uintptr_t sym_addr =
                                             is_pie ? (load_bias + sym.st_value) : sym.st_value;
@@ -576,10 +619,21 @@ ElfLoader::LoadFromMemory(std::span<const uint8_t> buffer, const portage::fs::Vf
                             if (*name) {
                                 if (ELF64_ST_TYPE(sym.st_info) == STT_TLS && sym.st_shndx != 0) {
                                     loaded_elf.tls_symbols[name] = sym.st_value;
+                                } else if (ELF64_ST_TYPE(sym.st_info) == STT_GNU_IFUNC) {
+                                    uintptr_t sym_addr =
+                                        is_pie ? (load_bias + sym.st_value) : sym.st_value;
+                                    loaded_elf.symbols[name] = sym_addr;
+                                    loaded_elf.ifunc_symbols.insert(name);
+                                    if (sym.st_size > 0) {
+                                        loaded_elf.symbol_sizes[name] = sym.st_size;
+                                    }
                                 } else if (sym.st_value != 0) {
                                     uintptr_t sym_addr =
                                         is_pie ? (load_bias + sym.st_value) : sym.st_value;
                                     loaded_elf.symbols[name] = sym_addr;
+                                    if (sym.st_size > 0) {
+                                        loaded_elf.symbol_sizes[name] = sym.st_size;
+                                    }
                                 }
                             }
                         }
@@ -603,6 +657,107 @@ ElfLoader::LoadFromMemory(std::span<const uint8_t> buffer, const portage::fs::Vf
                     auto parsed = ParseAndExpandSearchPaths(strtab + off, origin_dir);
                     loaded_elf.runpath_entries.insert(loaded_elf.runpath_entries.end(),
                                                       parsed.begin(), parsed.end());
+                }
+
+                std::unordered_map<Elf64_Half, std::string> ver_definitions;
+                if (verdef_addr != 0) {
+                    uintptr_t curr_verdef = verdef_addr;
+                    size_t parsed_cnt = 0;
+                    while (curr_verdef != 0 && (verdef_cnt == 0 || parsed_cnt < verdef_cnt)) {
+                        const auto *vd = reinterpret_cast<const Elf64_Verdef *>(curr_verdef);
+                        if (vd->vd_aux != 0) {
+                            const auto *vda =
+                                reinterpret_cast<const Elf64_Verdaux *>(curr_verdef + vd->vd_aux);
+                            if (strtab_sz == 0 || vda->vda_name < strtab_sz) {
+                                ver_definitions[vd->vd_ndx & VERSYM_VERSION] =
+                                    std::string(strtab + vda->vda_name);
+                            }
+                        }
+                        parsed_cnt++;
+                        if (vd->vd_next == 0) {
+                            break;
+                        }
+                        curr_verdef += vd->vd_next;
+                    }
+                }
+
+                std::unordered_map<Elf64_Half, std::string> ver_needs;
+                if (verneed_addr != 0) {
+                    uintptr_t curr_verneed = verneed_addr;
+                    size_t parsed_cnt = 0;
+                    while (curr_verneed != 0 && (verneed_cnt == 0 || parsed_cnt < verneed_cnt)) {
+                        const auto *vn = reinterpret_cast<const Elf64_Verneed *>(curr_verneed);
+                        std::string lib_name;
+                        if (strtab_sz == 0 || vn->vn_file < strtab_sz) {
+                            lib_name = strtab + vn->vn_file;
+                        }
+                        uintptr_t curr_vernaux = curr_verneed + vn->vn_aux;
+                        for (Elf64_Half a = 0; a < vn->vn_cnt; ++a) {
+                            const auto *vna = reinterpret_cast<const Elf64_Vernaux *>(curr_vernaux);
+                            if (strtab_sz == 0 || vna->vna_name < strtab_sz) {
+                                std::string req_ver = strtab + vna->vna_name;
+                                ver_needs[vna->vna_other & VERSYM_VERSION] = req_ver;
+                                loaded_elf.verneed_requirements.push_back(lib_name + "@" + req_ver);
+                            }
+                            if (vna->vna_next == 0) {
+                                break;
+                            }
+                            curr_vernaux += vna->vna_next;
+                        }
+                        parsed_cnt++;
+                        if (vn->vn_next == 0) {
+                            break;
+                        }
+                        curr_verneed += vn->vn_next;
+                    }
+                }
+
+                if (versym_addr != 0 && symtab != nullptr) {
+                    const auto *versym_tab = reinterpret_cast<const Elf64_Versym *>(versym_addr);
+                    size_t total_sym_count = 0;
+                    if (hash_addr != 0) {
+                        total_sym_count = reinterpret_cast<const uint32_t *>(hash_addr)[1];
+                    } else if (gnu_hash_addr != 0) {
+                        const auto *gnu_hdr =
+                            reinterpret_cast<const Elf64_GnuHashHeader *>(gnu_hash_addr);
+                        const uint64_t *bloom = reinterpret_cast<const uint64_t *>(gnu_hdr + 1);
+                        const uint32_t *buckets =
+                            reinterpret_cast<const uint32_t *>(bloom + gnu_hdr->bloom_size);
+                        const uint32_t *chains = buckets + gnu_hdr->nbuckets;
+                        for (uint32_t b = 0; b < gnu_hdr->nbuckets; ++b) {
+                            uint32_t sym_idx = buckets[b];
+                            if (sym_idx == 0 || sym_idx < gnu_hdr->symoffset) {
+                                continue;
+                            }
+                            while (true) {
+                                total_sym_count = std::max<size_t>(total_sym_count, sym_idx + 1);
+                                uint32_t chain_val = chains[sym_idx - gnu_hdr->symoffset];
+                                if ((chain_val & 1) != 0) {
+                                    break;
+                                }
+                                ++sym_idx;
+                            }
+                        }
+                    }
+                    for (size_t s = 1; s < total_sym_count; ++s) {
+                        const auto &sym = symtab[s];
+                        if (sym.st_name != 0 && (strtab_sz == 0 || sym.st_name < strtab_sz)) {
+                            const char *name = strtab + sym.st_name;
+                            if (*name) {
+                                Elf64_Versym vs = versym_tab[s];
+                                Elf64_Half v_idx = vs & VERSYM_VERSION;
+                                bool is_hidden = (vs & VERSYM_HIDDEN) != 0;
+                                if (auto it = ver_definitions.find(v_idx);
+                                    it != ver_definitions.end()) {
+                                    loaded_elf.versioned_symbols[name].push_back(
+                                        {it->second, is_hidden});
+                                } else if (auto it = ver_needs.find(v_idx); it != ver_needs.end()) {
+                                    loaded_elf.versioned_symbols[name].push_back(
+                                        {it->second, is_hidden});
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -643,6 +798,11 @@ ElfLoader::LoadFromMemory(std::span<const uint8_t> buffer, const portage::fs::Vf
                             *reinterpret_cast<uintptr_t *>(patch_addr) = 0;
                             continue;
                         }
+                        if (ELF64_ST_VISIBILITY(s.st_other) == STV_PROTECTED && s.st_shndx != 0) {
+                            *reinterpret_cast<uintptr_t *>(patch_addr) =
+                                is_pie ? (load_bias + s.st_value) : s.st_value;
+                            continue;
+                        }
                         uintptr_t stub =
                             LinkMap::Instance().AllocateLazyPltTrampoline(patch_addr, sym_name);
                         if (stub != 0) {
@@ -664,14 +824,19 @@ ElfLoader::LoadFromMemory(std::span<const uint8_t> buffer, const portage::fs::Vf
                             sym_name = strtab + s.st_name;
                             is_weak = (ELF64_ST_BIND(s.st_info) == STB_WEAK);
                             sym_type = ELF64_ST_TYPE(s.st_info);
-                            if (s.st_shndx != 0 && s.st_value != 0) {
+                            if (ELF64_ST_VISIBILITY(s.st_other) == STV_PROTECTED &&
+                                s.st_shndx != 0) {
                                 sym_addr = is_pie ? (load_bias + s.st_value) : s.st_value;
                             } else {
                                 if (resolver) {
                                     sym_addr = resolver(sym_name);
                                 }
                                 if (sym_addr == 0) {
-                                    sym_addr = loaded_elf.FindSymbol(sym_name);
+                                    if (s.st_shndx != 0 && s.st_value != 0) {
+                                        sym_addr = is_pie ? (load_bias + s.st_value) : s.st_value;
+                                    } else {
+                                        sym_addr = loaded_elf.FindSymbol(sym_name);
+                                    }
                                 }
                             }
                         }

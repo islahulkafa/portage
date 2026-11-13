@@ -848,8 +848,7 @@ void SensorManagerImpl::SamplingWorkerLoop()
                 for (const auto &[handle, cfg] : ch->active_reports) {
                     (void)handle;
                     has_active_sensors = true;
-                    min_period_us =
-                        std::min(min_period_us, static_cast<int32_t>(cfg.interval_us));
+                    min_period_us = std::min(min_period_us, static_cast<int32_t>(cfg.interval_us));
                 }
             }
         }
@@ -1047,8 +1046,8 @@ __attribute__((sysv_abi)) int ASensorManager_destroyDirectChannel(ASensorManager
 {
     if (!manager)
         return -22; // -EINVAL
-    return reinterpret_cast<portage::ndk::SensorManagerImpl *>(manager)
-        ->DestroyDirectChannel(channelId);
+    return reinterpret_cast<portage::ndk::SensorManagerImpl *>(manager)->DestroyDirectChannel(
+        channelId);
 }
 
 __attribute__((sysv_abi)) int ASensorManager_configureDirectReport(ASensorManager *manager,
@@ -1058,8 +1057,8 @@ __attribute__((sysv_abi)) int ASensorManager_configureDirectReport(ASensorManage
     if (!manager)
         return -22; // -EINVAL
     auto *s = reinterpret_cast<const portage::ndk::SensorDescriptor *>(sensor);
-    return reinterpret_cast<portage::ndk::SensorManagerImpl *>(manager)
-        ->ConfigureDirectReport(s, channelId, rate);
+    return reinterpret_cast<portage::ndk::SensorManagerImpl *>(manager)->ConfigureDirectReport(
+        s, channelId, rate);
 }
 
 __attribute__((sysv_abi)) int ASensorEventQueue_registerSensor(ASensorEventQueue *queue,
@@ -1194,8 +1193,7 @@ __attribute__((sysv_abi)) bool ASensor_isDirectChannelTypeSupported(ASensor cons
                                                                     int channelType)
 {
     auto *s = reinterpret_cast<const portage::ndk::SensorDescriptor *>(sensor);
-    return portage::ndk::SensorManagerImpl::Instance().IsDirectChannelTypeSupported(s,
-                                                                                     channelType);
+    return portage::ndk::SensorManagerImpl::Instance().IsDirectChannelTypeSupported(s, channelType);
 }
 
 __attribute__((sysv_abi)) int ASensor_getHighestDirectReportRateLevel(ASensor const *sensor)

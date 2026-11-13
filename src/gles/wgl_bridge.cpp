@@ -260,10 +260,10 @@ bool WglBridge::Initialize() noexcept
     table_.glMemoryBarrier = reinterpret_cast<PFN_glMemoryBarrier>(load_fn("glMemoryBarrier"));
 
     // WGL ARB & Desktop Depth Fallbacks
-    table_.wglCreateContextAttribsARB = reinterpret_cast<PFN_wglCreateContextAttribsARB>(
-        load_fn("wglCreateContextAttribsARB"));
-    table_.wglGetExtensionsStringARB = reinterpret_cast<PFN_wglGetExtensionsStringARB>(
-        load_fn("wglGetExtensionsStringARB"));
+    table_.wglCreateContextAttribsARB =
+        reinterpret_cast<PFN_wglCreateContextAttribsARB>(load_fn("wglCreateContextAttribsARB"));
+    table_.wglGetExtensionsStringARB =
+        reinterpret_cast<PFN_wglGetExtensionsStringARB>(load_fn("wglGetExtensionsStringARB"));
     table_.glClearDepth = reinterpret_cast<PFN_glClearDepth>(load_fn("glClearDepth"));
     table_.glDepthRange = reinterpret_cast<PFN_glDepthRange>(load_fn("glDepthRange"));
 
@@ -530,11 +530,13 @@ HGLRC WglBridge::CreateContext(HDC hdc, int gles_version, HGLRC share_context) n
         int major = (gles_version >= 3) ? 3 : 2;
         int minor = (gles_version >= 3) ? 2 : 0;
         int attribs[] = {
-            0x2091, major,      // WGL_CONTEXT_MAJOR_VERSION_ARB
-            0x2092, minor,      // WGL_CONTEXT_MINOR_VERSION_ARB
-            0x9126, 0x00000002, // WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB
-            0
-        };
+            0x2091,
+            major, // WGL_CONTEXT_MAJOR_VERSION_ARB
+            0x2092,
+            minor, // WGL_CONTEXT_MINOR_VERSION_ARB
+            0x9126,
+            0x00000002, // WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB
+            0};
         HGLRC ctx = table_.wglCreateContextAttribsARB(hdc, share_context, attribs);
         if (ctx)
             return ctx;

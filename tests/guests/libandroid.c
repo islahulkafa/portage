@@ -27,6 +27,14 @@ __attribute__((visibility("default"))) void ANativeWindow_release(struct ANative
     }
 }
 
+__attribute__((visibility("default"))) struct ANativeWindow *
+ANativeWindow_fromSurface(void *env, void *surface)
+{
+    (void)env;
+    (void)surface;
+    return &g_default_window;
+}
+
 __attribute__((visibility("default"))) int32_t ANativeWindow_getWidth(struct ANativeWindow *window)
 {
     return window ? window->width : 0;
@@ -1108,7 +1116,7 @@ __attribute__((visibility("default"))) void android_freeaddrinfo(struct addrinfo
 
 enum AThermalStatus;
 struct AThermalManager;
-typedef void (__attribute__((sysv_abi)) *AThermal_StatusCallback)(void *data, int status);
+typedef void(__attribute__((sysv_abi)) * AThermal_StatusCallback)(void *data, int status);
 
 __attribute__((visibility("default"))) struct AThermalManager *AThermalManager_acquireManager(void)
 {

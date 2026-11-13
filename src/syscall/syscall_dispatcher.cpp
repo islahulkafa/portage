@@ -5,13 +5,17 @@
 #include "binder/binder_driver.hpp"
 #include "binder/binder_types.hpp"
 #include "fs/dirent.hpp"
+#include "fs/inotify_state.hpp"
 #include "fs/proc_fs.hpp"
 #include "input/input_manager.hpp"
 #include "input/input_types.hpp"
 #include "net/socket_manager.hpp"
 #include "net/socket_types.hpp"
+#include "net/netlink_socket.hpp"
+#include "net/netlink_types.hpp"
 #include "poll/epoll_manager.hpp"
 #include "poll/poll_types.hpp"
+#include "process/namespace_manager.hpp"
 #include "process/process_manager.hpp"
 #include "property/property_manager.hpp"
 #include "property/property_types.hpp"
@@ -161,11 +165,13 @@ void SyscallDispatcher::Initialize(mem::AddressSpace *as, fs::Vfs *vfs,
     exit_code_ = 0;
     child_tid_ptr_ = 0;
     property::PropertyManager::Instance().Initialize(vfs ? vfs->GetRootfs() : "");
+    process::NamespaceManager::Instance().Initialize(vfs);
 }
 
 void SyscallDispatcher::Shutdown() noexcept
 {
     PosixTimerTable::Instance().Reset();
+    process::NamespaceManager::Instance().Reset();
     property::PropertyManager::Instance().Reset();
     address_space_ = nullptr;
     vfs_ = nullptr;
@@ -301,6 +307,11 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 break;
             }
 
+            if (desc->dev == fs::DeviceType::Netlink && desc->netlink_socket) {
+                ret = desc->netlink_socket->Recv(buf, count, 0);
+                break;
+            }
+
             if (desc->dev == fs::DeviceType::DevZero) {
                 std::memset(buf, 0, count);
                 ret = static_cast<int64_t>(count);
@@ -348,7 +359,70 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             }
 
             if (desc->dev == fs::DeviceType::Inotify) {
-                ret = LINUX_EAGAIN;
+                if (count < sizeof(fs::LinuxInotifyEvent)) {
+                    ret = LINUX_EINVAL;
+                    break;
+                }
+                if (!desc->inotify) {
+                    ret = LINUX_EBADF;
+                    break;
+                }
+
+                bool nonblock = (desc->flags & LINUX_O_NONBLOCK) != 0;
+                if (desc->inotify->IsEmpty()) {
+                    if (nonblock) {
+                        ret = LINUX_EAGAIN;
+                        break;
+                    }
+                    if (!desc->inotify->WaitForEvent(-1)) {
+                        ret = LINUX_EINTR;
+                        break;
+                    }
+                }
+
+                size_t bytes_written = 0;
+                while (bytes_written + sizeof(fs::LinuxInotifyEvent) <= count) {
+                    fs::InotifyRecord rec{};
+                    if (!desc->inotify->PeekEvent(rec)) {
+                        break;
+                    }
+
+                    size_t name_len = rec.name[0] != '\0' ? std::strlen(rec.name) + 1 : 0;
+                    size_t padded_len = name_len > 0 ? ((name_len + 3) & ~3) : 0;
+                    size_t record_len = sizeof(fs::LinuxInotifyEvent) + padded_len;
+
+                    if (bytes_written + record_len > count) {
+                        if (bytes_written == 0) {
+                            ret = LINUX_EINVAL;
+                        }
+                        break;
+                    }
+
+                    desc->inotify->PopEvent(rec);
+
+                    fs::LinuxInotifyEvent ev{};
+                    ev.wd = rec.wd;
+                    ev.mask = rec.mask;
+                    ev.cookie = rec.cookie;
+                    ev.len = static_cast<uint32_t>(padded_len);
+
+                    std::memcpy(static_cast<char *>(buf) + bytes_written, &ev,
+                                sizeof(fs::LinuxInotifyEvent));
+                    bytes_written += sizeof(fs::LinuxInotifyEvent);
+
+                    if (padded_len > 0) {
+                        char *name_dest = static_cast<char *>(buf) + bytes_written;
+                        std::memset(name_dest, 0, padded_len);
+                        std::memcpy(name_dest, rec.name, std::strlen(rec.name));
+                        bytes_written += padded_len;
+                    }
+                }
+
+                if (bytes_written > 0) {
+                    ret = static_cast<int64_t>(bytes_written);
+                } else if (ret == 0) {
+                    ret = LINUX_EAGAIN;
+                }
                 break;
             }
 
@@ -448,7 +522,8 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 }
 
                 if (written_records > 0) {
-                    ret = static_cast<int64_t>(written_records * sizeof(signal::LinuxSignalfdSiginfo));
+                    ret = static_cast<int64_t>(written_records *
+                                               sizeof(signal::LinuxSignalfdSiginfo));
                 } else {
                     ret = LINUX_EAGAIN;
                 }
@@ -501,6 +576,11 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                     desc->synthetic_data.erase(0, to_read);
                     ret = static_cast<int64_t>(to_read);
                 }
+                break;
+            }
+
+            if (desc->dev == fs::DeviceType::Netlink && desc->netlink_socket) {
+                ret = desc->netlink_socket->Recv(buf, count, 0);
                 break;
             }
 
@@ -578,6 +658,11 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 size_t num_events = count / sizeof(input::LinuxInputEvent);
                 ret = input::InputManager::Instance().WriteEvents(
                     dev_idx, reinterpret_cast<const input::LinuxInputEvent *>(buf), num_events);
+                break;
+            }
+
+            if (desc->dev == fs::DeviceType::Netlink && desc->netlink_socket) {
+                ret = desc->netlink_socket->Send(buf, count, 0);
                 break;
             }
 
@@ -1661,7 +1746,13 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
     }
 
     case 39: { // sys_getpid()
-        ret = static_cast<int64_t>(GetCurrentProcessId());
+        auto thread = thread::ThreadManager::Instance().GetCurrentGuestThread();
+        if (thread && thread->pid_ns) {
+            int local = thread->pid_ns->GetLocalPid(thread->tgid);
+            ret = (local > 0) ? static_cast<int64_t>(local) : static_cast<int64_t>(thread->tgid);
+        } else {
+            ret = static_cast<int64_t>(GetCurrentProcessId());
+        }
         break;
     }
 
@@ -1747,6 +1838,16 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         int domain = static_cast<int>(a1);
         int type = static_cast<int>(a2);
         int protocol = static_cast<int>(a3);
+        if (domain == net::LINUX_AF_NETLINK) {
+            if (!fd_table_) {
+                ret = LINUX_ENOSYS;
+                break;
+            }
+            int out_flags = type & (net::LINUX_SOCK_NONBLOCK | net::LINUX_SOCK_CLOEXEC);
+            auto netlink = std::make_shared<net::NetlinkSocketState>();
+            ret = fd_table_->AllocateNetlinkSocket(std::move(netlink), out_flags);
+            break;
+        }
         int out_flags = 0;
         SOCKET s = net::SocketManager::Instance().CreateSocket(domain, type, protocol, out_flags);
         if (s == INVALID_SOCKET) {
@@ -1832,6 +1933,10 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             ret = static_cast<int64_t>(len);
             break;
         }
+        if (desc->dev == fs::DeviceType::Netlink && desc->netlink_socket) {
+            ret = desc->netlink_socket->Send(buf, len, flags);
+            break;
+        }
         if (desc->dev != fs::DeviceType::Socket) {
             ret = LINUX_ENOTSOCK;
             break;
@@ -1871,6 +1976,19 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             }
             break;
         }
+        if (desc->dev == fs::DeviceType::Netlink && desc->netlink_socket) {
+            ret = desc->netlink_socket->Recv(buf, len, flags);
+            if (ret >= 0 && addr && addrlen &&
+                static_cast<size_t>(*addrlen) >= sizeof(net::sockaddr_nl)) {
+                auto *nl_addr = reinterpret_cast<net::sockaddr_nl *>(addr);
+                nl_addr->nl_family = net::LINUX_AF_NETLINK;
+                nl_addr->nl_pad = 0;
+                nl_addr->nl_pid = 0;
+                nl_addr->nl_groups = 0;
+                *addrlen = sizeof(net::sockaddr_nl);
+            }
+            break;
+        }
         if (desc->dev != fs::DeviceType::Socket) {
             ret = LINUX_ENOTSOCK;
             break;
@@ -1895,6 +2013,22 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         auto desc = fd_table_->Get(fd);
         if (!desc) {
             ret = LINUX_EBADF;
+            break;
+        }
+        if (desc->dev == fs::DeviceType::Netlink && desc->netlink_socket) {
+            int64_t total_sent = 0;
+            for (size_t i = 0; i < msg->msg_iovlen; ++i) {
+                if (msg->msg_iov[i].iov_len == 0)
+                    continue;
+                int64_t sent = desc->netlink_socket->Send(msg->msg_iov[i].iov_base,
+                                                          msg->msg_iov[i].iov_len, flags);
+                if (sent < 0) {
+                    ret = (total_sent > 0) ? total_sent : sent;
+                    break;
+                }
+                total_sent += sent;
+            }
+            ret = total_sent;
             break;
         }
         if (desc->dev != fs::DeviceType::Socket) {
@@ -1953,6 +2087,33 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         auto desc = fd_table_->Get(fd);
         if (!desc) {
             ret = LINUX_EBADF;
+            break;
+        }
+        if (desc->dev == fs::DeviceType::Netlink && desc->netlink_socket) {
+            int64_t total_read = 0;
+            for (size_t i = 0; i < msg->msg_iovlen; ++i) {
+                if (msg->msg_iov[i].iov_len == 0)
+                    continue;
+                int64_t r = desc->netlink_socket->Recv(msg->msg_iov[i].iov_base,
+                                                       msg->msg_iov[i].iov_len, flags);
+                if (r < 0) {
+                    ret = (total_read > 0) ? total_read : r;
+                    break;
+                }
+                total_read += r;
+                if (static_cast<size_t>(r) < msg->msg_iov[i].iov_len) {
+                    break;
+                }
+            }
+            if (msg->msg_name && msg->msg_namelen >= sizeof(net::sockaddr_nl)) {
+                auto *nl_addr = reinterpret_cast<net::sockaddr_nl *>(msg->msg_name);
+                nl_addr->nl_family = net::LINUX_AF_NETLINK;
+                nl_addr->nl_pad = 0;
+                nl_addr->nl_pid = 0;
+                nl_addr->nl_groups = 0;
+                msg->msg_namelen = sizeof(net::sockaddr_nl);
+            }
+            ret = total_read;
             break;
         }
         if (desc->dev != fs::DeviceType::Socket) {
@@ -2028,7 +2189,15 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             break;
         }
         auto desc = fd_table_->Get(fd);
-        if (!desc || desc->dev != fs::DeviceType::Socket) {
+        if (!desc) {
+            ret = LINUX_EBADF;
+            break;
+        }
+        if (desc->dev == fs::DeviceType::Netlink && desc->netlink_socket) {
+            ret = desc->netlink_socket->Bind(reinterpret_cast<const net::sockaddr_nl *>(addr));
+            break;
+        }
+        if (desc->dev != fs::DeviceType::Socket) {
             ret = LINUX_ENOTSOCK;
             break;
         }
@@ -2063,7 +2232,22 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             break;
         }
         auto desc = fd_table_->Get(fd);
-        if (!desc || desc->dev != fs::DeviceType::Socket) {
+        if (!desc) {
+            ret = LINUX_EBADF;
+            break;
+        }
+        if (desc->dev == fs::DeviceType::Netlink && desc->netlink_socket) {
+            if (!addr || !len || static_cast<size_t>(*len) < sizeof(net::sockaddr_nl)) {
+                ret = LINUX_EFAULT;
+                break;
+            }
+            ret = desc->netlink_socket->GetSockName(reinterpret_cast<net::sockaddr_nl *>(addr));
+            if (ret == 0) {
+                *len = sizeof(net::sockaddr_nl);
+            }
+            break;
+        }
+        if (desc->dev != fs::DeviceType::Socket) {
             ret = LINUX_ENOTSOCK;
             break;
         }
@@ -2280,12 +2464,11 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             break;
         }
         auto *u = reinterpret_cast<LinuxUtsname *>(a1);
-        std::memset(u, 0, sizeof(LinuxUtsname));
-        std::strncpy(u->sysname, "Linux", sizeof(u->sysname) - 1);
-        std::strncpy(u->nodename, "portage-win", sizeof(u->nodename) - 1);
-        std::strncpy(u->release, "6.1.0-android14-x86_64", sizeof(u->release) - 1);
-        std::strncpy(u->version, "#1 SMP PREEMPT Portage", sizeof(u->version) - 1);
-        std::strncpy(u->machine, "x86_64", sizeof(u->machine) - 1);
+        auto thread = thread::ThreadManager::Instance().GetCurrentGuestThread();
+        auto uts_ns = (thread && thread->uts_ns)
+                          ? thread->uts_ns
+                          : process::NamespaceManager::Instance().GetRootUtsNamespace();
+        *u = uts_ns->GetUtsname();
         ret = 0;
         break;
     }
@@ -2653,7 +2836,12 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
     }
 
     case 110: { // sys_getppid()
-        ret = 1;
+        auto thread = thread::ThreadManager::Instance().GetCurrentGuestThread();
+        if (thread && thread->pid_ns) {
+            ret = static_cast<int64_t>(thread->pid_ns->GetLocalPid(thread->ppid));
+        } else {
+            ret = 1;
+        }
         break;
     }
 
@@ -2885,9 +3073,9 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             break;
         }
         int prio = param->sched_priority;
-        int win_prio = (prio > 50) ? THREAD_PRIORITY_HIGHEST
-                                   : (prio > 20) ? THREAD_PRIORITY_ABOVE_NORMAL
-                                                 : THREAD_PRIORITY_NORMAL;
+        int win_prio = (prio > 50)   ? THREAD_PRIORITY_HIGHEST
+                       : (prio > 20) ? THREAD_PRIORITY_ABOVE_NORMAL
+                                     : THREAD_PRIORITY_NORMAL;
         SetThreadPriority(GetCurrentThread(), win_prio);
         ret = 0;
         break;
@@ -2897,9 +3085,9 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         auto *param = reinterpret_cast<const LinuxSchedParam *>(a3);
         if (param) {
             int prio = param->sched_priority;
-            int win_prio = (prio > 50) ? THREAD_PRIORITY_HIGHEST
-                                       : (prio > 20) ? THREAD_PRIORITY_ABOVE_NORMAL
-                                                     : THREAD_PRIORITY_NORMAL;
+            int win_prio = (prio > 50)   ? THREAD_PRIORITY_HIGHEST
+                           : (prio > 20) ? THREAD_PRIORITY_ABOVE_NORMAL
+                                         : THREAD_PRIORITY_NORMAL;
             SetThreadPriority(GetCurrentThread(), win_prio);
         }
         ret = 0;
@@ -2962,7 +3150,8 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             ret = 1;
         } else if (option == LINUX_PR_SET_DUMPABLE) {
             ret = 0;
-        } else if (option == LINUX_PR_SET_CHILD_SUBREAPER || option == LINUX_PR_GET_CHILD_SUBREAPER) {
+        } else if (option == LINUX_PR_SET_CHILD_SUBREAPER ||
+                   option == LINUX_PR_GET_CHILD_SUBREAPER) {
             if (option == LINUX_PR_GET_CHILD_SUBREAPER && a2) {
                 *reinterpret_cast<int *>(a2) = 0;
             }
@@ -3035,20 +3224,22 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 ret = LINUX_EINVAL;
                 break;
             }
+            int target_tid = pid != 0 ? pid : thread::ThreadManager::Instance().GetCurrentTid();
+            auto th = thread::ThreadManager::Instance().GetThread(target_tid);
             HANDLE target = GetCurrentThread();
-            if (pid != 0) {
-                auto th = thread::ThreadManager::Instance().GetThread(pid);
-                if (th && th->win32_handle != INVALID_HANDLE_VALUE) {
-                    target = th->win32_handle;
-                }
+            if (th && th->win32_handle != INVALID_HANDLE_VALUE) {
+                target = th->win32_handle;
             }
-            SetThreadAffinityMask(target, desired);
+            if (SetThreadAffinityMask(target, desired) != 0 && th) {
+                th->affinity_mask = static_cast<uint64_t>(desired);
+            }
         }
         ret = 0;
         break;
     }
 
     case 204: { // sys_sched_getaffinity(pid, cpusetsize, mask)
+        int pid = static_cast<int>(a1);
         size_t cpusetsize = static_cast<size_t>(a2);
         auto *mask = reinterpret_cast<uint64_t *>(a3);
         if (!mask) {
@@ -3060,9 +3251,15 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             break;
         }
         std::memset(mask, 0, cpusetsize);
-        DWORD_PTR proc_mask = 1, sys_mask = 1;
-        GetProcessAffinityMask(GetCurrentProcess(), &proc_mask, &sys_mask);
-        *mask = static_cast<uint64_t>(proc_mask);
+        int target_tid = pid != 0 ? pid : thread::ThreadManager::Instance().GetCurrentTid();
+        auto th = thread::ThreadManager::Instance().GetThread(target_tid);
+        if (th && th->affinity_mask != 0) {
+            *mask = th->affinity_mask;
+        } else {
+            DWORD_PTR proc_mask = 1, sys_mask = 1;
+            GetProcessAffinityMask(GetCurrentProcess(), &proc_mask, &sys_mask);
+            *mask = static_cast<uint64_t>(proc_mask);
+        }
         ret = static_cast<int64_t>(sizeof(uint64_t));
         break;
     }
@@ -3240,21 +3437,21 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
         if (due.QuadPart == 0) {
             due.QuadPart = -1;
         }
-        int64_t period_ms = (new_val->it_interval.tv_sec * 1000LL) +
-                            (new_val->it_interval.tv_nsec / 1'000'000LL);
-        if (new_val->it_interval.tv_sec == 0 && new_val->it_interval.tv_nsec > 0 && period_ms == 0) {
+        int64_t period_ms =
+            (new_val->it_interval.tv_sec * 1000LL) + (new_val->it_interval.tv_nsec / 1'000'000LL);
+        if (new_val->it_interval.tv_sec == 0 && new_val->it_interval.tv_nsec > 0 &&
+            period_ms == 0) {
             period_ms = 1;
         }
 
         ResetEvent(entry->stop_event);
         entry->active.store(true, std::memory_order_relaxed);
-        SetWaitableTimer(entry->win_timer, &due,
-                         static_cast<LONG>(period_ms > 0 ? period_ms : 0),
+        SetWaitableTimer(entry->win_timer, &due, static_cast<LONG>(period_ms > 0 ? period_ms : 0),
                          nullptr, nullptr, FALSE);
 
         if (entry->notify == LINUX_SIGEV_SIGNAL && !entry->worker_thread) {
-            entry->worker_thread = CreateThread(nullptr, 0, PosixTimerWorker,
-                                                entry.get(), 0, nullptr);
+            entry->worker_thread =
+                CreateThread(nullptr, 0, PosixTimerWorker, entry.get(), 0, nullptr);
         }
         ret = 0;
         break;
@@ -3580,6 +3777,32 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             }
             std::string data = fs::ProcFs::Generate(target_path, address_space_);
             ret = fd_table_->AllocateSynthetic(flags, resolved.dev_type, pathname, std::move(data));
+            if (ret >= 0 && target_path.starts_with("/proc/self/ns/")) {
+                auto ns_desc = fd_table_->Get(static_cast<int>(ret));
+                auto thread = thread::ThreadManager::Instance().GetCurrentGuestThread();
+                if (ns_desc) {
+                    if (target_path == "/proc/self/ns/pid") {
+                        auto ns = (thread && thread->pid_ns)
+                                      ? thread->pid_ns
+                                      : process::NamespaceManager::Instance().GetRootPidNamespace();
+                        ns_desc->namespace_id = ns->GetId();
+                        ns_desc->namespace_type = static_cast<int>(process::LINUX_CLONE_NEWPID);
+                    } else if (target_path == "/proc/self/ns/mnt") {
+                        auto ns =
+                            (thread && thread->mnt_ns)
+                                ? thread->mnt_ns
+                                : process::NamespaceManager::Instance().GetRootMountNamespace();
+                        ns_desc->namespace_id = ns->GetId();
+                        ns_desc->namespace_type = static_cast<int>(process::LINUX_CLONE_NEWNS);
+                    } else if (target_path == "/proc/self/ns/uts") {
+                        auto ns = (thread && thread->uts_ns)
+                                      ? thread->uts_ns
+                                      : process::NamespaceManager::Instance().GetRootUtsNamespace();
+                        ns_desc->namespace_id = ns->GetId();
+                        ns_desc->namespace_type = static_cast<int>(process::LINUX_CLONE_NEWUTS);
+                    }
+                }
+            }
             break;
         }
 
@@ -4125,6 +4348,15 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
             std::string exe_str = vfs_->GetExecutablePath().string();
             size_t copy_len = std::min(bufsiz, exe_str.size());
             std::memcpy(buf, exe_str.data(), copy_len);
+            ret = static_cast<int64_t>(copy_len);
+            break;
+        }
+
+        if (canon == "/proc/self/ns/pid" || canon == "/proc/self/ns/mnt" ||
+            canon == "/proc/self/ns/uts") {
+            std::string ns_str = fs::ProcFs::Generate(canon, address_space_);
+            size_t copy_len = std::min(bufsiz, ns_str.size());
+            std::memcpy(buf, ns_str.data(), copy_len);
             ret = static_cast<int64_t>(copy_len);
             break;
         }
@@ -4856,35 +5088,71 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
     case 253:   // sys_inotify_init
     case 294: { // sys_inotify_init1(flags)
         int flags = (nr == 294) ? static_cast<int>(a1) : 0;
+        constexpr int valid_flags = fs::LINUX_IN_CLOEXEC | fs::LINUX_IN_NONBLOCK;
+        if ((flags & ~valid_flags) != 0) {
+            ret = LINUX_EINVAL;
+            break;
+        }
         ret = fd_table_ ? fd_table_->AllocateInotify(flags) : LINUX_ENOSYS;
         break;
     }
 
     case 254: { // sys_inotify_add_watch(fd, pathname, mask)
+        int ufd = static_cast<int>(a1);
+        const char *pathname = reinterpret_cast<const char *>(a2);
+        uint32_t mask = static_cast<uint32_t>(a3);
+
+        if (!pathname) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+        if (mask == 0) {
+            ret = LINUX_EINVAL;
+            break;
+        }
         if (!fd_table_) {
             ret = LINUX_EBADF;
             break;
         }
-        auto desc = fd_table_->Get(static_cast<int>(a1));
-        if (!desc || desc->dev != fs::DeviceType::Inotify) {
+        auto desc = fd_table_->Get(ufd);
+        if (!desc || desc->dev != fs::DeviceType::Inotify || !desc->inotify) {
             ret = LINUX_EBADF;
             break;
         }
-        ret = 1; // Default watch descriptor 1
+        if (!vfs_) {
+            ret = LINUX_ENOENT;
+            break;
+        }
+        auto resolved = vfs_->Resolve(pathname);
+        if (resolved.status != 0) {
+            ret = resolved.status;
+            break;
+        }
+        std::error_code ec;
+        if (!std::filesystem::exists(resolved.host_path, ec)) {
+            ret = LINUX_ENOENT;
+            break;
+        }
+
+        ret = desc->inotify->AddWatch(resolved.host_path.wstring(), mask);
         break;
     }
 
     case 255: { // sys_inotify_rm_watch(fd, wd)
+        int ufd = static_cast<int>(a1);
+        int wd = static_cast<int>(a2);
+
         if (!fd_table_) {
             ret = LINUX_EBADF;
             break;
         }
-        auto desc = fd_table_->Get(static_cast<int>(a1));
-        if (!desc || desc->dev != fs::DeviceType::Inotify) {
+        auto desc = fd_table_->Get(ufd);
+        if (!desc || desc->dev != fs::DeviceType::Inotify || !desc->inotify) {
             ret = LINUX_EBADF;
             break;
         }
-        ret = 0;
+
+        ret = desc->inotify->RemoveWatch(wd);
         break;
     }
 
@@ -4919,9 +5187,9 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
                 }
                 break;
             }
-            int64_t r = Dispatch(18, static_cast<uint64_t>(fd),
-                                 reinterpret_cast<uint64_t>(iov[i].iov_base),
-                                 iov[i].iov_len, offset, 0, 0);
+            int64_t r =
+                Dispatch(18, static_cast<uint64_t>(fd), reinterpret_cast<uint64_t>(iov[i].iov_base),
+                         iov[i].iov_len, offset, 0, 0);
             if (r < 0) {
                 if (total_written > 0) {
                     ret = total_written;
@@ -5487,6 +5755,88 @@ __attribute__((sysv_abi)) int64_t SyscallDispatcher::Dispatch(uint64_t nr, uint6
 
         ret = poll::EpollManager::Instance().Wait(desc->epoll_id, events, maxevents, timeout_ms,
                                                   fd_table_);
+        break;
+    }
+
+    case 170: { // sys_sethostname(name, len)
+        const char *name = reinterpret_cast<const char *>(a1);
+        size_t len = static_cast<size_t>(a2);
+        if (!name) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+        if (len > 64) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+        auto thread = thread::ThreadManager::Instance().GetCurrentGuestThread();
+        auto uts_ns = (thread && thread->uts_ns)
+                          ? thread->uts_ns
+                          : process::NamespaceManager::Instance().GetRootUtsNamespace();
+        uts_ns->SetHostname(std::string_view(name, len));
+        ret = 0;
+        break;
+    }
+
+    case 171: { // sys_setdomainname(name, len)
+        const char *name = reinterpret_cast<const char *>(a1);
+        size_t len = static_cast<size_t>(a2);
+        if (!name) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+        if (len > 64) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+        auto thread = thread::ThreadManager::Instance().GetCurrentGuestThread();
+        auto uts_ns = (thread && thread->uts_ns)
+                          ? thread->uts_ns
+                          : process::NamespaceManager::Instance().GetRootUtsNamespace();
+        uts_ns->SetDomainname(std::string_view(name, len));
+        ret = 0;
+        break;
+    }
+
+    case 272: { // sys_unshare(flags)
+        ret = process::NamespaceManager::Instance().Unshare(a1);
+        break;
+    }
+
+    case 308: { // sys_setns(fd, nstype)
+        int fd = static_cast<int>(a1);
+        int nstype = static_cast<int>(a2);
+        if (!fd_table_) {
+            ret = LINUX_EBADF;
+            break;
+        }
+        auto desc = fd_table_->Get(fd);
+        if (!desc || desc->namespace_id == 0) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+        if (nstype != 0 && nstype != desc->namespace_type) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+        ret = process::NamespaceManager::Instance().SetNsById(desc->namespace_id, nstype);
+        break;
+    }
+
+    case 435: { // sys_clone3(uargs, size)
+        const auto *uargs = reinterpret_cast<const process::LinuxCloneArgs *>(a1);
+        size_t size = static_cast<size_t>(a2);
+        if (!uargs) {
+            ret = LINUX_EFAULT;
+            break;
+        }
+        if (size < sizeof(process::LinuxCloneArgs)) {
+            ret = LINUX_EINVAL;
+            break;
+        }
+        uintptr_t child_stack_top = uargs->stack + uargs->stack_size;
+        ret = thread::ThreadManager::Instance().CreateGuestThread(
+            uargs->flags, child_stack_top, uargs->parent_tid, uargs->child_tid, uargs->tls, 0);
         break;
     }
 

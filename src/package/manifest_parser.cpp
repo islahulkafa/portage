@@ -10,6 +10,21 @@ namespace {
 constexpr uint16_t CHUNK_AXML_ROOT = 0x0003;
 constexpr uint16_t CHUNK_STRING_POOL = 0x0001;
 constexpr uint16_t CHUNK_START_ELEMENT = 0x0102;
+constexpr uint16_t CHUNK_END_ELEMENT = 0x0103;
+
+std::string ResolveComponentClassName(std::string_view package_name, std::string_view raw_name)
+{
+    if (raw_name.empty()) {
+        return "";
+    }
+    if (raw_name.front() == '.') {
+        return std::string(package_name) + std::string(raw_name);
+    }
+    if (raw_name.find('.') == std::string_view::npos && !package_name.empty()) {
+        return std::string(package_name) + "." + std::string(raw_name);
+    }
+    return std::string(raw_name);
+}
 
 inline uint16_t ReadU16(const uint8_t *p)
 {
@@ -143,7 +158,11 @@ bool ManifestParser::ParseDocument(ManifestInfo &out_info)
     }
 
     size_t offset = 8;
-    std::string current_meta_name;
+    std::string current_activity;
+    bool in_activity = false;
+    bool in_intent_filter = false;
+    bool has_main_action = false;
+    bool has_launcher_category = false;
 
     while (offset + 8 <= data_.size()) {
         const uint8_t *p = data_.data() + offset;
@@ -170,6 +189,16 @@ bool ManifestParser::ParseDocument(ManifestInfo &out_info)
 
             std::string meta_key;
             std::string meta_val;
+            std::string attr_name_val;
+
+            if (tag == "activity" || tag == "activity-alias") {
+                current_activity.clear();
+                in_activity = true;
+            } else if (tag == "intent-filter" && in_activity) {
+                in_intent_filter = true;
+                has_main_action = false;
+                has_launcher_category = false;
+            }
 
             size_t attr_base =
                 (attr_start >= 36) ? (offset + attr_start) : (offset + 16 + attr_start);
@@ -206,10 +235,21 @@ bool ManifestParser::ParseDocument(ManifestInfo &out_info)
                         out_info.has_code = (data_val != 0);
                     } else if (attr_name == "label" && !str_val.empty()) {
                         out_info.application_label = str_val;
+                    } else if (attr_name == "name" && !str_val.empty()) {
+                        out_info.application_name =
+                            ResolveComponentClassName(out_info.package_name, str_val);
                     }
-                } else if (tag == "activity") {
-                    if (attr_name == "name" && out_info.main_activity_name.empty()) {
-                        out_info.main_activity_name = str_val;
+                } else if (tag == "activity" || tag == "activity-alias") {
+                    if (attr_name == "name" && !str_val.empty()) {
+                        current_activity =
+                            ResolveComponentClassName(out_info.package_name, str_val);
+                        if (out_info.main_activity_name.empty()) {
+                            out_info.main_activity_name = current_activity;
+                        }
+                    }
+                } else if (tag == "action" || tag == "category") {
+                    if (attr_name == "name") {
+                        attr_name_val = str_val;
                     }
                 } else if (tag == "meta-data") {
                     if (attr_name == "name") {
@@ -220,14 +260,41 @@ bool ManifestParser::ParseDocument(ManifestInfo &out_info)
                 }
             }
 
+            if (in_intent_filter) {
+                if (tag == "action" && attr_name_val == "android.intent.action.MAIN") {
+                    has_main_action = true;
+                } else if (tag == "category" &&
+                           attr_name_val == "android.intent.category.LAUNCHER") {
+                    has_launcher_category = true;
+                }
+            }
+
             if (tag == "meta-data" && meta_key == "android.app.lib_name" && !meta_val.empty()) {
                 out_info.native_library_name = meta_val;
+            }
+        } else if (type == CHUNK_END_ELEMENT && offset + 24 <= data_.size()) {
+            uint32_t tag_idx = ReadU32(p + 20);
+            std::string tag = GetString(tag_idx);
+            if (tag == "intent-filter") {
+                if (in_intent_filter && has_main_action && has_launcher_category &&
+                    !current_activity.empty() && out_info.launcher_activity_name.empty()) {
+                    out_info.launcher_activity_name = current_activity;
+                }
+                in_intent_filter = false;
+                has_main_action = false;
+                has_launcher_category = false;
+            } else if (tag == "activity" || tag == "activity-alias") {
+                in_activity = false;
+                current_activity.clear();
             }
         }
 
         offset += chunk_size;
     }
 
+    if (out_info.launcher_activity_name.empty()) {
+        out_info.launcher_activity_name = out_info.main_activity_name;
+    }
     if (out_info.native_library_name.empty()) {
         out_info.native_library_name = "main";
     }

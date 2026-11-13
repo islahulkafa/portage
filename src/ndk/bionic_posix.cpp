@@ -7,7 +7,10 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
+#include <iphlpapi.h>
 #include <fcntl.h>
 #include <io.h>
 #include <sys/stat.h>
@@ -126,6 +129,23 @@ void RegisterBionicPosix(NdkSymbolRegistry &registry)
     registry.Register("signalfd", reinterpret_cast<uintptr_t>(&portage_signalfd));
     registry.Register("signalfd4", reinterpret_cast<uintptr_t>(&portage_signalfd4));
     registry.Register("sigsuspend", reinterpret_cast<uintptr_t>(&portage_sigsuspend));
+
+    registry.Register("inotify_init", reinterpret_cast<uintptr_t>(&portage_inotify_init));
+    registry.Register("inotify_init1", reinterpret_cast<uintptr_t>(&portage_inotify_init1));
+    registry.Register("inotify_add_watch", reinterpret_cast<uintptr_t>(&portage_inotify_add_watch));
+    registry.Register("inotify_rm_watch", reinterpret_cast<uintptr_t>(&portage_inotify_rm_watch));
+
+    registry.Register("unshare", reinterpret_cast<uintptr_t>(&portage_unshare));
+    registry.Register("setns", reinterpret_cast<uintptr_t>(&portage_setns));
+    registry.Register("sched_setaffinity", reinterpret_cast<uintptr_t>(&portage_sched_setaffinity));
+    registry.Register("sched_getaffinity", reinterpret_cast<uintptr_t>(&portage_sched_getaffinity));
+
+    registry.Register("getifaddrs", reinterpret_cast<uintptr_t>(&portage_getifaddrs));
+    registry.Register("freeifaddrs", reinterpret_cast<uintptr_t>(&portage_freeifaddrs));
+    registry.Register("if_nametoindex", reinterpret_cast<uintptr_t>(&portage_if_nametoindex));
+    registry.Register("if_indextoname", reinterpret_cast<uintptr_t>(&portage_if_indextoname));
+    registry.Register("if_nameindex", reinterpret_cast<uintptr_t>(&portage_if_nameindex));
+    registry.Register("if_freenameindex", reinterpret_cast<uintptr_t>(&portage_if_freenameindex));
 }
 
 } // namespace portage::ndk
@@ -530,8 +550,8 @@ __attribute__((sysv_abi)) int portage_chmod(const char *path, int mode)
 __attribute__((sysv_abi)) int portage_fchmod(int fd, int mode)
 {
     if (SyscallDispatcher::GetFdTable() != nullptr) {
-        int64_t ret = SyscallDispatcher::Dispatch(
-            91 /* SYS_fchmod */, static_cast<uint64_t>(fd), static_cast<uint64_t>(mode), 0, 0, 0, 0);
+        int64_t ret = SyscallDispatcher::Dispatch(91 /* SYS_fchmod */, static_cast<uint64_t>(fd),
+                                                  static_cast<uint64_t>(mode), 0, 0, 0, 0);
         return static_cast<int>(SetErrnoFromSyscall(ret));
     }
     return 0;
@@ -569,7 +589,7 @@ __attribute__((sysv_abi)) int portage_statvfs(const char *, void *buf)
 }
 
 __attribute__((sysv_abi)) int portage_utimensat(int dfd, const char *path,
-                                                  const GuestTimespec times[2], int flags)
+                                                const GuestTimespec times[2], int flags)
 {
     if (SyscallDispatcher::GetVfs() != nullptr || SyscallDispatcher::GetFdTable() != nullptr) {
         int64_t ret = SyscallDispatcher::Dispatch(
@@ -897,19 +917,19 @@ __attribute__((sysv_abi)) int portage_pthread_rwlock_unlock(void *rwlock)
 
 __attribute__((sysv_abi)) int portage_sigwaitinfo(const uint64_t *set, void *info)
 {
-    int64_t ret = SyscallDispatcher::Dispatch(
-        128 /* SYS_rt_sigtimedwait */, reinterpret_cast<uint64_t>(set),
-        reinterpret_cast<uint64_t>(info), 0, sizeof(uint64_t), 0, 0);
+    int64_t ret =
+        SyscallDispatcher::Dispatch(128 /* SYS_rt_sigtimedwait */, reinterpret_cast<uint64_t>(set),
+                                    reinterpret_cast<uint64_t>(info), 0, sizeof(uint64_t), 0, 0);
     return static_cast<int>(SetErrnoFromSyscall(ret));
 }
 
 __attribute__((sysv_abi)) int portage_sigtimedwait(const uint64_t *set, void *info,
                                                    const GuestTimespec *timeout)
 {
-    int64_t ret = SyscallDispatcher::Dispatch(
-        128 /* SYS_rt_sigtimedwait */, reinterpret_cast<uint64_t>(set),
-        reinterpret_cast<uint64_t>(info), reinterpret_cast<uint64_t>(timeout), sizeof(uint64_t), 0,
-        0);
+    int64_t ret =
+        SyscallDispatcher::Dispatch(128 /* SYS_rt_sigtimedwait */, reinterpret_cast<uint64_t>(set),
+                                    reinterpret_cast<uint64_t>(info),
+                                    reinterpret_cast<uint64_t>(timeout), sizeof(uint64_t), 0, 0);
     return static_cast<int>(SetErrnoFromSyscall(ret));
 }
 
@@ -921,10 +941,9 @@ __attribute__((sysv_abi)) int portage_sigqueue(int pid, int sig, uintptr_t value
     info._sifields.rt.si_pid = static_cast<int32_t>(GetCurrentProcessId());
     info._sifields.rt.si_sigval.sival_ptr = reinterpret_cast<void *>(value);
 
-    int64_t ret = SyscallDispatcher::Dispatch(129 /* SYS_rt_sigqueueinfo */,
-                                              static_cast<uint64_t>(pid),
-                                              static_cast<uint64_t>(sig),
-                                              reinterpret_cast<uint64_t>(&info), 0, 0, 0);
+    int64_t ret = SyscallDispatcher::Dispatch(
+        129 /* SYS_rt_sigqueueinfo */, static_cast<uint64_t>(pid), static_cast<uint64_t>(sig),
+        reinterpret_cast<uint64_t>(&info), 0, 0, 0);
     return static_cast<int>(SetErrnoFromSyscall(ret));
 }
 
@@ -944,10 +963,479 @@ __attribute__((sysv_abi)) int portage_signalfd4(int fd, const uint64_t *mask, si
 
 __attribute__((sysv_abi)) int portage_sigsuspend(const uint64_t *mask)
 {
-    int64_t ret = SyscallDispatcher::Dispatch(130 /* SYS_rt_sigsuspend */,
-                                              reinterpret_cast<uint64_t>(mask), sizeof(uint64_t),
-                                              0, 0, 0, 0);
+    int64_t ret =
+        SyscallDispatcher::Dispatch(130 /* SYS_rt_sigsuspend */, reinterpret_cast<uint64_t>(mask),
+                                    sizeof(uint64_t), 0, 0, 0, 0);
     return static_cast<int>(SetErrnoFromSyscall(ret));
+}
+
+__attribute__((sysv_abi)) int portage_inotify_init()
+{
+    int64_t ret = SyscallDispatcher::Dispatch(253 /* SYS_inotify_init */, 0, 0, 0, 0, 0, 0);
+    return static_cast<int>(SetErrnoFromSyscall(ret));
+}
+
+__attribute__((sysv_abi)) int portage_inotify_init1(int flags)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(294 /* SYS_inotify_init1 */,
+                                              static_cast<uint64_t>(flags), 0, 0, 0, 0, 0);
+    return static_cast<int>(SetErrnoFromSyscall(ret));
+}
+
+__attribute__((sysv_abi)) int portage_inotify_add_watch(int fd, const char *path, uint32_t mask)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(
+        254 /* SYS_inotify_add_watch */, static_cast<uint64_t>(fd),
+        reinterpret_cast<uint64_t>(path), static_cast<uint64_t>(mask), 0, 0, 0);
+    return static_cast<int>(SetErrnoFromSyscall(ret));
+}
+
+__attribute__((sysv_abi)) int portage_inotify_rm_watch(int fd, int wd)
+{
+    int64_t ret =
+        SyscallDispatcher::Dispatch(255 /* SYS_inotify_rm_watch */, static_cast<uint64_t>(fd),
+                                    static_cast<uint64_t>(wd), 0, 0, 0, 0);
+    return static_cast<int>(SetErrnoFromSyscall(ret));
+}
+
+__attribute__((sysv_abi)) int portage_unshare(int flags)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(272 /* SYS_unshare */, static_cast<uint64_t>(flags),
+                                              0, 0, 0, 0, 0);
+    return static_cast<int>(SetErrnoFromSyscall(ret));
+}
+
+__attribute__((sysv_abi)) int portage_setns(int fd, int nstype)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(308 /* SYS_setns */, static_cast<uint64_t>(fd),
+                                              static_cast<uint64_t>(nstype), 0, 0, 0, 0);
+    return static_cast<int>(SetErrnoFromSyscall(ret));
+}
+
+__attribute__((sysv_abi)) int portage_sched_setaffinity(int pid, size_t cpusetsize,
+                                                        const void *mask)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(
+        203 /* SYS_sched_setaffinity */, static_cast<uint64_t>(pid),
+        static_cast<uint64_t>(cpusetsize), reinterpret_cast<uint64_t>(mask), 0, 0, 0);
+    return static_cast<int>(SetErrnoFromSyscall(ret));
+}
+
+__attribute__((sysv_abi)) int portage_sched_getaffinity(int pid, size_t cpusetsize, void *mask)
+{
+    int64_t ret = SyscallDispatcher::Dispatch(
+        204 /* SYS_sched_getaffinity */, static_cast<uint64_t>(pid),
+        static_cast<uint64_t>(cpusetsize), reinterpret_cast<uint64_t>(mask), 0, 0, 0);
+    if (ret < 0) {
+        return static_cast<int>(SetErrnoFromSyscall(ret));
+    }
+    return 0;
+}
+
+namespace {
+
+struct LinuxSockaddrIn {
+    uint16_t sin_family;
+    uint16_t sin_port;
+    uint32_t sin_addr;
+    uint8_t sin_zero[8];
+};
+
+struct LinuxSockaddrIn6 {
+    uint16_t sin6_family;
+    uint16_t sin6_port;
+    uint32_t sin6_flowinfo;
+    uint8_t sin6_addr[16];
+    uint32_t sin6_scope_id;
+};
+
+} // namespace
+
+__attribute__((sysv_abi)) int portage_getifaddrs(struct ifaddrs **ifap)
+{
+    if (!ifap) {
+        *portage_errno() = 22; // EINVAL
+        return -1;
+    }
+
+    struct ifaddrs *head = nullptr;
+    struct ifaddrs **tail = &head;
+
+    auto add_entry = [&](const char *name, unsigned int flags, const void *addr_ptr,
+                         size_t addr_len, const void *mask_ptr, size_t mask_len,
+                         const void *bcast_ptr, size_t bcast_len) {
+        auto *entry = static_cast<struct ifaddrs *>(std::calloc(1, sizeof(struct ifaddrs)));
+        if (!entry) {
+            return;
+        }
+
+        entry->ifa_flags = flags;
+        if (name) {
+            size_t nlen = std::strlen(name) + 1;
+            entry->ifa_name = static_cast<char *>(std::malloc(nlen));
+            if (entry->ifa_name) {
+                std::memcpy(entry->ifa_name, name, nlen);
+            }
+        }
+        if (addr_ptr && addr_len > 0) {
+            entry->ifa_addr = static_cast<struct sockaddr *>(std::calloc(1, addr_len));
+            if (entry->ifa_addr) {
+                std::memcpy(entry->ifa_addr, addr_ptr, addr_len);
+            }
+        }
+        if (mask_ptr && mask_len > 0) {
+            entry->ifa_netmask = static_cast<struct sockaddr *>(std::calloc(1, mask_len));
+            if (entry->ifa_netmask) {
+                std::memcpy(entry->ifa_netmask, mask_ptr, mask_len);
+            }
+        }
+        if (bcast_ptr && bcast_len > 0) {
+            entry->ifa_ifu.ifu_broadaddr =
+                static_cast<struct sockaddr *>(std::calloc(1, bcast_len));
+            if (entry->ifa_ifu.ifu_broadaddr) {
+                std::memcpy(entry->ifa_ifu.ifu_broadaddr, bcast_ptr, bcast_len);
+            }
+        }
+
+        *tail = entry;
+        tail = &entry->ifa_next;
+    };
+
+    // Loopback IPv4 (127.0.0.1/8)
+    constexpr unsigned int loopback_flags =
+        0x1 /* IFF_UP */ | 0x8 /* IFF_LOOPBACK */ | 0x40 /* IFF_RUNNING */;
+    LinuxSockaddrIn lo_in{};
+    lo_in.sin_family = 2; // AF_INET
+    lo_in.sin_addr = htonl(0x7F000001);
+
+    LinuxSockaddrIn lo_mask{};
+    lo_mask.sin_family = 2; // AF_INET
+    lo_mask.sin_addr = htonl(0xFF000000);
+
+    add_entry("lo", loopback_flags, &lo_in, sizeof(lo_in), &lo_mask, sizeof(lo_mask), nullptr, 0);
+
+    // Loopback IPv6 (::1/128)
+    LinuxSockaddrIn6 lo_in6{};
+    lo_in6.sin6_family = 10; // AF_INET6
+    lo_in6.sin6_addr[15] = 1;
+
+    LinuxSockaddrIn6 lo_mask6{};
+    lo_mask6.sin6_family = 10; // AF_INET6
+    std::memset(lo_mask6.sin6_addr, 0xFF, 16);
+
+    add_entry("lo", loopback_flags, &lo_in6, sizeof(lo_in6), &lo_mask6, sizeof(lo_mask6), nullptr,
+              0);
+
+    // Host adapters via GetAdaptersAddresses
+    ULONG out_buf_len = 16384;
+    std::vector<uint8_t> adapter_buf(out_buf_len, 0);
+    auto *adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(adapter_buf.data());
+
+    ULONG ret = GetAdaptersAddresses(
+        AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX | GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST,
+        nullptr, adapters, &out_buf_len);
+    if (ret == ERROR_BUFFER_OVERFLOW) {
+        adapter_buf.resize(out_buf_len, 0);
+        adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(adapter_buf.data());
+        ret = GetAdaptersAddresses(
+            AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX | GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST,
+            nullptr, adapters, &out_buf_len);
+    }
+
+    if (ret == NO_ERROR) {
+        int next_eth_idx = 0;
+        int next_wlan_idx = 0;
+
+        for (auto *curr = adapters; curr != nullptr; curr = curr->Next) {
+            if (curr->IfType == IF_TYPE_SOFTWARE_LOOPBACK) {
+                continue;
+            }
+
+            char ifname[64]{};
+            if (curr->IfType == IF_TYPE_IEEE80211) {
+                std::snprintf(ifname, sizeof(ifname), "wlan%d", next_wlan_idx++);
+            } else {
+                std::snprintf(ifname, sizeof(ifname), "eth%d", next_eth_idx++);
+            }
+
+            unsigned int flags = 0x2 /* IFF_BROADCAST */ | 0x1000 /* IFF_MULTICAST */;
+            if (curr->OperStatus == IfOperStatusUp) {
+                flags |= 0x1 /* IFF_UP */ | 0x40 /* IFF_RUNNING */;
+            }
+
+            int ifindex = static_cast<int>(curr->IfIndex > 1 ? curr->IfIndex : 2);
+
+            for (auto *uni = curr->FirstUnicastAddress; uni != nullptr; uni = uni->Next) {
+                if (!uni->Address.lpSockaddr) {
+                    continue;
+                }
+                ADDRESS_FAMILY family = uni->Address.lpSockaddr->sa_family;
+                if (family == AF_INET) {
+                    auto *sin = reinterpret_cast<sockaddr_in *>(uni->Address.lpSockaddr);
+                    LinuxSockaddrIn host_in{};
+                    host_in.sin_family = 2; // AF_INET
+                    host_in.sin_port = sin->sin_port;
+                    host_in.sin_addr = sin->sin_addr.S_un.S_addr;
+
+                    uint8_t prefix = uni->OnLinkPrefixLength;
+                    uint32_t mask_val =
+                        (prefix >= 32) ? 0xFFFFFFFF : htonl(~((1ULL << (32 - prefix)) - 1));
+                    LinuxSockaddrIn host_mask{};
+                    host_mask.sin_family = 2;
+                    host_mask.sin_addr = mask_val;
+
+                    uint32_t bcast_val = host_in.sin_addr | ~mask_val;
+                    LinuxSockaddrIn host_bcast{};
+                    host_bcast.sin_family = 2;
+                    host_bcast.sin_addr = bcast_val;
+
+                    add_entry(ifname, flags, &host_in, sizeof(host_in), &host_mask,
+                              sizeof(host_mask), &host_bcast, sizeof(host_bcast));
+                } else if (family == AF_INET6) {
+                    auto *sin6 = reinterpret_cast<sockaddr_in6 *>(uni->Address.lpSockaddr);
+                    LinuxSockaddrIn6 host_in6{};
+                    host_in6.sin6_family = 10; // AF_INET6
+                    host_in6.sin6_port = sin6->sin6_port;
+                    std::memcpy(host_in6.sin6_addr, &sin6->sin6_addr, 16);
+                    host_in6.sin6_scope_id = static_cast<uint32_t>(ifindex);
+
+                    uint8_t prefix = uni->OnLinkPrefixLength;
+                    LinuxSockaddrIn6 host_mask6{};
+                    host_mask6.sin6_family = 10;
+                    for (int b = 0; b < 16; ++b) {
+                        if (prefix >= 8) {
+                            host_mask6.sin6_addr[b] = 0xFF;
+                            prefix -= 8;
+                        } else if (prefix > 0) {
+                            host_mask6.sin6_addr[b] =
+                                static_cast<uint8_t>(~((1 << (8 - prefix)) - 1));
+                            prefix = 0;
+                        }
+                    }
+
+                    add_entry(ifname, flags, &host_in6, sizeof(host_in6), &host_mask6,
+                              sizeof(host_mask6), nullptr, 0);
+                }
+            }
+        }
+    }
+
+    *ifap = head;
+    return 0;
+}
+
+__attribute__((sysv_abi)) void portage_freeifaddrs(struct ifaddrs *ifa)
+{
+    while (ifa) {
+        struct ifaddrs *next = ifa->ifa_next;
+        if (ifa->ifa_name) {
+            std::free(ifa->ifa_name);
+        }
+        if (ifa->ifa_addr) {
+            std::free(ifa->ifa_addr);
+        }
+        if (ifa->ifa_netmask) {
+            std::free(ifa->ifa_netmask);
+        }
+        if (ifa->ifa_ifu.ifu_broadaddr) {
+            std::free(ifa->ifa_ifu.ifu_broadaddr);
+        }
+        std::free(ifa);
+        ifa = next;
+    }
+}
+
+__attribute__((sysv_abi)) unsigned int portage_if_nametoindex(const char *ifname)
+{
+    if (!ifname || !*ifname) {
+        *portage_errno() = 19; // ENODEV
+        return 0;
+    }
+    if (std::strcmp(ifname, "lo") == 0) {
+        return 1;
+    }
+
+    ULONG out_buf_len = 16384;
+    std::vector<uint8_t> adapter_buf(out_buf_len, 0);
+    auto *adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(adapter_buf.data());
+
+    ULONG ret = GetAdaptersAddresses(
+        AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+        nullptr, adapters, &out_buf_len);
+    if (ret == ERROR_BUFFER_OVERFLOW) {
+        adapter_buf.resize(out_buf_len, 0);
+        adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(adapter_buf.data());
+        ret = GetAdaptersAddresses(
+            AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+            nullptr, adapters, &out_buf_len);
+    }
+
+    if (ret == NO_ERROR) {
+        int next_eth_idx = 0;
+        int next_wlan_idx = 0;
+
+        for (auto *curr = adapters; curr != nullptr; curr = curr->Next) {
+            if (curr->IfType == IF_TYPE_SOFTWARE_LOOPBACK) {
+                continue;
+            }
+
+            char name[64]{};
+            if (curr->IfType == IF_TYPE_IEEE80211) {
+                std::snprintf(name, sizeof(name), "wlan%d", next_wlan_idx++);
+            } else {
+                std::snprintf(name, sizeof(name), "eth%d", next_eth_idx++);
+            }
+
+            if (std::strcmp(ifname, name) == 0) {
+                return curr->IfIndex > 1 ? curr->IfIndex : 2;
+            }
+        }
+    }
+
+    if (std::strncmp(ifname, "eth", 3) == 0) {
+        int n = std::atoi(ifname + 3);
+        return static_cast<unsigned int>(n + 2);
+    }
+    if (std::strncmp(ifname, "wlan", 4) == 0) {
+        int n = std::atoi(ifname + 4);
+        return static_cast<unsigned int>(n + 2);
+    }
+
+    *portage_errno() = 19; // ENODEV
+    return 0;
+}
+
+__attribute__((sysv_abi)) char *portage_if_indextoname(unsigned int ifindex, char *ifname)
+{
+    if (!ifname || ifindex == 0) {
+        *portage_errno() = 22; // EINVAL
+        return nullptr;
+    }
+    if (ifindex == 1) {
+        std::strncpy(ifname, "lo", 16);
+        ifname[15] = '\0';
+        return ifname;
+    }
+
+    ULONG out_buf_len = 16384;
+    std::vector<uint8_t> adapter_buf(out_buf_len, 0);
+    auto *adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(adapter_buf.data());
+
+    ULONG ret = GetAdaptersAddresses(
+        AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+        nullptr, adapters, &out_buf_len);
+    if (ret == ERROR_BUFFER_OVERFLOW) {
+        adapter_buf.resize(out_buf_len, 0);
+        adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(adapter_buf.data());
+        ret = GetAdaptersAddresses(
+            AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+            nullptr, adapters, &out_buf_len);
+    }
+
+    if (ret == NO_ERROR) {
+        int next_eth_idx = 0;
+        int next_wlan_idx = 0;
+
+        for (auto *curr = adapters; curr != nullptr; curr = curr->Next) {
+            if (curr->IfType == IF_TYPE_SOFTWARE_LOOPBACK) {
+                continue;
+            }
+
+            char name[64]{};
+            if (curr->IfType == IF_TYPE_IEEE80211) {
+                std::snprintf(name, sizeof(name), "wlan%d", next_wlan_idx++);
+            } else {
+                std::snprintf(name, sizeof(name), "eth%d", next_eth_idx++);
+            }
+
+            unsigned int curr_idx = curr->IfIndex > 1 ? curr->IfIndex : 2;
+            if (curr_idx == ifindex) {
+                std::strncpy(ifname, name, 16);
+                ifname[15] = '\0';
+                return ifname;
+            }
+        }
+    }
+
+    std::snprintf(ifname, 16, "eth%u", ifindex >= 2 ? ifindex - 2 : 0);
+    ifname[15] = '\0';
+    return ifname;
+}
+
+__attribute__((sysv_abi)) struct if_nameindex *portage_if_nameindex(void)
+{
+    std::vector<std::pair<unsigned int, std::string>> entries;
+    entries.emplace_back(1, "lo");
+
+    ULONG out_buf_len = 16384;
+    std::vector<uint8_t> adapter_buf(out_buf_len, 0);
+    auto *adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(adapter_buf.data());
+
+    ULONG ret = GetAdaptersAddresses(
+        AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+        nullptr, adapters, &out_buf_len);
+    if (ret == ERROR_BUFFER_OVERFLOW) {
+        adapter_buf.resize(out_buf_len, 0);
+        adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(adapter_buf.data());
+        ret = GetAdaptersAddresses(
+            AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+            nullptr, adapters, &out_buf_len);
+    }
+
+    if (ret == NO_ERROR) {
+        int next_eth_idx = 0;
+        int next_wlan_idx = 0;
+
+        for (auto *curr = adapters; curr != nullptr; curr = curr->Next) {
+            if (curr->IfType == IF_TYPE_SOFTWARE_LOOPBACK) {
+                continue;
+            }
+
+            char name[64]{};
+            if (curr->IfType == IF_TYPE_IEEE80211) {
+                std::snprintf(name, sizeof(name), "wlan%d", next_wlan_idx++);
+            } else {
+                std::snprintf(name, sizeof(name), "eth%d", next_eth_idx++);
+            }
+
+            unsigned int idx = curr->IfIndex > 1 ? curr->IfIndex : 2;
+            entries.emplace_back(idx, std::string(name));
+        }
+    }
+
+    size_t total_size = (entries.size() + 1) * sizeof(struct if_nameindex);
+    auto *result = static_cast<struct if_nameindex *>(std::calloc(1, total_size));
+    if (!result) {
+        *portage_errno() = 12; // ENOMEM
+        return nullptr;
+    }
+
+    for (size_t i = 0; i < entries.size(); ++i) {
+        result[i].if_index = entries[i].first;
+        size_t nlen = entries[i].second.size() + 1;
+        result[i].if_name = static_cast<char *>(std::malloc(nlen));
+        if (result[i].if_name) {
+            std::memcpy(result[i].if_name, entries[i].second.c_str(), nlen);
+        }
+    }
+
+    result[entries.size()].if_index = 0;
+    result[entries.size()].if_name = nullptr;
+
+    return result;
+}
+
+__attribute__((sysv_abi)) void portage_if_freenameindex(struct if_nameindex *ptr)
+{
+    if (!ptr) {
+        return;
+    }
+    for (auto *p = ptr; p->if_index != 0 || p->if_name != nullptr; ++p) {
+        if (p->if_name) {
+            std::free(p->if_name);
+        }
+    }
+    std::free(ptr);
 }
 
 } // extern "C"

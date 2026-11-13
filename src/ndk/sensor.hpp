@@ -254,7 +254,8 @@ class SensorManagerImpl {
     int ConfigureDirectReport(const SensorDescriptor *sensor, int channel_id, int rate);
     [[nodiscard]] bool IsDirectChannelTypeSupported(const SensorDescriptor *sensor,
                                                     int channel_type) const noexcept;
-    [[nodiscard]] int GetHighestDirectReportRateLevel(const SensorDescriptor *sensor) const noexcept;
+    [[nodiscard]] int
+    GetHighestDirectReportRateLevel(const SensorDescriptor *sensor) const noexcept;
 
     // Host pose control APIs
     void ResetPose();

@@ -3,6 +3,7 @@
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -394,6 +395,13 @@ enum class JniObjectType {
     PackageInfo,
     ApplicationInfo,
     Point,
+    ContentResolver,
+    Uri,
+    ParcelFileDescriptor,
+    Cursor,
+    UriPermission,
+    Parcel,
+    IBinder,
 };
 
 struct JniSyntheticObject {
@@ -440,6 +448,10 @@ struct JniSyntheticObject {
     uint32_t bitmap_flags{0};
     std::vector<uint8_t> bitmap_pixels{};
     bool bitmap_locked{false};
+
+    int32_t cursor_pos{-1};
+    std::vector<std::string> cursor_column_names{};
+    std::vector<std::vector<std::string>> cursor_rows{};
 };
 
 struct JniSharedPrefValue {
@@ -449,6 +461,13 @@ struct JniSharedPrefValue {
     int32_t int_val{0};
     float float_val{0.0f};
     bool bool_val{false};
+};
+
+struct JniMemberRef {
+    std::string name;
+    std::string class_name;
+    std::string signature;
+    bool is_static{false};
 };
 
 class JniEnvironment {
@@ -465,10 +484,17 @@ class JniEnvironment {
     jstring CreateString(std::string_view str);
     const char *GetStringChars(jstring str) const;
 
+    jclass InternClass(std::string_view name);
+    void *InternMember(std::string_view class_name, std::string_view name, std::string_view sig,
+                       bool is_static);
+    [[nodiscard]] const JniMemberRef *LookupMember(const void *id) const;
+
     jobject RegisterObject(std::shared_ptr<JniSyntheticObject> obj);
     std::shared_ptr<JniSyntheticObject> LookupObject(jobject obj) const;
 
     jobject CreateDirectByteBuffer(void *address, jlong capacity);
+    jobject CreateParcel(void *native_parcel);
+    jobject CreateBinder(void *native_binder);
     jobject CreateBitmap(uint32_t width, uint32_t height, int32_t format = 1);
     jobject CreateBitmapFromPixels(uint32_t width, uint32_t height, int32_t format, uint32_t stride,
                                    std::vector<uint8_t> pixels);
@@ -495,6 +521,10 @@ class JniEnvironment {
     [[nodiscard]] jobject GetWindowObject() const noexcept { return window_obj_; }
     [[nodiscard]] jobject GetDecorViewObject() const noexcept { return decor_view_obj_; }
     [[nodiscard]] jobject GetClassLoaderObject() const noexcept { return class_loader_obj_; }
+    [[nodiscard]] jobject GetContentResolverObject() const noexcept
+    {
+        return content_resolver_obj_;
+    }
 
     [[nodiscard]] int32_t GetDisplayWidth() const noexcept { return display_width_; }
     [[nodiscard]] int32_t GetDisplayHeight() const noexcept { return display_height_; }
@@ -504,6 +534,15 @@ class JniEnvironment {
     [[nodiscard]] jthrowable GetPendingException() const noexcept { return pending_exception_; }
     void SetPendingException(jthrowable ex) noexcept { pending_exception_ = ex; }
     void ClearPendingException() noexcept { pending_exception_ = nullptr; }
+
+    void SetActiveNativeWindow(void *win) noexcept { active_native_window_ = win; }
+    [[nodiscard]] void *GetActiveNativeWindow() const noexcept { return active_native_window_; }
+    void SetApplicationObject(jobject app) noexcept { application_obj_ = app; }
+    [[nodiscard]] jobject GetApplicationObject() const noexcept { return application_obj_; }
+    void SetActiveActivityObject(jobject act) noexcept { active_activity_obj_ = act; }
+    [[nodiscard]] jobject GetActiveActivityObject() const noexcept { return active_activity_obj_; }
+    void SetIntentObject(jobject intent) noexcept { intent_obj_ = intent; }
+    [[nodiscard]] jobject GetIntentObject() const noexcept { return intent_obj_; }
 
   private:
     JniEnvironment();
@@ -530,6 +569,9 @@ class JniEnvironment {
     std::vector<std::string> string_table_{};
     std::vector<std::shared_ptr<JniSyntheticObject>> object_table_{};
     std::unordered_map<jobject, std::shared_ptr<JniSyntheticObject>> objects_by_handle_{};
+    std::unordered_map<std::string, std::unique_ptr<std::string>> interned_classes_{};
+    std::deque<JniMemberRef> member_refs_{};
+    std::unordered_map<const void *, const JniMemberRef *> member_by_ptr_{};
     std::unordered_map<std::string, void *> registered_natives_{};
     std::unordered_map<std::string, std::unordered_map<std::string, JniSharedPrefValue>>
         shared_prefs_{};
@@ -542,6 +584,11 @@ class JniEnvironment {
     jobject window_obj_{nullptr};
     jobject decor_view_obj_{nullptr};
     jobject class_loader_obj_{nullptr};
+    jobject content_resolver_obj_{nullptr};
+    jobject application_obj_{nullptr};
+    jobject active_activity_obj_{nullptr};
+    jobject intent_obj_{nullptr};
+    void *active_native_window_{nullptr};
     jthrowable pending_exception_{nullptr};
 };
 

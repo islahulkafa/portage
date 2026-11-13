@@ -19,6 +19,9 @@ typedef struct AIBinder AIBinder;
 struct AIBinder_Class;
 typedef struct AIBinder_Class AIBinder_Class;
 
+struct AIBinder_DeathRecipient;
+typedef struct AIBinder_DeathRecipient AIBinder_DeathRecipient;
+
 typedef bool (*AParcel_stringAllocator)(void *stringData, int32_t length, char **outBuffer);
 typedef bool (*AParcel_byteArrayAllocator)(void *arrayData, int32_t length, int8_t **outBuffer);
 
@@ -419,6 +422,88 @@ __attribute__((visibility("default"))) const AIBinder_Class *AIBinder_getClass(A
     return (const AIBinder_Class *)0;
 }
 
+typedef void (*AIBinder_DeathRecipient_onBinderDied)(void *cookie);
+
+__attribute__((visibility("default"))) AIBinder_DeathRecipient *
+AIBinder_DeathRecipient_new(AIBinder_DeathRecipient_onBinderDied onDied)
+{
+    (void)onDied;
+    return (AIBinder_DeathRecipient *)0;
+}
+
+__attribute__((visibility("default"))) void
+AIBinder_DeathRecipient_delete(AIBinder_DeathRecipient *recipient)
+{
+    (void)recipient;
+}
+
+__attribute__((visibility("default"))) binder_status_t
+AIBinder_linkToDeath(AIBinder *binder, AIBinder_DeathRecipient *recipient, void *cookie)
+{
+    (void)binder;
+    (void)recipient;
+    (void)cookie;
+    return 0;
+}
+
+__attribute__((visibility("default"))) binder_status_t
+AIBinder_unlinkToDeath(AIBinder *binder, AIBinder_DeathRecipient *recipient, void *cookie)
+{
+    (void)binder;
+    (void)recipient;
+    (void)cookie;
+    return 0;
+}
+
+__attribute__((visibility("default"))) binder_status_t AIBinder_ping(AIBinder *binder)
+{
+    (void)binder;
+    return 0;
+}
+
+__attribute__((visibility("default"))) binder_status_t AIBinder_dump(AIBinder *binder, int fd,
+                                                                     const char **args,
+                                                                     uint32_t numArgs)
+{
+    (void)binder;
+    (void)fd;
+    (void)args;
+    (void)numArgs;
+    return 0;
+}
+
+__attribute__((visibility("default"))) binder_status_t
+AIBinder_getExtension(AIBinder *binder, AIBinder **outExtension)
+{
+    (void)binder;
+    if (outExtension) {
+        *outExtension = (AIBinder *)0;
+    }
+    return 0;
+}
+
+__attribute__((visibility("default"))) binder_status_t AIBinder_setExtension(AIBinder *binder,
+                                                                             AIBinder *extension)
+{
+    (void)binder;
+    (void)extension;
+    return 0;
+}
+
+__attribute__((visibility("default"))) AParcel *AParcel_fromJavaParcel(void *env, void *javaParcel)
+{
+    (void)env;
+    (void)javaParcel;
+    return (AParcel *)0;
+}
+
+__attribute__((visibility("default"))) void *AParcel_toJavaParcel(const AParcel *parcel, void *env)
+{
+    (void)parcel;
+    (void)env;
+    return (void *)0;
+}
+
 // AServiceManager exports
 __attribute__((visibility("default"))) binder_status_t
 AServiceManager_addService(AIBinder *binder, const char *instance)
@@ -445,4 +530,28 @@ AServiceManager_waitForService(const char *instance)
 {
     (void)instance;
     return (AIBinder *)0;
+}
+
+typedef void (*AServiceManager_NotificationRegistrationCallback)(const char *instance,
+                                                                 void *cookie);
+
+__attribute__((visibility("default"))) bool AServiceManager_isDeclared(const char *instance)
+{
+    (void)instance;
+    return false;
+}
+
+__attribute__((visibility("default"))) void *AServiceManager_registerForNotifications(
+    const char *instance, AServiceManager_NotificationRegistrationCallback callback, void *cookie)
+{
+    (void)instance;
+    (void)callback;
+    (void)cookie;
+    return (void *)0;
+}
+
+__attribute__((visibility("default"))) void
+AServiceManager_unregisterForNotifications(void *notificationRegistration)
+{
+    (void)notificationRegistration;
 }

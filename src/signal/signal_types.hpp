@@ -105,7 +105,8 @@ struct LinuxSignalfdSiginfo {
     uint32_t ssi_arch{0};
     uint8_t __pad[28]{0};
 };
-static_assert(sizeof(LinuxSignalfdSiginfo) == 128, "LinuxSignalfdSiginfo must be exactly 128 bytes");
+static_assert(sizeof(LinuxSignalfdSiginfo) == 128,
+              "LinuxSignalfdSiginfo must be exactly 128 bytes");
 
 struct LinuxStackT {
     void *ss_sp{nullptr};

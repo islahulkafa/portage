@@ -128,8 +128,8 @@ APerformanceHintSession_reportActualWorkDuration(APerformanceHintSession *sessio
 __attribute__((sysv_abi)) int
 APerformanceHintSession_reportActualWorkDuration2(APerformanceHintSession *session,
                                                   AWorkDuration *workDuration);
-__attribute__((sysv_abi)) int
-APerformanceHintSession_sendHint(APerformanceHintSession *session, SessionHint hint);
+__attribute__((sysv_abi)) int APerformanceHintSession_sendHint(APerformanceHintSession *session,
+                                                               SessionHint hint);
 __attribute__((sysv_abi)) int
 APerformanceHintSession_setPreferPowerEfficiency(APerformanceHintSession *session, bool enabled);
 __attribute__((sysv_abi)) void APerformanceHintSession_close(APerformanceHintSession *session);

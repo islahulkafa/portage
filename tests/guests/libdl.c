@@ -22,6 +22,15 @@ __attribute__((visibility("default"))) void *dlsym(void *handle, const char *sym
     return NULL;
 }
 
+__attribute__((visibility("default"))) void *dlvsym(void *handle, const char *symbol,
+                                                    const char *version)
+{
+    (void)handle;
+    (void)symbol;
+    (void)version;
+    return NULL;
+}
+
 __attribute__((visibility("default"))) int dlclose(void *handle)
 {
     (void)handle;

@@ -85,6 +85,7 @@ __attribute__((sysv_abi)) int32_t ANativeWindow_getHeight(ANativeWindow *window)
 __attribute__((sysv_abi)) int32_t ANativeWindow_getFormat(ANativeWindow *window);
 __attribute__((sysv_abi)) void ANativeWindow_acquire(ANativeWindow *window);
 __attribute__((sysv_abi)) void ANativeWindow_release(ANativeWindow *window);
+__attribute__((sysv_abi)) ANativeWindow *ANativeWindow_fromSurface(void *env, void *surface);
 __attribute__((sysv_abi)) int32_t ANativeWindow_lock(ANativeWindow *window,
                                                      ANativeWindow_Buffer *outBuffer,
                                                      ARect *inOutDirtyBounds);

@@ -26,7 +26,7 @@ typedef enum AThermalStatus AThermalStatus;
 struct AThermalManager;
 typedef struct AThermalManager AThermalManager;
 
-typedef void (__attribute__((sysv_abi)) *AThermal_StatusCallback)(void *data,
+typedef void(__attribute__((sysv_abi)) * AThermal_StatusCallback)(void *data,
                                                                   AThermalStatus status);
 
 namespace portage::ndk {

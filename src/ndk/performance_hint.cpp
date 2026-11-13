@@ -20,10 +20,7 @@ PerformanceHintSession::PerformanceHintSession(const int32_t *thread_ids, size_t
     }
 }
 
-PerformanceHintSession::~PerformanceHintSession() noexcept
-{
-    RevertThreadQos();
-}
+PerformanceHintSession::~PerformanceHintSession() noexcept { RevertThreadQos(); }
 
 void PerformanceHintSession::ApplyThreadQos(bool boost, bool power_efficient) noexcept
 {
@@ -265,10 +262,7 @@ size_t PerformanceHintManager::GetActiveSessionCount() const noexcept
 
 extern "C" {
 
-__attribute__((sysv_abi)) AWorkDuration *AWorkDuration_create(void)
-{
-    return new AWorkDuration{};
-}
+__attribute__((sysv_abi)) AWorkDuration *AWorkDuration_create(void) { return new AWorkDuration{}; }
 
 __attribute__((sysv_abi)) void AWorkDuration_release(AWorkDuration *aWorkDuration)
 {
@@ -365,8 +359,8 @@ APerformanceHintSession_reportActualWorkDuration2(APerformanceHintSession *sessi
     return s->ReportActualWorkDuration2(workDuration);
 }
 
-__attribute__((sysv_abi)) int
-APerformanceHintSession_sendHint(APerformanceHintSession *session, SessionHint hint)
+__attribute__((sysv_abi)) int APerformanceHintSession_sendHint(APerformanceHintSession *session,
+                                                               SessionHint hint)
 {
     if (!session) {
         return -22;

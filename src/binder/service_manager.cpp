@@ -135,6 +135,93 @@ __attribute__((sysv_abi)) binder_status_t BatteryPropertiesTransact(AIBinder *bi
     return STATUS_OK;
 }
 
+__attribute__((sysv_abi)) binder_status_t ActivityManagerTransact(AIBinder *binder,
+                                                                  transaction_code_t code,
+                                                                  const AParcel *in, AParcel *out)
+{
+    (void)binder;
+    (void)in;
+    if (out) {
+        AParcel_writeInt32(out, 0);
+        if (code == 1) {
+            AParcel_writeBool(out, false);
+        } else if (code == 2) {
+            AParcel_writeInt32(out, 1024 * 1024);
+        } else if (code == 3) {
+            AParcel_writeInt64(out, 4096LL * 1024 * 1024);
+            AParcel_writeInt64(out, 8192LL * 1024 * 1024);
+            AParcel_writeInt64(out, 512LL * 1024 * 1024);
+            AParcel_writeBool(out, false);
+        } else if (code == 4) {
+            AParcel_writeInt32(out, 1);
+            AParcel_writeString(out, "com.portage.gameengine", -1);
+        }
+    }
+    return STATUS_OK;
+}
+
+__attribute__((sysv_abi)) binder_status_t DisplayManagerTransact(AIBinder *binder,
+                                                                 transaction_code_t code,
+                                                                 const AParcel *in, AParcel *out)
+{
+    (void)binder;
+    (void)in;
+    if (out) {
+        AParcel_writeInt32(out, 0);
+        if (code == 1) {
+            AParcel_writeInt32(out, 1);
+            AParcel_writeInt32(out, 0);
+        } else if (code == 2) {
+            AParcel_writeInt32(out, 1920);
+            AParcel_writeInt32(out, 1080);
+            AParcel_writeFloat(out, 60.0f);
+            AParcel_writeInt32(out, 320);
+        }
+    }
+    return STATUS_OK;
+}
+
+__attribute__((sysv_abi)) binder_status_t WindowManagerTransact(AIBinder *binder,
+                                                                transaction_code_t code,
+                                                                const AParcel *in, AParcel *out)
+{
+    (void)binder;
+    (void)in;
+    if (out) {
+        AParcel_writeInt32(out, 0);
+        if (code == 1) {
+            AParcel_writeInt32(out, 0);
+        } else if (code == 2) {
+            AParcel_writeInt32(out, 1920);
+            AParcel_writeInt32(out, 1080);
+        } else if (code == 3) {
+            AParcel_writeInt32(out, 320);
+        }
+    }
+    return STATUS_OK;
+}
+
+__attribute__((sysv_abi)) binder_status_t AudioServiceTransact(AIBinder *binder,
+                                                               transaction_code_t code,
+                                                               const AParcel *in, AParcel *out)
+{
+    (void)binder;
+    (void)in;
+    if (out) {
+        AParcel_writeInt32(out, 0);
+        if (code == 1) {
+            AParcel_writeInt32(out, 100);
+        } else if (code == 2) {
+            AParcel_writeInt32(out, 100);
+        } else if (code == 3) {
+            AParcel_writeInt32(out, 2);
+        } else if (code == 4) {
+            AParcel_writeBool(out, false);
+        }
+    }
+    return STATUS_OK;
+}
+
 } // namespace
 
 ServiceManager &ServiceManager::Instance() noexcept
@@ -161,6 +248,8 @@ void ServiceManager::Reset()
         delete cl;
     }
     synthetic_classes_.clear();
+    declared_interfaces_.clear();
+    notification_listeners_.clear();
 
     PlayLicensingService::Instance().Reset();
     PlayBillingService::Instance().Reset();
@@ -170,6 +259,22 @@ void ServiceManager::Reset()
 
 void ServiceManager::InitializeSyntheticServices()
 {
+    declared_interfaces_.insert("surfaceflinger");
+    declared_interfaces_.insert("power");
+    declared_interfaces_.insert("package");
+    declared_interfaces_.insert("batteryproperties");
+    declared_interfaces_.insert("batterystats");
+    declared_interfaces_.insert("vibrator");
+    declared_interfaces_.insert("activity");
+    declared_interfaces_.insert("display");
+    declared_interfaces_.insert("window");
+    declared_interfaces_.insert("audio");
+    declared_interfaces_.insert("android.hardware.graphics.composer/default");
+    declared_interfaces_.insert("android.hardware.graphics.allocator/default");
+    declared_interfaces_.insert("android.hardware.audio/default");
+    declared_interfaces_.insert("android.hardware.power/default");
+    declared_interfaces_.insert("android.hardware.vibrator/default");
+
     auto *sf_class = AIBinder_Class_define("android.ui.ISurfaceComposer", nullptr, nullptr,
                                            &SurfaceFlingerTransact);
     synthetic_classes_.push_back(sf_class);
@@ -202,6 +307,30 @@ void ServiceManager::InitializeSyntheticServices()
     auto *vib_binder = AIBinder_new(vib_class, nullptr);
     services_["vibrator"] = vib_binder;
 
+    auto *act_class = AIBinder_Class_define("android.app.IActivityManager", nullptr, nullptr,
+                                            &ActivityManagerTransact);
+    synthetic_classes_.push_back(act_class);
+    auto *act_binder = AIBinder_new(act_class, nullptr);
+    services_["activity"] = act_binder;
+
+    auto *disp_class = AIBinder_Class_define("android.hardware.display.IDisplayManager", nullptr,
+                                             nullptr, &DisplayManagerTransact);
+    synthetic_classes_.push_back(disp_class);
+    auto *disp_binder = AIBinder_new(disp_class, nullptr);
+    services_["display"] = disp_binder;
+
+    auto *win_class = AIBinder_Class_define("android.view.IWindowManager", nullptr, nullptr,
+                                            &WindowManagerTransact);
+    synthetic_classes_.push_back(win_class);
+    auto *win_binder = AIBinder_new(win_class, nullptr);
+    services_["window"] = win_binder;
+
+    auto *aud_class = AIBinder_Class_define("android.media.IAudioService", nullptr, nullptr,
+                                            &AudioServiceTransact);
+    synthetic_classes_.push_back(aud_class);
+    auto *aud_binder = AIBinder_new(aud_class, nullptr);
+    services_["audio"] = aud_binder;
+
     auto *licensing_binder = PlayLicensingService::Instance().GetBinder();
     if (licensing_binder) {
         services_["com.android.vending.licensing.ILicensingService"] = licensing_binder;
@@ -218,15 +347,29 @@ binder_status_t ServiceManager::AddService(std::string_view name, AIBinder *bind
     if (name.empty() || !binder) {
         return STATUS_BAD_VALUE;
     }
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = services_.find(std::string(name));
-    if (it != services_.end()) {
-        if (it->second) {
-            AIBinder_decStrong(it->second);
+    std::vector<std::pair<AServiceManager_NotificationRegistrationCallback, void *>> to_notify;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = services_.find(std::string(name));
+        if (it != services_.end()) {
+            if (it->second) {
+                AIBinder_decStrong(it->second);
+            }
+        }
+        AIBinder_incStrong(binder);
+        services_[std::string(name)] = binder;
+
+        for (const auto &reg : notification_listeners_) {
+            if (reg && reg->instance == name && reg->callback) {
+                to_notify.push_back({reg->callback, reg->cookie});
+            }
         }
     }
-    AIBinder_incStrong(binder);
-    services_[std::string(name)] = binder;
+
+    for (const auto &[cb, cookie] : to_notify) {
+        cb(std::string(name).c_str(), cookie);
+    }
+
     return STATUS_OK;
 }
 
@@ -242,6 +385,66 @@ AIBinder *ServiceManager::GetService(std::string_view name)
 }
 
 AIBinder *ServiceManager::CheckService(std::string_view name) { return GetService(name); }
+
+bool ServiceManager::IsDeclared(std::string_view name) const
+{
+    if (name.empty()) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (services_.find(std::string(name)) != services_.end()) {
+        return true;
+    }
+    if (declared_interfaces_.find(std::string(name)) != declared_interfaces_.end()) {
+        return true;
+    }
+    if (name.starts_with("android.hardware.") || name.starts_with("android.frameworks.")) {
+        return true;
+    }
+    return false;
+}
+
+void *ServiceManager::RegisterForNotifications(
+    std::string_view name, AServiceManager_NotificationRegistrationCallback callback, void *cookie)
+{
+    if (name.empty() || !callback) {
+        return nullptr;
+    }
+    auto reg = std::make_unique<ServiceNotificationRegistration>();
+    reg->instance = std::string(name);
+    reg->callback = callback;
+    reg->cookie = cookie;
+    void *token = reg.get();
+
+    bool notify_now = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (services_.find(reg->instance) != services_.end()) {
+            notify_now = true;
+        }
+        notification_listeners_.push_back(std::move(reg));
+    }
+
+    if (notify_now) {
+        callback(std::string(name).c_str(), cookie);
+    }
+
+    return token;
+}
+
+void ServiceManager::UnregisterForNotifications(void *token)
+{
+    if (!token) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto it = notification_listeners_.begin(); it != notification_listeners_.end(); ++it) {
+        if (it->get() == token) {
+            notification_listeners_.erase(it);
+            break;
+        }
+    }
+}
 
 size_t ServiceManager::ServiceCount() const noexcept
 {
@@ -281,6 +484,31 @@ __attribute__((sysv_abi)) AIBinder *AServiceManager_getService(const char *insta
 __attribute__((sysv_abi)) AIBinder *AServiceManager_waitForService(const char *instance)
 {
     return AServiceManager_getService(instance);
+}
+
+__attribute__((sysv_abi)) bool AServiceManager_isDeclared(const char *instance)
+{
+    if (!instance) {
+        return false;
+    }
+    return portage::binder::ServiceManager::Instance().IsDeclared(instance);
+}
+
+__attribute__((sysv_abi)) void *AServiceManager_registerForNotifications(
+    const char *instance, AServiceManager_NotificationRegistrationCallback callback, void *cookie)
+{
+    if (!instance || !callback) {
+        return nullptr;
+    }
+    return portage::binder::ServiceManager::Instance().RegisterForNotifications(instance, callback,
+                                                                                cookie);
+}
+
+__attribute__((sysv_abi)) void
+AServiceManager_unregisterForNotifications(void *notificationRegistration)
+{
+    portage::binder::ServiceManager::Instance().UnregisterForNotifications(
+        notificationRegistration);
 }
 
 } // extern "C"

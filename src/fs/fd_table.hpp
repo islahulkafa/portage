@@ -22,7 +22,13 @@ namespace portage::mem {
 struct SharedMemoryRegion;
 }
 
+namespace portage::net {
+class NetlinkSocketState;
+}
+
 namespace portage::fs {
+
+class InotifyState;
 
 struct EventFdState {
     std::mutex mutex{};
@@ -125,6 +131,16 @@ struct FileDescriptor {
 
     // Signalfd support
     std::shared_ptr<SignalfdState> signalfd{nullptr};
+
+    // Inotify support
+    std::shared_ptr<InotifyState> inotify{nullptr};
+
+    // Namespace fd support
+    uint64_t namespace_id{0};
+    int namespace_type{0};
+
+    // Netlink socket support
+    std::shared_ptr<portage::net::NetlinkSocketState> netlink_socket{nullptr};
 };
 
 class FileDescriptorTable {
@@ -143,6 +159,8 @@ class FileDescriptorTable {
     int AllocateDirectory(int flags, std::string_view path, std::vector<DirEntry> entries);
 
     int AllocateSocket(UINT_PTR s, int flags);
+
+    int AllocateNetlinkSocket(std::shared_ptr<portage::net::NetlinkSocketState> netlink, int flags);
 
     int AllocateEpoll(int epoll_id, int flags);
 

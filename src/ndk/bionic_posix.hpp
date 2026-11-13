@@ -86,6 +86,38 @@ __attribute__((sysv_abi)) portage::ndk::BionicDirent64 *
 portage_readdir64(portage::ndk::BionicDir *dirp);
 __attribute__((sysv_abi)) int portage_closedir(portage::ndk::BionicDir *dirp);
 
+// Network interface discovery (getifaddrs / if_nameindex)
+struct ifaddrs {
+    struct ifaddrs *ifa_next;
+    char *ifa_name;
+    unsigned int ifa_flags;
+    struct sockaddr *ifa_addr;
+    struct sockaddr *ifa_netmask;
+    union {
+        struct sockaddr *ifu_broadaddr;
+        struct sockaddr *ifu_dstaddr;
+    } ifa_ifu;
+    void *ifa_data;
+};
+#ifndef ifa_broadaddr
+#define ifa_broadaddr ifa_ifu.ifu_broadaddr
+#endif
+#ifndef ifa_dstaddr
+#define ifa_dstaddr ifa_ifu.ifu_dstaddr
+#endif
+
+struct if_nameindex {
+    unsigned int if_index;
+    char *if_name;
+};
+
+__attribute__((sysv_abi)) int portage_getifaddrs(struct ifaddrs **ifap);
+__attribute__((sysv_abi)) void portage_freeifaddrs(struct ifaddrs *ifa);
+__attribute__((sysv_abi)) unsigned int portage_if_nametoindex(const char *ifname);
+__attribute__((sysv_abi)) char *portage_if_indextoname(unsigned int ifindex, char *ifname);
+__attribute__((sysv_abi)) struct if_nameindex *portage_if_nameindex(void);
+__attribute__((sysv_abi)) void portage_if_freenameindex(struct if_nameindex *ptr);
+
 // Clocks and time
 __attribute__((sysv_abi)) int portage_clock_gettime(int clk_id, portage::ndk::GuestTimespec *tp);
 __attribute__((sysv_abi)) int portage_gettimeofday(void *tv, void *tz);
@@ -117,5 +149,20 @@ __attribute__((sysv_abi)) int portage_signalfd(int fd, const uint64_t *mask, int
 __attribute__((sysv_abi)) int portage_signalfd4(int fd, const uint64_t *mask, size_t sizemask,
                                                 int flags);
 __attribute__((sysv_abi)) int portage_sigsuspend(const uint64_t *mask);
+
+// Inotify
+__attribute__((sysv_abi)) int portage_inotify_init();
+__attribute__((sysv_abi)) int portage_inotify_init1(int flags);
+__attribute__((sysv_abi)) int portage_inotify_add_watch(int fd, const char *path, uint32_t mask);
+__attribute__((sysv_abi)) int portage_inotify_rm_watch(int fd, int wd);
+
+// Namespaces
+__attribute__((sysv_abi)) int portage_unshare(int flags);
+__attribute__((sysv_abi)) int portage_setns(int fd, int nstype);
+
+// CPU affinity
+__attribute__((sysv_abi)) int portage_sched_setaffinity(int pid, size_t cpusetsize,
+                                                        const void *mask);
+__attribute__((sysv_abi)) int portage_sched_getaffinity(int pid, size_t cpusetsize, void *mask);
 
 } // extern "C"

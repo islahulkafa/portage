@@ -5,7 +5,9 @@
 
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <string>
+#include <vector>
 
 typedef uint32_t transaction_code_t;
 typedef uint32_t binder_flags_t;
@@ -29,6 +31,15 @@ struct AIBinder_Class {
     AIBinder_Class_onTransact onTransact{nullptr};
 };
 
+struct AIBinder_DeathRecipient {
+    AIBinder_DeathRecipient_onBinderDied onDied{nullptr};
+};
+
+struct DeathLink {
+    AIBinder_DeathRecipient *recipient{nullptr};
+    void *cookie{nullptr};
+};
+
 struct AIBinder {
     std::atomic<uint32_t> ref_count{1};
     const AIBinder_Class *clazz{nullptr};
@@ -36,6 +47,9 @@ struct AIBinder {
     std::string descriptor{};
     bool is_remote{false};
     int32_t handle{0};
+    AIBinder *extension{nullptr};
+    std::mutex death_mutex{};
+    std::vector<DeathLink> death_links{};
 };
 
 extern "C" {
@@ -71,5 +85,29 @@ __attribute__((sysv_abi)) bool AIBinder_associateClass(AIBinder *binder,
                                                        const AIBinder_Class *clazz);
 
 __attribute__((sysv_abi)) const AIBinder_Class *AIBinder_getClass(AIBinder *binder);
+
+__attribute__((sysv_abi)) AIBinder_DeathRecipient *
+AIBinder_DeathRecipient_new(AIBinder_DeathRecipient_onBinderDied onDied);
+
+__attribute__((sysv_abi)) void AIBinder_DeathRecipient_delete(AIBinder_DeathRecipient *recipient);
+
+__attribute__((sysv_abi)) binder_status_t AIBinder_linkToDeath(AIBinder *binder,
+                                                               AIBinder_DeathRecipient *recipient,
+                                                               void *cookie);
+
+__attribute__((sysv_abi)) binder_status_t AIBinder_unlinkToDeath(AIBinder *binder,
+                                                                 AIBinder_DeathRecipient *recipient,
+                                                                 void *cookie);
+
+__attribute__((sysv_abi)) binder_status_t AIBinder_ping(AIBinder *binder);
+
+__attribute__((sysv_abi)) binder_status_t AIBinder_dump(AIBinder *binder, int fd, const char **args,
+                                                        uint32_t numArgs);
+
+__attribute__((sysv_abi)) binder_status_t AIBinder_getExtension(AIBinder *binder,
+                                                                AIBinder **outExtension);
+
+__attribute__((sysv_abi)) binder_status_t AIBinder_setExtension(AIBinder *binder,
+                                                                AIBinder *extension);
 
 } // extern "C"

@@ -285,7 +285,7 @@ TEST_F(PosixBatch3Test, TimerCreateAndDelete)
 {
     int tid = -1;
     int64_t ret = SyscallDispatcher::Dispatch(222, LINUX_CLOCK_REALTIME, 0,
-                                             reinterpret_cast<uint64_t>(&tid), 0, 0, 0);
+                                              reinterpret_cast<uint64_t>(&tid), 0, 0, 0);
     EXPECT_EQ(ret, 0);
     EXPECT_GE(tid, 0);
     ret = SyscallDispatcher::Dispatch(225, static_cast<uint64_t>(tid), 0, 0, 0, 0, 0);
@@ -302,13 +302,13 @@ TEST_F(PosixBatch3Test, TimerSetAndGetTime)
     LinuxItimerspec new_val{{0, 100'000'000LL}, {0, 100'000'000LL}};
     LinuxItimerspec old_val{};
     int64_t ret = SyscallDispatcher::Dispatch(223, static_cast<uint64_t>(tid), 0,
-                                             reinterpret_cast<uint64_t>(&new_val),
-                                             reinterpret_cast<uint64_t>(&old_val), 0, 0);
+                                              reinterpret_cast<uint64_t>(&new_val),
+                                              reinterpret_cast<uint64_t>(&old_val), 0, 0);
     EXPECT_EQ(ret, 0);
 
     LinuxItimerspec curr{};
     ret = SyscallDispatcher::Dispatch(224, static_cast<uint64_t>(tid),
-                                     reinterpret_cast<uint64_t>(&curr), 0, 0, 0, 0);
+                                      reinterpret_cast<uint64_t>(&curr), 0, 0, 0, 0);
     EXPECT_EQ(ret, 0);
     EXPECT_EQ(curr.it_interval.tv_nsec, 100'000'000LL);
 

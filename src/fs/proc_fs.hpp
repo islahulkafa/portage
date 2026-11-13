@@ -28,6 +28,7 @@ class ProcFs {
     static std::string GenerateMemInfo();
     static std::string GenerateVersion();
     static std::string GenerateMaps(mem::AddressSpace *as);
+    static std::string GenerateSmaps(mem::AddressSpace *as, bool rollup_only = false);
     static std::string GenerateStatus();
     static std::string GenerateStat();
     static std::string GenerateStatm();
@@ -37,6 +38,10 @@ class ProcFs {
     static std::string GenerateUptime();
     static std::string GenerateCpuList();
     static std::string GenerateCmdline(const std::vector<std::string> &cmdline);
+    static std::string GenerateCgroups();
+    static std::string GenerateSelfCgroup();
+    static std::string GenerateCgroupFile(std::string_view path);
+    static std::string GenerateCpuTopologyFile(std::string_view path);
 };
 
 } // namespace portage::fs

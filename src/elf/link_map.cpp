@@ -213,21 +213,73 @@ std::shared_ptr<LinkMapEntry> LinkMap::FindModuleByAddress(uintptr_t addr) const
     return nullptr;
 }
 
-uintptr_t LinkMap::ResolveGlobalSymbol(std::string_view name) const
+uintptr_t LinkMap::CheckAndResolveIfunc(const std::shared_ptr<LinkMapEntry> &m,
+                                        const std::string &name, uintptr_t raw_addr) const
 {
-    if (uintptr_t ndk_addr = ndk::NdkSymbolRegistry::Instance().Lookup(name); ndk_addr != 0) {
-        return ndk_addr;
+    if (m && m->elf.ifunc_symbols.contains(name)) {
+        using IfuncResolver = uintptr_t(__attribute__((sysv_abi)) *)(void);
+        auto resolver = reinterpret_cast<IfuncResolver>(raw_addr);
+        uintptr_t resolved = resolver();
+        m->elf.symbols[name] = resolved;
+        m->elf.ifunc_symbols.erase(name);
+        return resolved;
     }
-    std::lock_guard lock(mutex_);
-    for (const auto &m : modules_) {
-        auto it = m->elf.symbols.find(std::string(name));
-        if (it != m->elf.symbols.end()) {
-            return it->second;
+    return raw_addr;
+}
+
+bool LinkMap::CheckSymbolVersionMatch(const LoadedElf &elf, const std::string &sym_name,
+                                      std::string_view version) const
+{
+    auto vit = elf.versioned_symbols.find(sym_name);
+    if (vit == elf.versioned_symbols.end()) {
+        return version.empty();
+    }
+
+    if (version.empty()) {
+        for (const auto &vdef : vit->second) {
+            if (!vdef.is_hidden) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    for (const auto &vdef : vit->second) {
+        if (vdef.version_name == version) {
+            return true;
         }
     }
-    if (uintptr_t fallback_addr = ndk::NdkSymbolRegistry::Instance().LookupFallback(name);
-        fallback_addr != 0) {
-        return fallback_addr;
+    return false;
+}
+
+uintptr_t LinkMap::ResolveGlobalSymbol(std::string_view name) const
+{
+    return ResolveGlobalSymbolVersioned(name, "");
+}
+
+uintptr_t LinkMap::ResolveGlobalSymbolVersioned(std::string_view name,
+                                                std::string_view version) const
+{
+    if (version.empty()) {
+        if (uintptr_t ndk_addr = ndk::NdkSymbolRegistry::Instance().Lookup(name); ndk_addr != 0) {
+            return ndk_addr;
+        }
+    }
+    std::lock_guard lock(mutex_);
+    std::string key(name);
+    for (const auto &m : modules_) {
+        auto it = m->elf.symbols.find(key);
+        if (it != m->elf.symbols.end()) {
+            if (CheckSymbolVersionMatch(m->elf, key, version)) {
+                return CheckAndResolveIfunc(m, key, it->second);
+            }
+        }
+    }
+    if (version.empty()) {
+        if (uintptr_t fallback_addr = ndk::NdkSymbolRegistry::Instance().LookupFallback(name);
+            fallback_addr != 0) {
+            return fallback_addr;
+        }
     }
     return 0;
 }
@@ -240,7 +292,7 @@ bool LinkMap::ResolveGlobalSymbolWithSize(std::string_view name, uintptr_t &out_
     for (const auto &m : modules_) {
         auto it = m->elf.symbols.find(key);
         if (it != m->elf.symbols.end()) {
-            out_addr = it->second;
+            out_addr = CheckAndResolveIfunc(m, key, it->second);
             auto sit = m->elf.symbol_sizes.find(key);
             out_size = (sit != m->elf.symbol_sizes.end()) ? sit->second : 0;
             return true;
@@ -404,14 +456,23 @@ uintptr_t LinkMap::ResolveSymbolForModule(const LinkMapEntry &entry,
     if (uintptr_t ndk_addr = ndk::NdkSymbolRegistry::Instance().Lookup(sym_name); ndk_addr != 0) {
         return ndk_addr;
     }
-    auto it = entry.elf.symbols.find(std::string(sym_name));
+    std::string key(sym_name);
+    auto it = entry.elf.symbols.find(key);
     if (it != entry.elf.symbols.end()) {
+        if (entry.elf.ifunc_symbols.contains(key)) {
+            using IfuncResolver = uintptr_t(__attribute__((sysv_abi)) *)(void);
+            auto resolver = reinterpret_cast<IfuncResolver>(it->second);
+            uintptr_t resolved = resolver();
+            const_cast<LinkMapEntry &>(entry).elf.symbols[key] = resolved;
+            const_cast<LinkMapEntry &>(entry).elf.ifunc_symbols.erase(key);
+            return resolved;
+        }
         return it->second;
     }
     for (const auto &dep : entry.dependencies) {
-        auto dit = dep->elf.symbols.find(std::string(sym_name));
+        auto dit = dep->elf.symbols.find(key);
         if (dit != dep->elf.symbols.end()) {
-            return dit->second;
+            return CheckAndResolveIfunc(dep, key, dit->second);
         }
     }
     return ResolveGlobalSymbol(sym_name);
@@ -900,14 +961,27 @@ void *LinkMap::DlSym(void *handle, const char *symbol)
     return DlSymWithCaller(handle, symbol, 0);
 }
 
+void *LinkMap::DlVSym(void *handle, const char *symbol, const char *version)
+{
+    return DlVSymWithCaller(handle, symbol, version, 0);
+}
+
 void *LinkMap::DlSymWithCaller(void *handle, const char *symbol, uintptr_t caller_addr)
+{
+    return DlVSymWithCaller(handle, symbol, nullptr, caller_addr);
+}
+
+void *LinkMap::DlVSymWithCaller(void *handle, const char *symbol, const char *version,
+                                uintptr_t caller_addr)
 {
     if (symbol == nullptr) {
         std::lock_guard lock(mutex_);
-        last_error_ = "dlsym: null symbol";
+        last_error_ = "dlvsym: null symbol";
         return nullptr;
     }
 
+    std::string_view ver_view =
+        (version != nullptr) ? std::string_view(version) : std::string_view{};
     std::lock_guard lock(mutex_);
 
     if (handle == RTLD_NEXT) {
@@ -927,42 +1001,53 @@ void *LinkMap::DlSymWithCaller(void *handle, const char *symbol, uintptr_t calle
                     }
                     auto it = m->elf.symbols.find(symbol);
                     if (it != m->elf.symbols.end()) {
-                        last_error_.clear();
-                        return reinterpret_cast<void *>(it->second);
+                        if (CheckSymbolVersionMatch(m->elf, symbol, ver_view)) {
+                            uintptr_t res = CheckAndResolveIfunc(m, symbol, it->second);
+                            last_error_.clear();
+                            return reinterpret_cast<void *>(res);
+                        }
                     }
                 }
-                uintptr_t ndk_addr = ndk::NdkSymbolRegistry::Instance().Lookup(symbol);
-                if (ndk_addr != 0) {
-                    last_error_.clear();
-                    return reinterpret_cast<void *>(ndk_addr);
+                if (ver_view.empty()) {
+                    uintptr_t ndk_addr = ndk::NdkSymbolRegistry::Instance().Lookup(symbol);
+                    if (ndk_addr != 0) {
+                        last_error_.clear();
+                        return reinterpret_cast<void *>(ndk_addr);
+                    }
+                    uintptr_t fallback_addr =
+                        ndk::NdkSymbolRegistry::Instance().LookupFallback(symbol);
+                    if (fallback_addr != 0) {
+                        last_error_.clear();
+                        return reinterpret_cast<void *>(fallback_addr);
+                    }
                 }
-                uintptr_t fallback_addr = ndk::NdkSymbolRegistry::Instance().LookupFallback(symbol);
-                if (fallback_addr != 0) {
-                    last_error_.clear();
-                    return reinterpret_cast<void *>(fallback_addr);
-                }
-                last_error_ = "dlsym(RTLD_NEXT): symbol not found: " + std::string(symbol);
+                last_error_ = "dlvsym(RTLD_NEXT): symbol not found: " + std::string(symbol);
                 return nullptr;
             }
         }
         for (size_t i = 1; i < modules_.size(); ++i) {
             auto it = modules_[i]->elf.symbols.find(symbol);
             if (it != modules_[i]->elf.symbols.end()) {
-                last_error_.clear();
-                return reinterpret_cast<void *>(it->second);
+                if (CheckSymbolVersionMatch(modules_[i]->elf, symbol, ver_view)) {
+                    uintptr_t res = CheckAndResolveIfunc(modules_[i], symbol, it->second);
+                    last_error_.clear();
+                    return reinterpret_cast<void *>(res);
+                }
             }
         }
-        uintptr_t ndk_addr = ndk::NdkSymbolRegistry::Instance().Lookup(symbol);
-        if (ndk_addr != 0) {
-            last_error_.clear();
-            return reinterpret_cast<void *>(ndk_addr);
+        if (ver_view.empty()) {
+            uintptr_t ndk_addr = ndk::NdkSymbolRegistry::Instance().Lookup(symbol);
+            if (ndk_addr != 0) {
+                last_error_.clear();
+                return reinterpret_cast<void *>(ndk_addr);
+            }
+            uintptr_t fallback_addr = ndk::NdkSymbolRegistry::Instance().LookupFallback(symbol);
+            if (fallback_addr != 0) {
+                last_error_.clear();
+                return reinterpret_cast<void *>(fallback_addr);
+            }
         }
-        uintptr_t fallback_addr = ndk::NdkSymbolRegistry::Instance().LookupFallback(symbol);
-        if (fallback_addr != 0) {
-            last_error_.clear();
-            return reinterpret_cast<void *>(fallback_addr);
-        }
-        last_error_ = "dlsym(RTLD_NEXT): symbol not found: " + std::string(symbol);
+        last_error_ = "dlvsym(RTLD_NEXT): symbol not found: " + std::string(symbol);
         return nullptr;
     }
 
@@ -970,10 +1055,57 @@ void *LinkMap::DlSymWithCaller(void *handle, const char *symbol, uintptr_t calle
         for (const auto &m : modules_) {
             auto it = m->elf.symbols.find(symbol);
             if (it != m->elf.symbols.end()) {
-                last_error_.clear();
-                return reinterpret_cast<void *>(it->second);
+                if (CheckSymbolVersionMatch(m->elf, symbol, ver_view)) {
+                    uintptr_t res = CheckAndResolveIfunc(m, symbol, it->second);
+                    last_error_.clear();
+                    return reinterpret_cast<void *>(res);
+                }
             }
         }
+        if (ver_view.empty()) {
+            uintptr_t ndk_addr = ndk::NdkSymbolRegistry::Instance().Lookup(symbol);
+            if (ndk_addr != 0) {
+                last_error_.clear();
+                return reinterpret_cast<void *>(ndk_addr);
+            }
+            uintptr_t fallback_addr = ndk::NdkSymbolRegistry::Instance().LookupFallback(symbol);
+            if (fallback_addr != 0) {
+                last_error_.clear();
+                return reinterpret_cast<void *>(fallback_addr);
+            }
+        }
+        last_error_ = "dlvsym: symbol not found: " + std::string(symbol);
+        return nullptr;
+    }
+
+    auto hit = modules_by_handle_.find(handle);
+    if (hit == modules_by_handle_.end()) {
+        last_error_ = "dlvsym: invalid library handle";
+        return nullptr;
+    }
+
+    const auto &entry = hit->second;
+    auto sit = entry->elf.symbols.find(symbol);
+    if (sit != entry->elf.symbols.end()) {
+        if (CheckSymbolVersionMatch(entry->elf, symbol, ver_view)) {
+            uintptr_t res = CheckAndResolveIfunc(entry, symbol, sit->second);
+            last_error_.clear();
+            return reinterpret_cast<void *>(res);
+        }
+    }
+
+    for (const auto &dep : entry->dependencies) {
+        auto dit = dep->elf.symbols.find(symbol);
+        if (dit != dep->elf.symbols.end()) {
+            if (CheckSymbolVersionMatch(dep->elf, symbol, ver_view)) {
+                uintptr_t res = CheckAndResolveIfunc(dep, symbol, dit->second);
+                last_error_.clear();
+                return reinterpret_cast<void *>(res);
+            }
+        }
+    }
+
+    if (ver_view.empty()) {
         uintptr_t ndk_addr = ndk::NdkSymbolRegistry::Instance().Lookup(symbol);
         if (ndk_addr != 0) {
             last_error_.clear();
@@ -984,43 +1116,9 @@ void *LinkMap::DlSymWithCaller(void *handle, const char *symbol, uintptr_t calle
             last_error_.clear();
             return reinterpret_cast<void *>(fallback_addr);
         }
-        last_error_ = "dlsym: symbol not found: " + std::string(symbol);
-        return nullptr;
     }
 
-    auto hit = modules_by_handle_.find(handle);
-    if (hit == modules_by_handle_.end()) {
-        last_error_ = "dlsym: invalid library handle";
-        return nullptr;
-    }
-
-    const auto &entry = hit->second;
-    auto sit = entry->elf.symbols.find(symbol);
-    if (sit != entry->elf.symbols.end()) {
-        last_error_.clear();
-        return reinterpret_cast<void *>(sit->second);
-    }
-
-    for (const auto &dep : entry->dependencies) {
-        auto dit = dep->elf.symbols.find(symbol);
-        if (dit != dep->elf.symbols.end()) {
-            last_error_.clear();
-            return reinterpret_cast<void *>(dit->second);
-        }
-    }
-
-    uintptr_t ndk_addr = ndk::NdkSymbolRegistry::Instance().Lookup(symbol);
-    if (ndk_addr != 0) {
-        last_error_.clear();
-        return reinterpret_cast<void *>(ndk_addr);
-    }
-    uintptr_t fallback_addr = ndk::NdkSymbolRegistry::Instance().LookupFallback(symbol);
-    if (fallback_addr != 0) {
-        last_error_.clear();
-        return reinterpret_cast<void *>(fallback_addr);
-    }
-
-    last_error_ = "dlsym: symbol not found: " + std::string(symbol);
+    last_error_ = "dlvsym: symbol not found: " + std::string(symbol);
     return nullptr;
 }
 
@@ -1516,12 +1614,12 @@ uintptr_t LinkMap::ResolveLazySymbol(uintptr_t got_slot, const char *sym_name)
         if (owner) {
             auto it = owner->elf.symbols.find(std::string(sym_name));
             if (it != owner->elf.symbols.end()) {
-                target = it->second;
+                target = CheckAndResolveIfunc(owner, it->first, it->second);
             } else {
                 for (const auto &dep : owner->dependencies) {
                     auto dit = dep->elf.symbols.find(sym_name);
                     if (dit != dep->elf.symbols.end()) {
-                        target = dit->second;
+                        target = CheckAndResolveIfunc(dep, dit->first, dit->second);
                         break;
                     }
                 }
@@ -1663,6 +1761,12 @@ __attribute__((sysv_abi)) void *dlsym(void *handle, const char *symbol)
 {
     uintptr_t caller = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
     return portage::elf::LinkMap::Instance().DlSymWithCaller(handle, symbol, caller);
+}
+
+__attribute__((sysv_abi)) void *dlvsym(void *handle, const char *symbol, const char *version)
+{
+    uintptr_t caller = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+    return portage::elf::LinkMap::Instance().DlVSymWithCaller(handle, symbol, version, caller);
 }
 
 __attribute__((sysv_abi)) int dlclose(void *handle)

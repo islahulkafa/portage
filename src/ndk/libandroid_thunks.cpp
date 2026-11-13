@@ -313,6 +313,7 @@ void NdkSymbolRegistry::RegisterAll()
     Register("ANativeWindow_getFormat", reinterpret_cast<uintptr_t>(&ANativeWindow_getFormat));
     Register("ANativeWindow_acquire", reinterpret_cast<uintptr_t>(&ANativeWindow_acquire));
     Register("ANativeWindow_release", reinterpret_cast<uintptr_t>(&ANativeWindow_release));
+    Register("ANativeWindow_fromSurface", reinterpret_cast<uintptr_t>(&ANativeWindow_fromSurface));
     Register("ANativeWindow_lock", reinterpret_cast<uintptr_t>(&ANativeWindow_lock));
     Register("ANativeWindow_unlockAndPost",
              reinterpret_cast<uintptr_t>(&ANativeWindow_unlockAndPost));
@@ -918,6 +919,8 @@ void NdkSymbolRegistry::RegisterAll()
     Register("__loader_android_dlopen_ext", reinterpret_cast<uintptr_t>(&android_dlopen_ext));
     Register("dlsym", reinterpret_cast<uintptr_t>(&dlsym));
     Register("__loader_dlsym", reinterpret_cast<uintptr_t>(&dlsym));
+    Register("dlvsym", reinterpret_cast<uintptr_t>(&dlvsym));
+    Register("__loader_dlvsym", reinterpret_cast<uintptr_t>(&dlvsym));
     Register("dlclose", reinterpret_cast<uintptr_t>(&dlclose));
     Register("__loader_dlclose", reinterpret_cast<uintptr_t>(&dlclose));
     Register("dlerror", reinterpret_cast<uintptr_t>(&dlerror));
@@ -1234,6 +1237,16 @@ void NdkSymbolRegistry::RegisterAll()
              reinterpret_cast<uintptr_t>(&AIBinder_Class_getDescriptor));
     Register("AIBinder_associateClass", reinterpret_cast<uintptr_t>(&AIBinder_associateClass));
     Register("AIBinder_getClass", reinterpret_cast<uintptr_t>(&AIBinder_getClass));
+    Register("AIBinder_DeathRecipient_new",
+             reinterpret_cast<uintptr_t>(&AIBinder_DeathRecipient_new));
+    Register("AIBinder_DeathRecipient_delete",
+             reinterpret_cast<uintptr_t>(&AIBinder_DeathRecipient_delete));
+    Register("AIBinder_linkToDeath", reinterpret_cast<uintptr_t>(&AIBinder_linkToDeath));
+    Register("AIBinder_unlinkToDeath", reinterpret_cast<uintptr_t>(&AIBinder_unlinkToDeath));
+    Register("AIBinder_ping", reinterpret_cast<uintptr_t>(&AIBinder_ping));
+    Register("AIBinder_dump", reinterpret_cast<uintptr_t>(&AIBinder_dump));
+    Register("AIBinder_getExtension", reinterpret_cast<uintptr_t>(&AIBinder_getExtension));
+    Register("AIBinder_setExtension", reinterpret_cast<uintptr_t>(&AIBinder_setExtension));
 
     // AServiceManager
     Register("AServiceManager_addService",
@@ -1244,6 +1257,16 @@ void NdkSymbolRegistry::RegisterAll()
              reinterpret_cast<uintptr_t>(&AServiceManager_getService));
     Register("AServiceManager_waitForService",
              reinterpret_cast<uintptr_t>(&AServiceManager_waitForService));
+    Register("AServiceManager_isDeclared",
+             reinterpret_cast<uintptr_t>(&AServiceManager_isDeclared));
+    Register("AServiceManager_registerForNotifications",
+             reinterpret_cast<uintptr_t>(&AServiceManager_registerForNotifications));
+    Register("AServiceManager_unregisterForNotifications",
+             reinterpret_cast<uintptr_t>(&AServiceManager_unregisterForNotifications));
+
+    // AParcel Java Interop
+    Register("AParcel_fromJavaParcel", reinterpret_cast<uintptr_t>(&AParcel_fromJavaParcel));
+    Register("AParcel_toJavaParcel", reinterpret_cast<uintptr_t>(&AParcel_toJavaParcel));
 
     // AStorageManager
     Register("AStorageManager_new", reinterpret_cast<uintptr_t>(&AStorageManager_new));
@@ -1372,6 +1395,29 @@ __attribute__((sysv_abi)) void ANativeWindow_release(ANativeWindow *window)
             delete window;
         }
     }
+}
+
+__attribute__((sysv_abi)) ANativeWindow *ANativeWindow_fromSurface(void *, void *surface)
+{
+    if (!surface) {
+        return nullptr;
+    }
+    ANativeWindow *win = nullptr;
+    auto syn = portage::package::JniEnvironment::Instance().LookupObject(surface);
+    if (syn) {
+        if (syn->native_ptr) {
+            win = reinterpret_cast<ANativeWindow *>(syn->native_ptr);
+        } else {
+            auto it = syn->long_fields.find("mNativeObject");
+            if (it != syn->long_fields.end() && it->second != 0) {
+                win = reinterpret_cast<ANativeWindow *>(static_cast<uintptr_t>(it->second));
+            }
+        }
+    }
+    if (win) {
+        ANativeWindow_acquire(win);
+    }
+    return win;
 }
 
 __attribute__((sysv_abi)) int32_t ANativeWindow_lock(ANativeWindow *window,

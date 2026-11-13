@@ -894,3 +894,27 @@ if(PORTAGE_ANDROID_NDK_COMPILER AND PORTAGE_ANDROID_NDK_LIBCXX)
         DEPENDS "${CMAKE_BINARY_DIR}/ndk_cpp_showcase.apk"
     )
 endif()
+
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/libjavahybrid.so"
+    COMMAND "${CMAKE_C_COMPILER}"
+        --target=x86_64-linux-android
+        -fuse-ld=lld
+        -nostdlib
+        -shared
+        -fPIC
+        -O2
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_java_hybrid_guest.c"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libandroid.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libc.so"
+        -o "${CMAKE_CURRENT_BINARY_DIR}/libjavahybrid.so"
+    DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_java_hybrid_guest.c"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libandroid.so"
+        "${CMAKE_CURRENT_BINARY_DIR}/rootfs/system/lib64/libc.so"
+    COMMENT "Cross-compiling Android x86_64 hybrid Java-JNI library: libjavahybrid.so"
+)
+
+add_custom_target(build_guest_javahybrid ALL
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/libjavahybrid.so"
+)

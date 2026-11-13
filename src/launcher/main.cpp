@@ -8,6 +8,8 @@
 #include "ndk/android_log.hpp"
 #include "ndk/libandroid_thunks.hpp"
 #include "power/power_manager.hpp"
+#include "package/dex_vm.hpp"
+#include "package/java_activity.hpp"
 #include "package/jni_env.hpp"
 #include "package/native_activity.hpp"
 #include "package/package_manager.hpp"
@@ -115,6 +117,9 @@ int main(int argc, char *argv[])
 
     ANativeWindow default_window{1280, 720, 1, 1, nullptr};
     std::string elf_path = target_path;
+    bool has_primary_lib = true;
+    bool has_dex_launcher = false;
+    std::string launcher_cls_slash;
     portage::thread::ThreadManager::Instance().EnsureCurrentThreadTcb();
 
     if (is_apk) {
@@ -131,11 +136,28 @@ int main(int argc, char *argv[])
                       << pkg.manifest.version_code << ")\n";
         }
         auto primary_lib = portage::package::PackageManager::Instance().GetPrimaryLibraryPath(pkg);
-        if (!std::filesystem::exists(primary_lib)) {
+        has_primary_lib = std::filesystem::exists(primary_lib);
+        std::string launcher_cls = pkg.manifest.launcher_activity_name.empty()
+                                       ? pkg.manifest.main_activity_name
+                                       : pkg.manifest.launcher_activity_name;
+        launcher_cls_slash = launcher_cls;
+        for (char &c : launcher_cls_slash) {
+            if (c == '.') {
+                c = '/';
+            }
+        }
+        has_dex_launcher = !launcher_cls_slash.empty() &&
+                           portage::package::DexVm::Instance().HasClass(launcher_cls_slash);
+
+        if (!has_primary_lib && !has_dex_launcher) {
             std::cerr << "Error: native library not found: " << primary_lib.string() << "\n";
             return 1;
         }
-        elf_path = primary_lib.string();
+        if (has_primary_lib) {
+            elf_path = primary_lib.string();
+        } else {
+            elf_path = (pkg.lib_dir / "libportage_dex_placeholder.so").string();
+        }
 
         if (!headless) {
             std::string win_title = "Portage: " + pkg.manifest.package_name;
@@ -152,6 +174,7 @@ int main(int argc, char *argv[])
         }
 
         portage::package::NativeActivityRunner::Instance().SetupActivity(pkg, &default_window);
+        portage::package::JavaActivityRunner::Instance().Setup(pkg, &default_window);
     }
 
     std::vector<std::string> guest_env = {"PATH=/system/bin:/system/xbin", "ANDROID_DATA=/data",
@@ -180,6 +203,28 @@ int main(int argc, char *argv[])
     }
     portage::elf::LinkMap::Instance().AddSearchPath(
         std::filesystem::path(elf_path).parent_path().string());
+
+    if (is_apk && !has_primary_lib) {
+        if (check_apk) {
+            const auto *pkg_ptr = portage::package::PackageManager::Instance().GetActivePackage();
+            if (pkg_ptr) {
+                std::cout << "[check-apk] Package: " << pkg_ptr->manifest.package_name
+                          << " (targetSdk=" << pkg_ptr->manifest.target_sdk_version << ")\n";
+            }
+            std::cout << "[check-apk] Primary ELF: (pure/hybrid DEX launcher: "
+                      << launcher_cls_slash << ")\n";
+            std::cout << "[check-apk] Unresolved strong symbols: 0\n";
+            portage::elf::LinkMap::Instance().FinalizeAll();
+            portage::syscall::SyscallDispatcher::Shutdown();
+            return 0;
+        }
+        bool ok = portage::package::JavaActivityRunner::Instance().LaunchAndRun(headless);
+        std::cout << "[portage] APK Java activity execution "
+                  << (ok ? "completed successfully" : "failed") << "\n";
+        portage::elf::LinkMap::Instance().FinalizeAll();
+        portage::syscall::SyscallDispatcher::Shutdown();
+        return ok ? 0 : 1;
+    }
 
     portage::elf::ElfLoader loader(&address_space);
     auto load_result = loader.LoadFromFile(
@@ -256,7 +301,8 @@ int main(int argc, char *argv[])
         }
 
         uintptr_t on_create_addr = loaded_elf.FindSymbol("ANativeActivity_onCreate");
-        if (on_create_addr != 0) {
+        if (on_create_addr != 0 &&
+            (!has_dex_launcher || launcher_cls_slash == "android/app/NativeActivity")) {
             auto on_create =
                 reinterpret_cast<portage::package::ANativeActivity_createFunc>(on_create_addr);
             auto &runner = portage::package::NativeActivityRunner::Instance();
@@ -289,6 +335,14 @@ int main(int argc, char *argv[])
             portage::elf::LinkMap::Instance().FinalizeAll();
             portage::syscall::SyscallDispatcher::Shutdown();
             return 0;
+        }
+        if (has_dex_launcher) {
+            bool ok = portage::package::JavaActivityRunner::Instance().LaunchAndRun(headless);
+            std::cout << "[portage] APK Java activity execution "
+                      << (ok ? "completed successfully" : "failed") << "\n";
+            portage::elf::LinkMap::Instance().FinalizeAll();
+            portage::syscall::SyscallDispatcher::Shutdown();
+            return ok ? 0 : 1;
         }
     }
 

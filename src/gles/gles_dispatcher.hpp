@@ -201,11 +201,11 @@ __attribute__((sysv_abi)) GLboolean glIsRenderbuffer(GLuint renderbuffer);
 __attribute__((sysv_abi)) void glRenderbufferStorage(GLenum target, GLenum internalformat,
                                                      GLsizei width, GLsizei height);
 __attribute__((sysv_abi)) void glRenderbufferStorageMultisample(GLenum target, GLsizei samples,
-                                                              GLenum internalformat, GLsizei width,
-                                                              GLsizei height);
+                                                                GLenum internalformat,
+                                                                GLsizei width, GLsizei height);
 __attribute__((sysv_abi)) void glFramebufferRenderbuffer(GLenum target, GLenum attachment,
-                                                        GLenum renderbuffertarget,
-                                                        GLuint renderbuffer);
+                                                         GLenum renderbuffertarget,
+                                                         GLuint renderbuffer);
 __attribute__((sysv_abi)) void glBlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1,
                                                  GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1,
                                                  GLbitfield mask, GLenum filter);
@@ -236,8 +236,7 @@ __attribute__((sysv_abi)) void glCompressedTexSubImage2D(GLenum target, GLint le
                                                          GLsizei imageSize, const void *data);
 __attribute__((sysv_abi)) void glGenerateMipmap(GLenum target);
 __attribute__((sysv_abi)) void glTexParameterf(GLenum target, GLenum pname, GLfloat param);
-__attribute__((sysv_abi)) void glTexParameterfv(GLenum target, GLenum pname,
-                                                const GLfloat *params);
+__attribute__((sysv_abi)) void glTexParameterfv(GLenum target, GLenum pname, const GLfloat *params);
 __attribute__((sysv_abi)) void glTexParameteriv(GLenum target, GLenum pname, const GLint *params);
 
 // Uniforms, Attributes & Program
@@ -272,11 +271,11 @@ __attribute__((sysv_abi)) void glVertexAttrib4f(GLuint index, GLfloat x, GLfloat
 __attribute__((sysv_abi)) void glBindAttribLocation(GLuint program, GLuint index,
                                                     const GLchar *name);
 __attribute__((sysv_abi)) void glGetActiveUniform(GLuint program, GLuint index, GLsizei bufSize,
+                                                  GLsizei *length, GLint *size, GLenum *type,
+                                                  GLchar *name);
+__attribute__((sysv_abi)) void glGetActiveAttrib(GLuint program, GLuint index, GLsizei bufSize,
                                                  GLsizei *length, GLint *size, GLenum *type,
                                                  GLchar *name);
-__attribute__((sysv_abi)) void glGetActiveAttrib(GLuint program, GLuint index, GLsizei bufSize,
-                                                GLsizei *length, GLint *size, GLenum *type,
-                                                GLchar *name);
 __attribute__((sysv_abi)) void glDetachShader(GLuint program, GLuint shader);
 __attribute__((sysv_abi)) void glValidateProgram(GLuint program);
 __attribute__((sysv_abi)) GLboolean glIsShader(GLuint shader);
@@ -289,13 +288,12 @@ __attribute__((sysv_abi)) GLboolean glIsSampler(GLuint sampler);
 
 // Clear Buffers (GLES 3.0)
 __attribute__((sysv_abi)) void glClearBufferfv(GLenum buffer, GLint drawbuffer,
-                                              const GLfloat *value);
-__attribute__((sysv_abi)) void glClearBufferiv(GLenum buffer, GLint drawbuffer,
-                                              const GLint *value);
+                                               const GLfloat *value);
+__attribute__((sysv_abi)) void glClearBufferiv(GLenum buffer, GLint drawbuffer, const GLint *value);
 __attribute__((sysv_abi)) void glClearBufferuiv(GLenum buffer, GLint drawbuffer,
-                                               const GLuint *value);
+                                                const GLuint *value);
 __attribute__((sysv_abi)) void glClearBufferfi(GLenum buffer, GLint drawbuffer, GLfloat depth,
-                                              GLint stencil);
+                                               GLint stencil);
 
 // State & Queries
 __attribute__((sysv_abi)) void glGetIntegerv(GLenum pname, GLint *data);

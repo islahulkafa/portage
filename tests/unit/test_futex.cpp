@@ -110,8 +110,8 @@ TEST(FutexTest, BitsetSelectiveWakeAndAbsoluteTimeouts)
 
     // Absolute realtime timeout in past returns -ETIMEDOUT immediately
     LinuxTimespec past_real{.tv_sec = 1000, .tv_nsec = 0};
-    EXPECT_EQ(futex.Futex(&val, LINUX_FUTEX_WAIT_BITSET | LINUX_FUTEX_CLOCK_REALTIME, 10, &past_real,
-                          nullptr, 0x1),
+    EXPECT_EQ(futex.Futex(&val, LINUX_FUTEX_WAIT_BITSET | LINUX_FUTEX_CLOCK_REALTIME, 10,
+                          &past_real, nullptr, 0x1),
               -110);
 }
 

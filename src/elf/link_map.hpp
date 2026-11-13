@@ -72,6 +72,9 @@ class LinkMap {
     void *DlOpenExt(const char *filename, int flags, const android_dlextinfo *extinfo);
     void *DlSym(void *handle, const char *symbol);
     void *DlSymWithCaller(void *handle, const char *symbol, uintptr_t caller_addr);
+    void *DlVSym(void *handle, const char *symbol, const char *version);
+    void *DlVSymWithCaller(void *handle, const char *symbol, const char *version,
+                           uintptr_t caller_addr);
     int DlClose(void *handle);
     char *DlError();
     int DlAddr(const void *addr, Dl_info *info);
@@ -101,6 +104,8 @@ class LinkMap {
     void FinalizeAll();
 
     [[nodiscard]] uintptr_t ResolveGlobalSymbol(std::string_view name) const;
+    [[nodiscard]] uintptr_t ResolveGlobalSymbolVersioned(std::string_view name,
+                                                         std::string_view version) const;
     [[nodiscard]] bool ResolveGlobalSymbolWithSize(std::string_view name, uintptr_t &out_addr,
                                                    size_t &out_size) const;
     [[nodiscard]] std::shared_ptr<LinkMapEntry> FindModule(std::string_view name) const;
@@ -123,6 +128,10 @@ class LinkMap {
     void CallFini(const std::shared_ptr<LinkMapEntry> &entry);
     [[nodiscard]] uintptr_t ResolveSymbolForModule(const LinkMapEntry &entry,
                                                    std::string_view sym_name) const;
+    [[nodiscard]] uintptr_t CheckAndResolveIfunc(const std::shared_ptr<LinkMapEntry> &m,
+                                                 const std::string &name, uintptr_t raw_addr) const;
+    [[nodiscard]] bool CheckSymbolVersionMatch(const LoadedElf &elf, const std::string &sym_name,
+                                               std::string_view version) const;
     void *AllocateExecutableCode(size_t size);
     void RebuildRawLinkMapChain();
 
@@ -160,6 +169,7 @@ __attribute__((sysv_abi)) void *dlopen(const char *filename, int flags);
 __attribute__((sysv_abi)) void *android_dlopen_ext(const char *filename, int flags,
                                                    const portage::elf::android_dlextinfo *extinfo);
 __attribute__((sysv_abi)) void *dlsym(void *handle, const char *symbol);
+__attribute__((sysv_abi)) void *dlvsym(void *handle, const char *symbol, const char *version);
 __attribute__((sysv_abi)) int dlclose(void *handle);
 __attribute__((sysv_abi)) char *dlerror();
 __attribute__((sysv_abi)) int dladdr(const void *addr, portage::elf::Dl_info *info);

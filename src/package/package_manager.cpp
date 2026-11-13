@@ -1,5 +1,6 @@
 #include "package_manager.hpp"
 #include "fs/vfs.hpp"
+#include "package/dex_vm.hpp"
 #include "syscall/syscall_dispatcher.hpp"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -154,6 +155,19 @@ std::optional<PackageInfo> PackageManager::InstallPackage(const std::filesystem:
         pkg.resource_table = ResourceTable::Open(*arsc_data);
     }
     pkg.asset_manager = AssetManagerBridge::Instance().CreateManager(pkg.archive);
+
+    // Load Dalvik bytecode archives (classes.dex, classes2.dex, ...)
+    if (auto primary_dex = pkg.archive->ReadEntry("classes.dex")) {
+        DexVm::Instance().LoadDex(*primary_dex);
+    }
+    for (int idx = 2; idx <= 32; ++idx) {
+        std::string entry_name = "classes" + std::to_string(idx) + ".dex";
+        auto extra_dex = pkg.archive->ReadEntry(entry_name);
+        if (!extra_dex.has_value()) {
+            break;
+        }
+        DexVm::Instance().LoadDex(*extra_dex);
+    }
 
     packages_[manifest->package_name] = pkg;
     active_package_name_ = manifest->package_name;

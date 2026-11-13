@@ -6,6 +6,10 @@
 #include <cstdint>
 #include <vector>
 
+namespace portage::package {
+struct JNIEnv;
+}
+
 typedef bool (*AParcel_stringAllocator)(void *stringData, int32_t length, char **outBuffer)
     __attribute__((sysv_abi));
 typedef bool (*AParcel_byteArrayAllocator)(void *arrayData, int32_t length, int8_t **outBuffer)
@@ -91,5 +95,11 @@ __attribute__((sysv_abi)) binder_status_t AParcel_readParcelFileDescriptor(const
 
 __attribute__((sysv_abi)) binder_status_t AParcel_readStrongBinder(const AParcel *parcel,
                                                                    struct AIBinder **binder);
+
+__attribute__((sysv_abi)) AParcel *AParcel_fromJavaParcel(portage::package::JNIEnv *env,
+                                                          void *javaParcel);
+
+__attribute__((sysv_abi)) void *AParcel_toJavaParcel(const AParcel *parcel,
+                                                     portage::package::JNIEnv *env);
 
 } // extern "C"

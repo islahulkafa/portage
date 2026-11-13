@@ -207,11 +207,11 @@ using PFN_glIsRenderbuffer = GLboolean(APIENTRY *)(GLuint renderbuffer);
 using PFN_glRenderbufferStorage = void(APIENTRY *)(GLenum target, GLenum internalformat,
                                                    GLsizei width, GLsizei height);
 using PFN_glRenderbufferStorageMultisample = void(APIENTRY *)(GLenum target, GLsizei samples,
-                                                            GLenum internalformat, GLsizei width,
-                                                            GLsizei height);
+                                                              GLenum internalformat, GLsizei width,
+                                                              GLsizei height);
 using PFN_glFramebufferRenderbuffer = void(APIENTRY *)(GLenum target, GLenum attachment,
-                                                      GLenum renderbuffertarget,
-                                                      GLuint renderbuffer);
+                                                       GLenum renderbuffertarget,
+                                                       GLuint renderbuffer);
 using PFN_glBlitFramebuffer = void(APIENTRY *)(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1,
                                                GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1,
                                                GLbitfield mask, GLenum filter);
@@ -234,12 +234,12 @@ using PFN_glCopyTexSubImage2D = void(APIENTRY *)(GLenum target, GLint level, GLi
                                                  GLsizei height);
 using PFN_glCompressedTexImage2D = void(APIENTRY *)(GLenum target, GLint level,
                                                     GLenum internalformat, GLsizei width,
-                                                    GLsizei height, GLint border,
-                                                    GLsizei imageSize, const void *data);
+                                                    GLsizei height, GLint border, GLsizei imageSize,
+                                                    const void *data);
 using PFN_glCompressedTexSubImage2D = void(APIENTRY *)(GLenum target, GLint level, GLint xoffset,
-                                                       GLint yoffset, GLsizei width,
-                                                       GLsizei height, GLenum format,
-                                                       GLsizei imageSize, const void *data);
+                                                       GLint yoffset, GLsizei width, GLsizei height,
+                                                       GLenum format, GLsizei imageSize,
+                                                       const void *data);
 using PFN_glGenerateMipmap = void(APIENTRY *)(GLenum target);
 using PFN_glTexParameterf = void(APIENTRY *)(GLenum target, GLenum pname, GLfloat param);
 using PFN_glTexParameterfv = void(APIENTRY *)(GLenum target, GLenum pname, const GLfloat *params);
@@ -263,10 +263,10 @@ using PFN_glUniform1uiv = void(APIENTRY *)(GLint location, GLsizei count, const 
 using PFN_glUniform2uiv = void(APIENTRY *)(GLint location, GLsizei count, const GLuint *value);
 using PFN_glUniform3uiv = void(APIENTRY *)(GLint location, GLsizei count, const GLuint *value);
 using PFN_glUniform4uiv = void(APIENTRY *)(GLint location, GLsizei count, const GLuint *value);
-using PFN_glUniformMatrix2fv = void(APIENTRY *)(GLint location, GLsizei count,
-                                                GLboolean transpose, const GLfloat *value);
-using PFN_glUniformMatrix3fv = void(APIENTRY *)(GLint location, GLsizei count,
-                                                GLboolean transpose, const GLfloat *value);
+using PFN_glUniformMatrix2fv = void(APIENTRY *)(GLint location, GLsizei count, GLboolean transpose,
+                                                const GLfloat *value);
+using PFN_glUniformMatrix3fv = void(APIENTRY *)(GLint location, GLsizei count, GLboolean transpose,
+                                                const GLfloat *value);
 using PFN_glVertexAttribIPointer = void(APIENTRY *)(GLuint index, GLint size, GLenum type,
                                                     GLsizei stride, const void *pointer);
 using PFN_glVertexAttrib1f = void(APIENTRY *)(GLuint index, GLfloat x);
@@ -274,14 +274,13 @@ using PFN_glVertexAttrib2f = void(APIENTRY *)(GLuint index, GLfloat x, GLfloat y
 using PFN_glVertexAttrib3f = void(APIENTRY *)(GLuint index, GLfloat x, GLfloat y, GLfloat z);
 using PFN_glVertexAttrib4f = void(APIENTRY *)(GLuint index, GLfloat x, GLfloat y, GLfloat z,
                                               GLfloat w);
-using PFN_glBindAttribLocation = void(APIENTRY *)(GLuint program, GLuint index,
-                                                  const GLchar *name);
+using PFN_glBindAttribLocation = void(APIENTRY *)(GLuint program, GLuint index, const GLchar *name);
 using PFN_glGetActiveUniform = void(APIENTRY *)(GLuint program, GLuint index, GLsizei bufSize,
+                                                GLsizei *length, GLint *size, GLenum *type,
+                                                GLchar *name);
+using PFN_glGetActiveAttrib = void(APIENTRY *)(GLuint program, GLuint index, GLsizei bufSize,
                                                GLsizei *length, GLint *size, GLenum *type,
                                                GLchar *name);
-using PFN_glGetActiveAttrib = void(APIENTRY *)(GLuint program, GLuint index, GLsizei bufSize,
-                                              GLsizei *length, GLint *size, GLenum *type,
-                                              GLchar *name);
 using PFN_glDetachShader = void(APIENTRY *)(GLuint program, GLuint shader);
 using PFN_glValidateProgram = void(APIENTRY *)(GLuint program);
 using PFN_glIsShader = GLboolean(APIENTRY *)(GLuint shader);
@@ -293,14 +292,11 @@ using PFN_glIsVertexArray = GLboolean(APIENTRY *)(GLuint array);
 using PFN_glIsSampler = GLboolean(APIENTRY *)(GLuint sampler);
 
 // Clear Buffers (GLES 3.0)
-using PFN_glClearBufferfv = void(APIENTRY *)(GLenum buffer, GLint drawbuffer,
-                                            const GLfloat *value);
-using PFN_glClearBufferiv = void(APIENTRY *)(GLenum buffer, GLint drawbuffer,
-                                            const GLint *value);
-using PFN_glClearBufferuiv = void(APIENTRY *)(GLenum buffer, GLint drawbuffer,
-                                             const GLuint *value);
+using PFN_glClearBufferfv = void(APIENTRY *)(GLenum buffer, GLint drawbuffer, const GLfloat *value);
+using PFN_glClearBufferiv = void(APIENTRY *)(GLenum buffer, GLint drawbuffer, const GLint *value);
+using PFN_glClearBufferuiv = void(APIENTRY *)(GLenum buffer, GLint drawbuffer, const GLuint *value);
 using PFN_glClearBufferfi = void(APIENTRY *)(GLenum buffer, GLint drawbuffer, GLfloat depth,
-                                            GLint stencil);
+                                             GLint stencil);
 
 // State & Queries
 using PFN_glGetIntegerv = void(APIENTRY *)(GLenum pname, GLint *data);
@@ -310,8 +306,7 @@ using PFN_glGetBooleanv = void(APIENTRY *)(GLenum pname, GLboolean *data);
 using PFN_glGetStringi = const GLubyte *(APIENTRY *)(GLenum name, GLuint index);
 using PFN_glGetTexParameteriv = void(APIENTRY *)(GLenum target, GLenum pname, GLint *params);
 using PFN_glGetTexParameterfv = void(APIENTRY *)(GLenum target, GLenum pname, GLfloat *params);
-using PFN_glGetFramebufferAttachmentParameteriv = void(APIENTRY *)(GLenum target,
-                                                                   GLenum attachment,
+using PFN_glGetFramebufferAttachmentParameteriv = void(APIENTRY *)(GLenum target, GLenum attachment,
                                                                    GLenum pname, GLint *params);
 using PFN_glGetRenderbufferParameteriv = void(APIENTRY *)(GLenum target, GLenum pname,
                                                           GLint *params);

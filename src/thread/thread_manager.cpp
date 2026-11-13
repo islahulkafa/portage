@@ -1,6 +1,7 @@
 #include "thread/thread_manager.hpp"
 #include "arch/guest_context.hpp"
 #include "elf/link_map.hpp"
+#include "process/namespace_manager.hpp"
 #include "syscall/syscall_dispatcher.hpp"
 #include "sync/futex.hpp"
 #include <algorithm>
@@ -60,16 +61,19 @@ DWORD WINAPI WorkerThreadThunk(LPVOID lpParam)
     uintptr_t g_stack_limit =
         (child_stack > 8 * 1024 * 1024) ? (child_stack - 8 * 1024 * 1024) : 0x1000;
 
-    __writegsqword(0x08, g_stack_base);
-    __writegsqword(0x10, g_stack_limit);
-    __writegsqword(0x1478, g_stack_limit);
+    int exit_code = 0;
+    if (child_rip != 0) {
+        __writegsqword(0x08, g_stack_base);
+        __writegsqword(0x10, g_stack_limit);
+        __writegsqword(0x1478, g_stack_limit);
 
-    int exit_code = arch::portage_save_and_enter(reinterpret_cast<void *>(child_rip),
+        exit_code = arch::portage_save_and_enter(reinterpret_cast<void *>(child_rip),
                                                  reinterpret_cast<void *>(child_stack), host_ctx);
 
-    __writegsqword(0x08, host_stack_base);
-    __writegsqword(0x10, host_stack_limit);
-    __writegsqword(0x1478, host_dealloc_stack);
+        __writegsqword(0x08, host_stack_base);
+        __writegsqword(0x10, host_stack_limit);
+        __writegsqword(0x1478, host_dealloc_stack);
+    }
 
     ThreadManager::Instance().OnThreadExit(tid, exit_code);
     return static_cast<DWORD>(exit_code);
@@ -135,6 +139,17 @@ int ThreadManager::RegisterMainThread() noexcept
 
     m_threads[thread->tid] = thread;
     m_win32_to_tid[win32_tid] = thread->tid;
+
+    thread->tgid = thread->tid;
+    thread->ppid = 1;
+    auto &ns_mgr = process::NamespaceManager::Instance();
+    thread->pid_ns = ns_mgr.GetRootPidNamespace();
+    thread->mnt_ns = ns_mgr.GetRootMountNamespace();
+    thread->uts_ns = ns_mgr.GetRootUtsNamespace();
+    if (thread->pid_ns) {
+        thread->pid_ns->AllocatePid(thread->tgid);
+    }
+
     return thread->tid;
 }
 
@@ -143,6 +158,8 @@ int ThreadManager::CreateGuestThread(uint64_t flags, uintptr_t child_stack,
                                      uintptr_t tls, uintptr_t child_rip) noexcept
 {
     int assigned_tid = m_next_tid.fetch_add(1);
+    auto parent = GetCurrentGuestThread();
+    auto &ns_mgr = process::NamespaceManager::Instance();
 
     if ((flags & LINUX_CLONE_PARENT_SETTID) && parent_tid_ptr != 0) {
         *reinterpret_cast<int *>(parent_tid_ptr) = assigned_tid;
@@ -155,6 +172,48 @@ int ThreadManager::CreateGuestThread(uint64_t flags, uintptr_t child_stack,
     thread->stack_limit =
         (child_stack > thread->stack_size) ? (child_stack - thread->stack_size) : 0x1000;
     thread->tcb = tls;
+
+    if (flags & LINUX_CLONE_THREAD) {
+        thread->tgid = parent ? parent->tgid : assigned_tid;
+        thread->ppid = parent ? parent->ppid : 1;
+        thread->pid_ns = (parent && parent->pid_ns) ? parent->pid_ns : ns_mgr.GetRootPidNamespace();
+        thread->mnt_ns =
+            (parent && parent->mnt_ns) ? parent->mnt_ns : ns_mgr.GetRootMountNamespace();
+        thread->uts_ns = (parent && parent->uts_ns) ? parent->uts_ns : ns_mgr.GetRootUtsNamespace();
+    } else {
+        thread->tgid = assigned_tid;
+        thread->ppid = parent ? parent->tgid : 1;
+
+        if (flags & process::LINUX_CLONE_NEWPID) {
+            auto p_ns = (parent && parent->pid_ns) ? parent->pid_ns : ns_mgr.GetRootPidNamespace();
+            thread->pid_ns = ns_mgr.CreateChildPidNamespace(p_ns);
+        } else if (parent && parent->next_child_pid_ns) {
+            thread->pid_ns = parent->next_child_pid_ns;
+        } else {
+            thread->pid_ns =
+                (parent && parent->pid_ns) ? parent->pid_ns : ns_mgr.GetRootPidNamespace();
+        }
+        if (thread->pid_ns) {
+            thread->pid_ns->AllocatePid(thread->tgid);
+        }
+
+        if (flags & process::LINUX_CLONE_NEWNS) {
+            auto p_mnt =
+                (parent && parent->mnt_ns) ? parent->mnt_ns : ns_mgr.GetRootMountNamespace();
+            thread->mnt_ns = ns_mgr.CloneMountNamespace(*p_mnt);
+        } else {
+            thread->mnt_ns =
+                (parent && parent->mnt_ns) ? parent->mnt_ns : ns_mgr.GetRootMountNamespace();
+        }
+
+        if (flags & process::LINUX_CLONE_NEWUTS) {
+            auto p_uts = (parent && parent->uts_ns) ? parent->uts_ns : ns_mgr.GetRootUtsNamespace();
+            thread->uts_ns = ns_mgr.CloneUtsNamespace(*p_uts);
+        } else {
+            thread->uts_ns =
+                (parent && parent->uts_ns) ? parent->uts_ns : ns_mgr.GetRootUtsNamespace();
+        }
+    }
 
     auto *params = new ThreadStartParams{.tid = assigned_tid,
                                          .flags = flags,

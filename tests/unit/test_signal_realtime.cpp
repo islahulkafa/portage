@@ -131,7 +131,8 @@ TEST_F(RealTimeSignalTest, SignalfdEpollIntegration)
     int sfd = portage_signalfd4(-1, &mask, sizeof(mask), LINUX_SFD_NONBLOCK);
     ASSERT_GE(sfd, 0);
 
-    int epfd = static_cast<int>(SyscallDispatcher::Dispatch(291 /* epoll_create1 */, 0, 0, 0, 0, 0, 0));
+    int epfd =
+        static_cast<int>(SyscallDispatcher::Dispatch(291 /* epoll_create1 */, 0, 0, 0, 0, 0, 0));
     ASSERT_GE(epfd, 0);
 
     LinuxEpollEvent ev{};
@@ -153,9 +154,9 @@ TEST_F(RealTimeSignalTest, SignalfdEpollIntegration)
         portage_sigqueue(0, LINUX_SIGRTMIN + 5, 999);
     });
 
-    int ready = static_cast<int>(SyscallDispatcher::Dispatch(
-        232 /* epoll_wait */, static_cast<uint64_t>(epfd), reinterpret_cast<uint64_t>(&out_ev), 1,
-        1000, 0, 0));
+    int ready = static_cast<int>(
+        SyscallDispatcher::Dispatch(232 /* epoll_wait */, static_cast<uint64_t>(epfd),
+                                    reinterpret_cast<uint64_t>(&out_ev), 1, 1000, 0, 0));
     sender.join();
 
     EXPECT_EQ(ready, 1);

@@ -506,11 +506,11 @@ TEST(JniEnvTest, ReflectionToAndFromReflectedMethod)
 
     auto ctx = jni.GetContextObject();
     auto act_cls = env->functions->FindClass(env, "android/app/Activity");
-    auto mid =
-        env->functions->GetMethodID(env, act_cls, "getPackageName", "()Ljava/lang/String;");
+    auto mid = env->functions->GetMethodID(env, act_cls, "getPackageName", "()Ljava/lang/String;");
     ASSERT_NE(mid, nullptr);
 
-    auto reflected = env->functions->ToReflectedMethod(env, act_cls, mid, portage::package::JNI_FALSE);
+    auto reflected =
+        env->functions->ToReflectedMethod(env, act_cls, mid, portage::package::JNI_FALSE);
     ASSERT_NE(reflected, nullptr);
     EXPECT_EQ(env->functions->FromReflectedMethod(env, reflected), mid);
 
@@ -535,7 +535,8 @@ TEST(JniEnvTest, ReflectionToAndFromReflectedMethod)
     auto static_reflected =
         env->functions->ToReflectedMethod(env, env_cls, data_dir_mid, portage::package::JNI_TRUE);
     ASSERT_NE(static_reflected, nullptr);
-    auto file_obj = env->functions->CallObjectMethod(env, static_reflected, invoke_mid, nullptr, nullptr);
+    auto file_obj =
+        env->functions->CallObjectMethod(env, static_reflected, invoke_mid, nullptr, nullptr);
     ASSERT_NE(file_obj, nullptr);
     auto file_cls = env->functions->GetObjectClass(env, file_obj);
     auto abs_mid =
@@ -561,14 +562,16 @@ TEST(JniEnvTest, ReflectionToAndFromReflectedField)
     auto pm_cls = env->functions->GetObjectClass(env, pm);
     auto get_pi = env->functions->GetMethodID(
         env, pm_cls, "getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;");
-    auto pi = env->functions->CallObjectMethod(env, pm, get_pi, jni.CreateString("com.portage.orig"), 0);
+    auto pi =
+        env->functions->CallObjectMethod(env, pm, get_pi, jni.CreateString("com.portage.orig"), 0);
     ASSERT_NE(pi, nullptr);
 
     auto pi_cls = env->functions->GetObjectClass(env, pi);
     auto fid = env->functions->GetFieldID(env, pi_cls, "packageName", "Ljava/lang/String;");
     ASSERT_NE(fid, nullptr);
 
-    auto reflected = env->functions->ToReflectedField(env, pi_cls, fid, portage::package::JNI_FALSE);
+    auto reflected =
+        env->functions->ToReflectedField(env, pi_cls, fid, portage::package::JNI_FALSE);
     ASSERT_NE(reflected, nullptr);
     EXPECT_EQ(env->functions->FromReflectedField(env, reflected), fid);
 
@@ -579,8 +582,8 @@ TEST(JniEnvTest, ReflectionToAndFromReflectedField)
         env->functions->CallObjectMethod(env, reflected, get_name_mid));
     EXPECT_STREQ(jni.GetStringChars(fname), "packageName");
 
-    auto get_mid =
-        env->functions->GetMethodID(env, field_cls, "get", "(Ljava/lang/Object;)Ljava/lang/Object;");
+    auto get_mid = env->functions->GetMethodID(env, field_cls, "get",
+                                               "(Ljava/lang/Object;)Ljava/lang/Object;");
     auto cur_val = static_cast<portage::package::jstring>(
         env->functions->CallObjectMethod(env, reflected, get_mid, pi));
     EXPECT_STREQ(jni.GetStringChars(cur_val), "com.portage.orig");
@@ -652,13 +655,15 @@ TEST(JniEnvTest, BuildAndVersionFields)
     check_build_field("TYPE", "user");
 
     auto ver_cls = env->functions->FindClass(env, "android/os/Build$VERSION");
-    auto fid_inc = env->functions->GetStaticFieldID(env, ver_cls, "INCREMENTAL", "Ljava/lang/String;");
+    auto fid_inc =
+        env->functions->GetStaticFieldID(env, ver_cls, "INCREMENTAL", "Ljava/lang/String;");
     auto str_inc = static_cast<portage::package::jstring>(
         env->functions->GetStaticObjectField(env, ver_cls, fid_inc));
     ASSERT_NE(str_inc, nullptr);
     EXPECT_STREQ(jni.GetStringChars(str_inc), "1");
 
-    auto fid_code = env->functions->GetStaticFieldID(env, ver_cls, "CODENAME", "Ljava/lang/String;");
+    auto fid_code =
+        env->functions->GetStaticFieldID(env, ver_cls, "CODENAME", "Ljava/lang/String;");
     auto str_code = static_cast<portage::package::jstring>(
         env->functions->GetStaticObjectField(env, ver_cls, fid_code));
     ASSERT_NE(str_code, nullptr);
@@ -713,8 +718,8 @@ TEST(JniEnvTest, BundleOperations)
     auto bundle = env->functions->NewObject(env, bundle_cls, init_mid);
     ASSERT_NE(bundle, nullptr);
 
-    auto put_str =
-        env->functions->GetMethodID(env, bundle_cls, "putString", "(Ljava/lang/String;Ljava/lang/String;)V");
+    auto put_str = env->functions->GetMethodID(env, bundle_cls, "putString",
+                                               "(Ljava/lang/String;Ljava/lang/String;)V");
     auto put_int = env->functions->GetMethodID(env, bundle_cls, "putInt", "(Ljava/lang/String;I)V");
     auto put_bool =
         env->functions->GetMethodID(env, bundle_cls, "putBoolean", "(Ljava/lang/String;Z)V");
@@ -732,8 +737,8 @@ TEST(JniEnvTest, BundleOperations)
     EXPECT_EQ(env->functions->CallBooleanMethod(env, bundle, contains, jni.CreateString("missing")),
               portage::package::JNI_FALSE);
 
-    auto get_str =
-        env->functions->GetMethodID(env, bundle_cls, "getString", "(Ljava/lang/String;)Ljava/lang/String;");
+    auto get_str = env->functions->GetMethodID(env, bundle_cls, "getString",
+                                               "(Ljava/lang/String;)Ljava/lang/String;");
     auto get_int = env->functions->GetMethodID(env, bundle_cls, "getInt", "(Ljava/lang/String;I)I");
     auto get_bool =
         env->functions->GetMethodID(env, bundle_cls, "getBoolean", "(Ljava/lang/String;Z)Z");
@@ -745,7 +750,8 @@ TEST(JniEnvTest, BundleOperations)
     EXPECT_EQ(env->functions->CallObjectMethod(env, bundle, get_str, jni.CreateString("missing")),
               nullptr);
 
-    EXPECT_EQ(env->functions->CallIntMethod(env, bundle, get_int, jni.CreateString("level"), -1), 99);
+    EXPECT_EQ(env->functions->CallIntMethod(env, bundle, get_int, jni.CreateString("level"), -1),
+              99);
     EXPECT_EQ(env->functions->CallIntMethod(env, bundle, get_int, jni.CreateString("missing"), -1),
               -1);
 
@@ -777,7 +783,8 @@ TEST(JniEnvTest, VibratorDispatch)
     EXPECT_EQ(env->functions->CallBooleanMethod(env, vib, has_vib), portage::package::JNI_TRUE);
 
     auto vibrate_mid = env->functions->GetMethodID(env, vib_cls, "vibrate", "(J)V");
-    env->functions->CallVoidMethod(env, vib, vibrate_mid, static_cast<portage::package::jlong>(100));
+    env->functions->CallVoidMethod(env, vib, vibrate_mid,
+                                   static_cast<portage::package::jlong>(100));
 }
 
 TEST(JniEnvTest, DisplayAndPoint)
@@ -806,7 +813,8 @@ TEST(JniEnvTest, DisplayAndPoint)
     auto wm = env->functions->CallObjectMethod(env, ctx, get_svc, jni.CreateString("window"));
     auto wm_cls = env->functions->GetObjectClass(env, wm);
     auto disp = env->functions->CallObjectMethod(
-        env, wm, env->functions->GetMethodID(env, wm_cls, "getDefaultDisplay", "()Landroid/view/Display;"));
+        env, wm,
+        env->functions->GetMethodID(env, wm_cls, "getDefaultDisplay", "()Landroid/view/Display;"));
     ASSERT_NE(disp, nullptr);
 
     auto disp_cls = env->functions->GetObjectClass(env, disp);
@@ -825,15 +833,17 @@ TEST(JniEnvTest, DisplayAndPoint)
     auto win = jni.GetWindowObject();
     auto win_cls = env->functions->GetObjectClass(env, win);
     auto decor = env->functions->CallObjectMethod(
-        env, win, env->functions->GetMethodID(env, win_cls, "getDecorView", "()Landroid/view/View;"));
+        env, win,
+        env->functions->GetMethodID(env, win_cls, "getDecorView", "()Landroid/view/View;"));
     ASSERT_NE(decor, nullptr);
     auto view_cls = env->functions->GetObjectClass(env, decor);
     env->functions->CallVoidMethod(
         env, decor, env->functions->GetMethodID(env, view_cls, "setSystemUiVisibility", "(I)V"),
         0x104);
-    EXPECT_EQ(env->functions->CallIntMethod(
-                  env, decor, env->functions->GetMethodID(env, view_cls, "getSystemUiVisibility", "()I")),
-              0x104);
+    EXPECT_EQ(
+        env->functions->CallIntMethod(
+            env, decor, env->functions->GetMethodID(env, view_cls, "getSystemUiVisibility", "()I")),
+        0x104);
 }
 
 TEST(JniEnvTest, PackageManagerAndPackageInfo)
@@ -881,7 +891,8 @@ TEST(JniEnvTest, PackageManagerAndPackageInfo)
     ASSERT_NE(data_dir, nullptr);
     EXPECT_STREQ(jni.GetStringChars(data_dir), "/data/data/com.portage.unit/files");
     auto src_dir = static_cast<portage::package::jstring>(env->functions->GetObjectField(
-        env, app_info, env->functions->GetFieldID(env, app_cls, "sourceDir", "Ljava/lang/String;")));
+        env, app_info,
+        env->functions->GetFieldID(env, app_cls, "sourceDir", "Ljava/lang/String;")));
     ASSERT_NE(src_dir, nullptr);
     EXPECT_GT(env->functions->GetIntField(
                   env, app_info, env->functions->GetFieldID(env, app_cls, "targetSdkVersion", "I")),

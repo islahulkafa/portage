@@ -43,7 +43,8 @@ enum class DeviceType {
     EventFd,
     TimerFd,
     SyncFence,
-    Signalfd
+    Signalfd,
+    Netlink
 };
 
 struct ResolvedPath {
@@ -76,6 +77,7 @@ class Vfs {
     bool RemoveMount(std::string_view guest_path);
     [[nodiscard]] std::optional<std::filesystem::path>
     GetMountTarget(std::string_view guest_path) const;
+    [[nodiscard]] std::vector<MountPoint> GetMounts() const;
     void ClearMounts();
 
     bool CreateSymlink(std::string_view target, std::string_view linkpath, int dirfd = -100,
@@ -83,8 +85,8 @@ class Vfs {
     bool RemoveSymlink(std::string_view linkpath, int dirfd = -100,
                        std::string_view dirfd_path = "");
     bool RenameSymlink(std::string_view oldpath, std::string_view newpath);
-    [[nodiscard]] std::optional<std::string>
-    Readlink(std::string_view linkpath, int dirfd = -100, std::string_view dirfd_path = "") const;
+    [[nodiscard]] std::optional<std::string> Readlink(std::string_view linkpath, int dirfd = -100,
+                                                      std::string_view dirfd_path = "") const;
     [[nodiscard]] bool IsSymlink(std::string_view linkpath, int dirfd = -100,
                                  std::string_view dirfd_path = "") const;
 

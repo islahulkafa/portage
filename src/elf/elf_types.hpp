@@ -111,6 +111,9 @@ constexpr Elf64_Word SHT_PROGBITS = 1;
 constexpr Elf64_Word SHT_SYMTAB = 2;
 constexpr Elf64_Word SHT_STRTAB = 3;
 constexpr Elf64_Word SHT_DYNSYM = 11;
+constexpr Elf64_Word SHT_GNU_versym = 0x6ffffff0;
+constexpr Elf64_Word SHT_GNU_verdef = 0x6ffffffd;
+constexpr Elf64_Word SHT_GNU_verneed = 0x6ffffffe;
 
 struct Elf64_Shdr {
     Elf64_Word sh_name;
@@ -166,6 +169,11 @@ constexpr int64_t DT_FLAGS_1 = 0x6ffffffb;
 constexpr int64_t DT_GNU_HASH = 0x6ffffef5;
 constexpr int64_t DT_TLSDESC_PLT = 0x6ffffef6;
 constexpr int64_t DT_TLSDESC_GOT = 0x6ffffef7;
+constexpr int64_t DT_VERSYM = 0x6ffffff0;
+constexpr int64_t DT_VERDEF = 0x6ffffffc;
+constexpr int64_t DT_VERDEFNUM = 0x6ffffffd;
+constexpr int64_t DT_VERNEED = 0x6ffffffe;
+constexpr int64_t DT_VERNEEDNUM = 0x6fffffff;
 
 constexpr uint64_t DF_BIND_NOW = 0x8;
 constexpr uint64_t DF_1_NOW = 0x1;
@@ -257,8 +265,57 @@ constexpr unsigned char STT_NOTYPE = 0;
 constexpr unsigned char STT_OBJECT = 1;
 constexpr unsigned char STT_FUNC = 2;
 constexpr unsigned char STT_TLS = 6;
+constexpr unsigned char STT_GNU_IFUNC = 10;
+
+constexpr unsigned char STV_DEFAULT = 0;
+constexpr unsigned char STV_INTERNAL = 1;
+constexpr unsigned char STV_HIDDEN = 2;
+constexpr unsigned char STV_PROTECTED = 3;
+inline unsigned char ELF64_ST_VISIBILITY(unsigned char other) { return other & 0x3; }
+
+using Elf64_Versym = Elf64_Half;
+constexpr Elf64_Half VERSYM_VERSION = 0x7fff;
+constexpr Elf64_Half VERSYM_HIDDEN = 0x8000;
+
+constexpr Elf64_Half VER_FLG_BASE = 0x1;
+constexpr Elf64_Half VER_FLG_WEAK = 0x2;
+
+struct Elf64_Verdef {
+    Elf64_Half vd_version;
+    Elf64_Half vd_flags;
+    Elf64_Half vd_ndx;
+    Elf64_Half vd_cnt;
+    Elf64_Word vd_hash;
+    Elf64_Word vd_aux;
+    Elf64_Word vd_next;
+};
+
+struct Elf64_Verdaux {
+    Elf64_Word vda_name;
+    Elf64_Word vda_next;
+};
+
+struct Elf64_Verneed {
+    Elf64_Half vn_version;
+    Elf64_Half vn_cnt;
+    Elf64_Word vn_file;
+    Elf64_Word vn_aux;
+    Elf64_Word vn_next;
+};
+
+struct Elf64_Vernaux {
+    Elf64_Word vna_hash;
+    Elf64_Half vna_flags;
+    Elf64_Half vna_other;
+    Elf64_Word vna_name;
+    Elf64_Word vna_next;
+};
 inline unsigned char ELF64_ST_BIND(unsigned char i) { return static_cast<unsigned char>(i >> 4); }
 inline unsigned char ELF64_ST_TYPE(unsigned char i) { return static_cast<unsigned char>(i & 0xf); }
+inline unsigned char ELF64_ST_INFO(unsigned char bind, unsigned char type)
+{
+    return static_cast<unsigned char>((bind << 4) | (type & 0xf));
+}
 
 constexpr uint32_t R_X86_64_NONE = 0;
 constexpr uint32_t R_X86_64_64 = 1;

@@ -47,12 +47,16 @@ set(UNIT_TEST_SOURCES
     unit/test_link_map.cpp
     unit/test_mediandk.cpp
     unit/test_binder_ndk.cpp
+    unit/test_binder_ndk_expanded.cpp
     unit/test_input_gamepad.cpp
     unit/test_storage_manager.cpp
     unit/test_play_services.cpp
     unit/test_multinetwork.cpp
     unit/test_adpf.cpp
     unit/test_signal_realtime.cpp
+    unit/test_inotify.cpp
+    unit/test_namespaces.cpp
+    unit/test_content_provider.cpp
     unit/test_audio_recording.cpp
     unit/test_swappy.cpp
     unit/test_camera.cpp
@@ -80,6 +84,11 @@ set(UNIT_TEST_SOURCES
     unit/test_bionic_stdio.cpp
     unit/test_bionic_posix.cpp
     unit/test_bionic_locale.cpp
+    unit/test_elf_versioning_ifunc.cpp
+    unit/test_netlink.cpp
+    unit/test_cgroups_and_cpu_topology.cpp
+    unit/test_dex_vm.cpp
+    unit/test_java_activity.cpp
 )
 
 set(INTEGRATION_TEST_SOURCES
@@ -101,6 +110,7 @@ set(INTEGRATION_TEST_SOURCES
     integration/test_camera_execution.cpp
     integration/test_ndk_compat_execution.cpp
     integration/test_ndk_cpp_execution.cpp
+    integration/test_java_activity_execution.cpp
 )
 
 add_executable(unit_tests ${UNIT_TEST_SOURCES})

@@ -17,7 +17,9 @@ struct ManifestInfo {
     int target_sdk_version{34};
     bool has_code{true};
     std::string application_label{};
+    std::string application_name{};
     std::string main_activity_name{};
+    std::string launcher_activity_name{};
     std::string native_library_name{}; // e.g. "main" -> "libmain.so"
 };
 

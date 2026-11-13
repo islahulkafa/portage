@@ -1,5 +1,7 @@
 #include "poll/epoll_manager.hpp"
+#include "fs/inotify_state.hpp"
 #include "input/input_manager.hpp"
+#include "net/netlink_socket.hpp"
 #include "signal/signal_manager.hpp"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -178,6 +180,31 @@ int EpollManager::Wait(int epfd, LinuxEpollEvent *events, int maxevents, int tim
             }
         }
 
+        if (desc->dev == fs::DeviceType::Inotify && desc->inotify) {
+            if (!desc->inotify->IsEmpty() && (item.events & LINUX_EPOLLIN)) {
+                events[ready_count].events = LINUX_EPOLLIN;
+                events[ready_count].data = item.data;
+                ready_count++;
+                continue;
+            }
+        }
+
+        if (desc->dev == fs::DeviceType::Netlink && desc->netlink_socket) {
+            uint32_t revents = 0;
+            if (desc->netlink_socket->HasData() && (item.events & LINUX_EPOLLIN)) {
+                revents |= LINUX_EPOLLIN;
+            }
+            if (item.events & LINUX_EPOLLOUT) {
+                revents |= LINUX_EPOLLOUT;
+            }
+            if (revents != 0) {
+                events[ready_count].events = revents;
+                events[ready_count].data = item.data;
+                ready_count++;
+                continue;
+            }
+        }
+
         if (desc->dev == fs::DeviceType::Pipe && desc->handle != INVALID_HANDLE_VALUE) {
             DWORD avail = 0;
             if (PeekNamedPipe(desc->handle, nullptr, 0, nullptr, &avail, nullptr)) {
@@ -269,6 +296,27 @@ int EpollManager::Wait(int epfd, LinuxEpollEvent *events, int maxevents, int tim
                             ready_count++;
                         }
                     }
+                    if (desc->dev == fs::DeviceType::Inotify && desc->inotify) {
+                        if (!desc->inotify->IsEmpty() && (item.events & LINUX_EPOLLIN)) {
+                            events[ready_count].events = LINUX_EPOLLIN;
+                            events[ready_count].data = item.data;
+                            ready_count++;
+                        }
+                    }
+                    if (desc->dev == fs::DeviceType::Netlink && desc->netlink_socket) {
+                        uint32_t revents = 0;
+                        if (desc->netlink_socket->HasData() && (item.events & LINUX_EPOLLIN)) {
+                            revents |= LINUX_EPOLLIN;
+                        }
+                        if (item.events & LINUX_EPOLLOUT) {
+                            revents |= LINUX_EPOLLOUT;
+                        }
+                        if (revents != 0) {
+                            events[ready_count].events = revents;
+                            events[ready_count].data = item.data;
+                            ready_count++;
+                        }
+                    }
                 }
                 if (ready_count > 0)
                     return ready_count;
@@ -346,7 +394,7 @@ int EpollManager::Poll(LinuxPollFd *fds, size_t nfds, int timeout_ms,
             (desc->dev != fs::DeviceType::InputEvent0 && desc->dev != fs::DeviceType::InputEvent1 &&
              desc->dev != fs::DeviceType::EventFd && desc->dev != fs::DeviceType::TimerFd &&
              desc->dev != fs::DeviceType::SyncFence && desc->dev != fs::DeviceType::Signalfd &&
-             desc->handle == INVALID_HANDLE_VALUE)) {
+             desc->dev != fs::DeviceType::Inotify && desc->handle == INVALID_HANDLE_VALUE)) {
             fds[i].revents = LINUX_POLLNVAL;
             ready_count++;
             continue;
@@ -400,6 +448,14 @@ int EpollManager::Poll(LinuxPollFd *fds, size_t nfds, int timeout_ms,
         if (desc->dev == fs::DeviceType::Signalfd && desc->signalfd) {
             if (signal::SignalManager::Instance().HasPendingSignal(desc->signalfd->mask) &&
                 (fds[i].events & LINUX_POLLIN)) {
+                fds[i].revents |= LINUX_POLLIN;
+                ready_count++;
+            }
+            continue;
+        }
+
+        if (desc->dev == fs::DeviceType::Inotify && desc->inotify) {
+            if (!desc->inotify->IsEmpty() && (fds[i].events & LINUX_POLLIN)) {
                 fds[i].revents |= LINUX_POLLIN;
                 ready_count++;
             }
@@ -490,6 +546,22 @@ int EpollManager::Poll(LinuxPollFd *fds, size_t nfds, int timeout_ms,
                                 desc->signalfd->mask) &&
                             (fds[i].events & LINUX_POLLIN)) {
                             fds[i].revents |= LINUX_POLLIN;
+                            ready_count++;
+                        }
+                    }
+                    if (desc->dev == fs::DeviceType::Inotify && desc->inotify) {
+                        if (!desc->inotify->IsEmpty() && (fds[i].events & LINUX_POLLIN)) {
+                            fds[i].revents |= LINUX_POLLIN;
+                            ready_count++;
+                        }
+                    }
+                    if (desc->dev == fs::DeviceType::Netlink && desc->netlink_socket) {
+                        if (desc->netlink_socket->HasData() && (fds[i].events & LINUX_POLLIN)) {
+                            fds[i].revents |= LINUX_POLLIN;
+                            ready_count++;
+                        }
+                        if (fds[i].events & LINUX_POLLOUT) {
+                            fds[i].revents |= LINUX_POLLOUT;
                             ready_count++;
                         }
                     }
